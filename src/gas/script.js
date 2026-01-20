@@ -12,15 +12,19 @@ const SHEET_TEXTURES = 'テクスチャ';
 
 /**
  * GETリクエストのハンドラ
+ * 読み取り・書き込み両方をGETで処理（CORS対策）
  * @param {Object} e - リクエストイベント
  * @returns {TextOutput} JSONレスポンス
  */
 function doGet(e) {
   try {
     const action = e.parameter.action;
+    const dataParam = e.parameter.data;
+    const data = dataParam ? JSON.parse(decodeURIComponent(dataParam)) : null;
 
     let result;
     switch (action) {
+      // 読み取り系
       case 'getBlocks':
         result = getBlocks();
         break;
@@ -29,6 +33,19 @@ function doGet(e) {
         break;
       case 'getAll':
         result = getAll();
+        break;
+      // 書き込み系
+      case 'saveBlock':
+        result = saveBlock(data);
+        break;
+      case 'deleteBlock':
+        result = deleteBlock(data);
+        break;
+      case 'saveTexture':
+        result = saveTexture(data);
+        break;
+      case 'deleteTexture':
+        result = deleteTexture(data);
         break;
       default:
         return createErrorResponse('不正なアクション: ' + action);

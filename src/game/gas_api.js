@@ -1,100 +1,103 @@
 /**
- * GAS API 通信ライブラリ
- * ゲーム本体、管理ツールで利用
+ * GAS API クライアントライブラリ
+ * スプレッドシートのデータを読み書きするためのAPI通信を行う
  */
 
-const GasAPI = (function() {
-  const API_URL = 'https://script.google.com/macros/s/AKfycbzG0rjt6etezPMgtHZRhHsGSX2km1T4aoX7FYKPSpK8pMcuaAE2W__yY1HMkI0MkidH/exec';
+class GasApi {
+  /**
+   * コンストラクタ
+   * @param {string} deployUrl - GASデプロイURL
+   */
+  constructor(deployUrl) {
+    this.deployUrl = deployUrl;
+  }
 
   /**
    * GETリクエストを送信
    * @param {string} action - アクション名
-   * @returns {Promise<any>} レスポンスデータ
+   * @param {Object} data - データ（書き込み系の場合）
+   * @returns {Promise<Object>} レスポンスデータ
    */
-  async function get(action) {
-    const response = await fetch(`${API_URL}?action=${action}`);
+  async get(action, data = null) {
+    let url = `${this.deployUrl}?action=${action}`;
+    if (data) {
+      url += `&data=${encodeURIComponent(JSON.stringify(data))}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+    });
+
     const result = await response.json();
     if (!result.success) {
-      throw new Error(result.error || 'APIエラー');
+      throw new Error(result.error || '不明なエラー');
     }
     return result.data;
   }
 
   /**
-   * 書き込み用GETリクエストを送信（CORS対策）
-   * @param {string} action - アクション名
-   * @param {Object} data - 送信データ
-   * @returns {Promise<any>} レスポンスデータ
+   * ブロック一覧を取得
+   * @returns {Promise<Array>} ブロック配列
    */
-  async function send(action, data) {
-    const encodedData = encodeURIComponent(JSON.stringify(data));
-    const response = await fetch(`${API_URL}?action=${action}&data=${encodedData}`);
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.error || 'APIエラー');
-    }
-    return result.data;
+  async getBlocks() {
+    return this.get('getBlocks');
   }
 
-  return {
-    /**
-     * 全データを取得（ブロック一覧とテクスチャ一覧）
-     * @returns {Promise<{blocks: Array, textures: Array}>}
-     */
-    getAll: function() {
-      return get('getAll');
-    },
+  /**
+   * テクスチャ一覧を取得
+   * @returns {Promise<Array>} テクスチャ配列
+   */
+  async getTextures() {
+    return this.get('getTextures');
+  }
 
-    /**
-     * ブロック一覧を取得
-     * @returns {Promise<Array>}
-     */
-    getBlocks: function() {
-      return get('getBlocks');
-    },
+  /**
+   * 全データを取得
+   * @returns {Promise<Object>} ブロックとテクスチャのデータ
+   */
+  async getAll() {
+    return this.get('getAll');
+  }
 
-    /**
-     * テクスチャ一覧を取得
-     * @returns {Promise<Array>}
-     */
-    getTextures: function() {
-      return get('getTextures');
-    },
+  /**
+   * ブロックを保存
+   * @param {Object} blockData - ブロックデータ
+   * @returns {Promise<Object>} 結果
+   */
+  async saveBlock(blockData) {
+    return this.get('saveBlock', blockData);
+  }
 
-    /**
-     * ブロックを保存（追加/更新）
-     * @param {Object} blockData - ブロックデータ
-     * @returns {Promise<{block_id: number}>}
-     */
-    saveBlock: function(blockData) {
-      return send('saveBlock', blockData);
-    },
+  /**
+   * ブロックを削除
+   * @param {number} blockId - ブロックID
+   * @returns {Promise<Object>} 結果
+   */
+  async deleteBlock(blockId) {
+    return this.get('deleteBlock', { block_id: blockId });
+  }
 
-    /**
-     * ブロックを削除
-     * @param {number} blockId - ブロックID
-     * @returns {Promise<{deleted: boolean}>}
-     */
-    deleteBlock: function(blockId) {
-      return send('deleteBlock', { block_id: blockId });
-    },
+  /**
+   * テクスチャを保存
+   * @param {Object} textureData - テクスチャデータ
+   * @returns {Promise<Object>} 結果
+   */
+  async saveTexture(textureData) {
+    return this.get('saveTexture', textureData);
+  }
 
-    /**
-     * テクスチャを保存（追加/更新）
-     * @param {Object} textureData - テクスチャデータ
-     * @returns {Promise<{texture_id: number}>}
-     */
-    saveTexture: function(textureData) {
-      return send('saveTexture', textureData);
-    },
+  /**
+   * テクスチャを削除
+   * @param {number} textureId - テクスチャID
+   * @returns {Promise<Object>} 結果
+   */
+  async deleteTexture(textureId) {
+    return this.get('deleteTexture', { texture_id: textureId });
+  }
+}
 
-    /**
-     * テクスチャを削除
-     * @param {number} textureId - テクスチャID
-     * @returns {Promise<{deleted: boolean}>}
-     */
-    deleteTexture: function(textureId) {
-      return send('deleteTexture', { texture_id: textureId });
-    }
-  };
-})();
+// グローバルにエクスポート
+if (typeof window !== 'undefined') {
+  window.GasApi = GasApi;
+}
