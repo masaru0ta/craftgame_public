@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>標準ブロックエディタ</title>
+  <link rel="stylesheet" href="spec_1-3_standard_block_editor_style.css">
+</head>
+<body>
+  <div id="editor-container">
+    <!-- 左カラム: コントロールパネル -->
+    <div id="left-panel">
+      <h2>ブロック編集</h2>
+
+      <div class="form-group">
+        <label for="block-select">block_id:</label>
+        <select id="block-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label>block_str_id:</label>
+        <span id="block-str-id" class="info-text">-</span>
+      </div>
+
+      <div class="form-group">
+        <label>name:</label>
+        <span id="block-name" class="info-text">-</span>
+      </div>
+
+      <button id="save-button">保存</button>
+    </div>
+
+    <!-- 右カラム: 3Dプレビュー -->
+    <div id="right-panel">
+      <div id="preview-wrapper">
+        <div id="preview-container"></div>
+
+        <!-- テクスチャスロット -->
+        <div id="texture-slots">
+          <div class="texture-slot" data-face="default">
+            <img src="" alt="">
+            <span>default</span>
+          </div>
+          <div class="texture-slot" data-face="top">
+            <img src="" alt="">
+            <span>top</span>
+          </div>
+          <div class="texture-slot" data-face="bottom">
+            <img src="" alt="">
+            <span>bottom</span>
+          </div>
+          <div class="texture-slot" data-face="front">
+            <img src="" alt="">
+            <span>front</span>
+          </div>
+          <div class="texture-slot" data-face="left">
+            <img src="" alt="">
+            <span>left</span>
+          </div>
+          <div class="texture-slot" data-face="right">
+            <img src="" alt="">
+            <span>right</span>
+          </div>
+          <div class="texture-slot" data-face="back">
+            <img src="" alt="">
+            <span>back</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ選択モーダル -->
+  <div id="texture-modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>テクスチャを選択</h3>
+        <button class="close-modal">&times;</button>
+      </div>
+      <div id="texture-grid"></div>
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- ライブラリ -->
+  <script src="../game/gas_api.js?v=3"></script>
+  <script src="../game/standard_block_mesh_builder.js?v=3"></script>
+  <script src="../game/standard_block_editor.js?v=3"></script>
+
+  <!-- メインスクリプト -->
+  <script src="spec_1-3_standard_block_editor_main.js?v=3"></script>
+</body>
+</html>

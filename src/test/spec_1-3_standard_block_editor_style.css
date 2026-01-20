@@ -1,0 +1,246 @@
+/**
+ * 標準ブロックエディタ スタイルシート
+ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #1a1a1a;
+  color: #ffffff;
+  min-height: 100vh;
+}
+
+/* メインコンテナ */
+#editor-container {
+  display: flex;
+  height: 100vh;
+  padding: 20px;
+  gap: 20px;
+}
+
+/* 左カラム */
+#left-panel {
+  width: 250px;
+  padding: 20px;
+  background-color: #2a2a2a;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+#left-panel h2 {
+  font-size: 1.2em;
+  margin-bottom: 10px;
+  color: #ffffff;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-group label {
+  font-size: 0.9em;
+  color: #aaaaaa;
+}
+
+.form-group select {
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #444444;
+  background-color: #333333;
+  color: #ffffff;
+  font-size: 1em;
+}
+
+.info-text {
+  font-size: 1em;
+  color: #ffffff;
+  padding: 5px 0;
+}
+
+#save-button {
+  margin-top: auto;
+  padding: 12px 20px;
+  background-color: #4a9eff;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  font-size: 1em;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+#save-button:hover {
+  background-color: #3a8eef;
+}
+
+/* 右カラム */
+#right-panel {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* プレビューラッパー（アスペクト比1:1を維持） */
+#preview-wrapper {
+  aspect-ratio: 1 / 1;
+  max-width: 100%;
+  max-height: 100%;
+  width: min(calc(100vh - 40px), calc(100vw - 330px));
+  background-color: #2a2a2a;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 3Dプレビューコンテナ */
+#preview-container {
+  flex: 1;
+  position: relative;
+}
+
+#preview-container canvas {
+  display: block;
+}
+
+/* テクスチャスロット */
+#texture-slots {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  padding: 15px;
+  background-color: #222222;
+}
+
+.texture-slot {
+  width: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.texture-slot img {
+  width: 48px;
+  height: 48px;
+  border: 2px solid #444444;
+  border-radius: 4px;
+  image-rendering: pixelated;
+  background-color: #000000;
+}
+
+.texture-slot span {
+  font-size: 0.7em;
+  color: #888888;
+}
+
+.texture-slot:hover img {
+  border-color: #4a9eff;
+}
+
+/* テクスチャ選択モーダル */
+#texture-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: #2a2a2a;
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-header h3 {
+  color: #ffffff;
+}
+
+.close-modal {
+  background: none;
+  border: none;
+  color: #888888;
+  font-size: 1.5em;
+  cursor: pointer;
+}
+
+.close-modal:hover {
+  color: #ffffff;
+}
+
+/* テクスチャグリッド */
+#texture-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 10px;
+}
+
+.texture-tile {
+  width: 80px;
+  height: 80px;
+  border: 2px solid #444444;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #333333;
+  transition: border-color 0.2s;
+}
+
+.texture-tile:hover {
+  border-color: #4a9eff;
+}
+
+.texture-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.texture-tile.texture-none {
+  background-color: #1a1a1a;
+}
+
+.texture-tile.texture-none span,
+.texture-tile.texture-add span {
+  font-size: 0.8em;
+  color: #888888;
+  text-align: center;
+}
+
+.texture-tile.texture-add {
+  background-color: #3a3a3a;
+}
+
+.texture-tile.texture-add:hover {
+  background-color: #4a4a4a;
+}

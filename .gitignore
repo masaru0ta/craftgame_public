@@ -16,3 +16,4 @@ venv/
 
 # clasp
 .clasp.json
+.playwright-mcp/
