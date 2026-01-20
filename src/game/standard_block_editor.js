@@ -176,7 +176,7 @@ const StandardBlockEditor = (function() {
       const deltaY = e.clientY - previousMousePosition.y;
 
       // 水平回転：マウスを右にドラッグするとブロックが右に回転
-      rotationY += deltaX * 0.01;
+      rotationY -= deltaX * 0.01;
 
       // 垂直回転：制限付き
       rotationX += deltaY * 0.01;
