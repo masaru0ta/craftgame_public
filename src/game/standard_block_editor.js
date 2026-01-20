@@ -121,10 +121,11 @@ const StandardBlockEditor = (function() {
    */
   function createDirectionLabels() {
     // 床面の高さに合わせる
+    // Three.jsの座標系: +Z=front, -Z=back, +X=right, -X=left
     const labelY = -0.55;
     const labels = [
-      { text: 'FRONT', position: [0, labelY, -1] },
-      { text: 'BACK', position: [0, labelY, 1] },
+      { text: 'FRONT', position: [0, labelY, 1] },
+      { text: 'BACK', position: [0, labelY, -1] },
       { text: 'LEFT', position: [-1, labelY, 0] },
       { text: 'RIGHT', position: [1, labelY, 0] }
     ];
