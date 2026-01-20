@@ -1,6 +1,6 @@
 # craftgame5
-
-
+WEBで動作するボクセルゲームを開発する。
+データ管理にGoogle App Script、WEBページのデプロイに Github を利用する。
 
 ## YOU MUST: 
 - 回答は日本語で行うこと
@@ -40,7 +40,7 @@
 
 - **プロジェクト名**: craftgame5
 - **スクリプトURL**: https://script.google.com/d/18DCLAaZi8XMOQTYgLQ7d-lAFs5HDpS4MmqrYv9qjx5yl4XCFuSz_HvnK/edit
-- **デプロイURL**:
+- **デプロイURL**: https://script.google.com/macros/s/AKfycbzG0rjt6etezPMgtHZRhHsGSX2km1T4aoX7FYKPSpK8pMcuaAE2W__yY1HMkI0MkidH/exec
 
 GASコードは `src/gas/script.js` で管理。
 claspを使用してデプロイする。
