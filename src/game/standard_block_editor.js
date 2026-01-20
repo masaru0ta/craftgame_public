@@ -101,8 +101,8 @@ const StandardBlockEditor = (function() {
    * 床面のグリッド（白い枠線）を作成
    */
   function createFloorGrid() {
-    // 床面の高さ（ブロックの底面より少し下）
-    const floorY = -0.55;
+    // 床面の高さ（ブロックの底面と同じ）
+    const floorY = -0.5;
     const geometry = new THREE.BufferGeometry();
     const vertices = new Float32Array([
       -0.5, floorY, -0.5,  0.5, floorY, -0.5,
@@ -122,7 +122,7 @@ const StandardBlockEditor = (function() {
   function createDirectionLabels() {
     // 床面の高さに合わせる
     // Three.jsの座標系: +Z=front, -Z=back, +X=right, -X=left
-    const labelY = -0.55;
+    const labelY = -0.5;
     const labels = [
       { text: 'FRONT', position: [0, labelY, 1] },
       { text: 'BACK', position: [0, labelY, -1] },
