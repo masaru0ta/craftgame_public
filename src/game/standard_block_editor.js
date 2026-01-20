@@ -236,6 +236,8 @@ const StandardBlockEditor = (function() {
   function onWindowResize() {
     const width = previewContainer.clientWidth;
     const height = previewContainer.clientHeight;
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
     renderer.setSize(width, height);
   }
 
