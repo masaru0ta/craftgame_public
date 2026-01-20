@@ -1,6 +1,6 @@
-# ＜ここにプロジェクト名を書く＞
+# craftgame5
 
-＜ここにプロジェクト概要を書く＞
+
 
 ## YOU MUST: 
 - 回答は日本語で行うこと
@@ -33,13 +33,13 @@
 
 ### GitHub
 
-- **リポジトリURL**: ＜ここに Github の URL を書く＞
+- **リポジトリURL**: https://github.com/masaru0ta/craftgame5
 
 
 ### GAS (Google App Script)
 
-- **プロジェクト名**: ＜ここにプロジェクト名を書く＞
-- **スクリプトURL**: ＜ここにGASプロジェクトのURLを書く＞
+- **プロジェクト名**: craftgame5
+- **スクリプトURL**: https://script.google.com/d/18DCLAaZi8XMOQTYgLQ7d-lAFs5HDpS4MmqrYv9qjx5yl4XCFuSz_HvnK/edit
 - **デプロイURL**:
 
 GASコードは `src/gas/script.js` で管理。
