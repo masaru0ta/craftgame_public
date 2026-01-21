@@ -276,6 +276,13 @@ h2 {
   gap: 20px;
 }
 
+/* マテリアルパネル内の衝突テストボタン（右端に配置） */
+.material-panel .check-btn {
+  margin-left: auto;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
 /* 当たり判定コントロールパネル */
 .collision-control-panel {
   display: flex;

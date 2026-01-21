@@ -124,8 +124,11 @@ function setupEventListeners() {
   // モード切替ボタン
   document.getElementById('mode-toggle-btn').addEventListener('click', onToggleMode);
 
-  // 簡易チェックボタン
+  // 衝突テストボタン（当たり判定モード）
   document.getElementById('check-btn').addEventListener('click', onToggleCheck);
+
+  // 衝突テストボタン（見た目モード）
+  document.getElementById('check-btn-look').addEventListener('click', onToggleCheck);
 }
 
 /**
@@ -319,7 +322,7 @@ function onToggleCheck() {
 }
 
 /**
- * 簡易チェック開始
+ * 衝突テスト開始
  */
 function startCheck() {
   isCheckMode = true;
@@ -330,17 +333,19 @@ function startCheck() {
 
   // ボタンテキストを変更
   document.getElementById('check-btn').textContent = '編集に戻る';
+  document.getElementById('check-btn-look').textContent = '編集に戻る';
 }
 
 /**
- * 簡易チェック停止
+ * 衝突テスト停止
  */
 function stopCheck() {
   isCheckMode = false;
   collisionChecker.stop();
 
   // ボタンテキストを変更
-  document.getElementById('check-btn').textContent = '簡易チェック';
+  document.getElementById('check-btn').textContent = '衝突テスト';
+  document.getElementById('check-btn-look').textContent = '衝突テスト';
 }
 
 /**
