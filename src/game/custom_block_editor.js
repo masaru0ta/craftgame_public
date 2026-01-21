@@ -266,6 +266,151 @@ class CustomBlockEditor {
       });
       this.resizeObserver.observe(this.container);
     }
+
+    // タッチイベント対応
+    this.initTouchEvents();
+  }
+
+  /**
+   * タッチイベントを初期化
+   */
+  initTouchEvents() {
+    const canvas = this.renderer.domElement;
+
+    // タッチ状態管理
+    this.touchState = {
+      startX: 0,
+      startY: 0,
+      lastX: 0,
+      lastY: 0,
+      startTime: 0,
+      isDragging: false,
+      isLongPress: false,
+      longPressTimer: null,
+      initialPinchDistance: 0
+    };
+
+    // タッチ開始
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        this.touchState.startX = touch.clientX;
+        this.touchState.startY = touch.clientY;
+        this.touchState.lastX = touch.clientX;
+        this.touchState.lastY = touch.clientY;
+        this.touchState.startTime = Date.now();
+        this.touchState.isDragging = false;
+        this.touchState.isLongPress = false;
+
+        // ハイライト更新
+        this.updateMousePositionFromTouch(touch);
+        this.updateHighlight();
+
+        // ロングプレス検出（500ms）
+        this.touchState.longPressTimer = setTimeout(() => {
+          if (!this.touchState.isDragging) {
+            this.touchState.isLongPress = true;
+            // 振動フィードバック（対応デバイスのみ）
+            if (navigator.vibrate) {
+              navigator.vibrate(50);
+            }
+            // ロングプレスで配置
+            this.placeVoxel();
+          }
+        }, 500);
+      } else if (e.touches.length === 2) {
+        // ピンチ開始
+        clearTimeout(this.touchState.longPressTimer);
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        this.touchState.initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
+      }
+    }, { passive: false });
+
+    // タッチ移動
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const dx = touch.clientX - this.touchState.startX;
+        const dy = touch.clientY - this.touchState.startY;
+
+        // 移動距離が閾値を超えたらドラッグ開始
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+          this.touchState.isDragging = true;
+          clearTimeout(this.touchState.longPressTimer);
+        }
+
+        // ドラッグ中は視点回転
+        if (this.touchState.isDragging) {
+          const deltaX = touch.clientX - this.touchState.lastX;
+          const deltaY = touch.clientY - this.touchState.lastY;
+
+          this.cameraTheta -= deltaX * 0.01;
+          this.cameraPhi += deltaY * 0.01;
+          this.cameraPhi = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.cameraPhi));
+
+          this.updateCameraPosition();
+        }
+
+        this.touchState.lastX = touch.clientX;
+        this.touchState.lastY = touch.clientY;
+
+        // ハイライト更新
+        this.updateMousePositionFromTouch(touch);
+        this.updateHighlight();
+      } else if (e.touches.length === 2) {
+        // ピンチズーム
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (this.touchState.initialPinchDistance > 0) {
+          const scale = this.touchState.initialPinchDistance / distance;
+          this.cameraDistance = Math.max(1.5, Math.min(10, this.cameraDistance * scale));
+          this.updateCameraPosition();
+          this.touchState.initialPinchDistance = distance;
+        }
+      }
+    }, { passive: false });
+
+    // タッチ終了
+    canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      clearTimeout(this.touchState.longPressTimer);
+
+      // タップ（短いタッチでドラッグなし）で削除
+      if (!this.touchState.isDragging && !this.touchState.isLongPress) {
+        const touchDuration = Date.now() - this.touchState.startTime;
+        if (touchDuration < 300) {
+          this.deleteVoxel();
+        }
+      }
+
+      this.touchState.isDragging = false;
+      this.touchState.isLongPress = false;
+      this.touchState.initialPinchDistance = 0;
+    }, { passive: false });
+
+    // タッチキャンセル
+    canvas.addEventListener('touchcancel', (e) => {
+      clearTimeout(this.touchState.longPressTimer);
+      this.touchState.isDragging = false;
+      this.touchState.isLongPress = false;
+      this.touchState.initialPinchDistance = 0;
+    }, { passive: false });
+  }
+
+  /**
+   * タッチ位置からマウス位置を更新
+   */
+  updateMousePositionFromTouch(touch) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
   }
 
   /**
