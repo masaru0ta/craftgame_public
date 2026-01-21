@@ -773,6 +773,28 @@ class CustomBlockEditor {
 
     this.camera.position.set(x, y, z);
     this.camera.lookAt(0, 0, 0);
+
+    // ミニプレビューのカメラも同期
+    this.updateMiniCameraPosition();
+  }
+
+  /**
+   * ミニプレビューのカメラ位置を更新（メインカメラと同期）
+   */
+  updateMiniCameraPosition() {
+    if (!this.miniCamera) return;
+
+    // メインカメラと同じ方向、ただし固定距離
+    const miniDistance = 2.0;
+    const x = miniDistance * Math.sin(this.cameraTheta) * Math.cos(this.cameraPhi);
+    const y = miniDistance * Math.sin(this.cameraPhi);
+    const z = miniDistance * Math.cos(this.cameraTheta) * Math.cos(this.cameraPhi);
+
+    this.miniCamera.position.set(x, y, z);
+    this.miniCamera.lookAt(0, 0, 0);
+
+    // ミニプレビューを再描画
+    this.renderMiniPreview();
   }
 
   /**
