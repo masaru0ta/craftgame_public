@@ -105,6 +105,9 @@ class CustomBlockMeshBuilder {
     // UV座標を設定
     this.setVoxelUV(geometry, x, y, z);
 
+    // 面ごとの明るさを設定（頂点カラー）
+    this.setFaceBrightness(geometry);
+
     // メッシュを作成
     const mesh = new THREE.Mesh(geometry, materials[material]);
 
@@ -117,6 +120,41 @@ class CustomBlockMeshBuilder {
     );
 
     return mesh;
+  }
+
+  /**
+   * 面ごとの明るさを頂点カラーで設定
+   * BoxGeometryの面順序: +X(right), -X(left), +Y(top), -Y(bottom), +Z(front), -Z(back)
+   * @param {THREE.BoxGeometry} geometry - ジオメトリ
+   */
+  setFaceBrightness(geometry) {
+    const THREE = this.THREE;
+
+    // 面ごとの明るさ（0.0〜1.0）
+    // +X, -X: 側面（やや暗い）
+    // +Y: 上面（明るい）
+    // -Y: 底面（暗い）
+    // +Z, -Z: 前後面（中間）
+    const faceBrightness = [
+      0.75, // +X (right)
+      0.75, // -X (left)
+      1.0,  // +Y (top) - 最も明るい
+      0.5,  // -Y (bottom) - 最も暗い
+      0.85, // +Z (front)
+      0.85  // -Z (back)
+    ];
+
+    // 頂点カラー配列を作成（各面4頂点 × 6面 = 24頂点）
+    const colors = [];
+    for (let faceIdx = 0; faceIdx < 6; faceIdx++) {
+      const brightness = faceBrightness[faceIdx];
+      // 各面は4頂点
+      for (let v = 0; v < 4; v++) {
+        colors.push(brightness, brightness, brightness);
+      }
+    }
+
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   }
 
   /**
@@ -190,6 +228,7 @@ class CustomBlockMeshBuilder {
     const THREE = this.THREE;
     const options = {
       side: THREE.FrontSide,
+      vertexColors: true, // 頂点カラーを有効化（面ごとの明るさ用）
     };
 
     if (textureData) {
