@@ -118,18 +118,22 @@ h2 {
   color: #efef7f;
 }
 
-/* プレビューコンテナ（右カラムの横幅いっぱいに表示） */
+/* プレビューコンテナ（右カラムの横幅いっぱいに表示、全体で3:4） */
 .preview-container {
   width: 100%;
+  aspect-ratio: 3 / 4;
   background-color: #1a1a2e;
   border: 2px solid #333;
   border-radius: 8px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-/* ツールバー（上部1/6） */
+/* ツールバー（上部） */
 .toolbar {
   height: 48px;
+  flex-shrink: 0;
   background-color: #000;
   display: flex;
   justify-content: flex-end;
@@ -171,11 +175,10 @@ h2 {
   font-weight: bold;
 }
 
-/* 3Dプレビュー領域（アスペクト比 3:4） */
+/* 3Dプレビュー領域（残りのスペースを埋める） */
 .preview-3d {
   width: 100%;
-  height: 0;
-  padding-bottom: 133.33%; /* アスペクト比3:4を維持 */
+  flex: 1;
   background-color: #000000;
   position: relative;
 }
@@ -188,9 +191,10 @@ h2 {
   height: 100% !important;
 }
 
-/* テクスチャパネル（下部1/8の黒い帯） */
+/* テクスチャパネル（下部の黒い帯） */
 .texture-panel {
   display: flex;
+  flex-shrink: 0;
   justify-content: space-around;
   align-items: center;
   padding: 10px;
