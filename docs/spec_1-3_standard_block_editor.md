@@ -78,7 +78,21 @@ src/
     standard_block_mesh_builder.js            # 通常ブロック用メッシュ生成
 ```
 
-## 5. テスト項目
+## 5. テスト用CSSセレクタ定義
+
+テストで数値検証が必要な要素のセレクタを定義する。実装はこれらのセレクタを使用すること。
+
+| 要素 | セレクタ | 検証内容 |
+|------|----------|----------|
+| 右カラム | `.right-column` | 全幅の基準 |
+| 3Dプレビュー枠 | `.preview-container` | アスペクト比 3:4 |
+| ツールボタン枠 | `.toolbar` | 高さ 1/8 |
+| 3Dプレビュー領域 | `.preview-3d` | 高さ 6/8 |
+| テクスチャ設定枠 | `.texture-panel` | 高さ 1/8 |
+| 背景色表示 | `.bg-color-indicator` | 背景色の確認 |
+| テクスチャスロット | `.texture-slot` | 7つ存在、ラベル順序 |
+
+## 6. テスト項目
 
 ### 画面構成
 - [ ] Github にパブリッシュしたエディタ画面が正常に表示される
@@ -88,20 +102,20 @@ src/
 - [ ] 右カラムに3Dプレビューが表示される
 
 ### 3Dプレビュー レイアウト（数値検証必須）
-- [ ] 3Dプレビュー枠が右カラムの横幅いっぱいに表示される
-  - 検証: 3Dプレビュー枠の幅 === 右カラムのコンテンツ幅（誤差1px以内）
-- [ ] 3Dプレビュー枠全体（ツール枠+プレビュー+テクスチャ枠）のアスペクト比が 横:縦 = 3:4 である
-  - 検証: 3Dプレビュー枠の幅 / 高さ === 0.75（誤差1%以内）
-- [ ] ツールボタン枠（上部黒い帯）の高さが3Dプレビュー枠の1/8である
-  - 検証: ツールボタン枠の高さ / 3Dプレビュー枠の高さ === 0.125（誤差1%以内）
-- [ ] テクスチャ設定枠（下部黒い帯）の高さが3Dプレビュー枠の1/8である
-  - 検証: テクスチャ設定枠の高さ / 3Dプレビュー枠の高さ === 0.125（誤差1%以内）
-- [ ] 3Dプレビュー領域（中央）の高さが3Dプレビュー枠の6/8である
-  - 検証: 3Dプレビュー領域の高さ / 3Dプレビュー枠の高さ === 0.75（誤差1%以内）
-- [ ] ツールボタン枠の背景色が黒である
-- [ ] テクスチャ設定枠の背景色が黒である
-- [ ] ツールボタン枠右端に背景色切り換えボタン（BG）が表示される
-- [ ] BGボタンの内部が現在の背景色で塗りつぶされている
+- [ ] `.preview-container`が`.right-column`の横幅いっぱいに表示される
+  - 検証: `.preview-container`の幅 === `.right-column`のコンテンツ幅（誤差1px以内）
+- [ ] `.preview-container`のアスペクト比が 横:縦 = 3:4 である
+  - 検証: 幅 / 高さ === 0.75（誤差1%以内）
+- [ ] `.toolbar`の高さが`.preview-container`の1/8である
+  - 検証: `.toolbar`の高さ / `.preview-container`の高さ === 0.125（誤差1%以内）
+- [ ] `.texture-panel`の高さが`.preview-container`の1/8である
+  - 検証: `.texture-panel`の高さ / `.preview-container`の高さ === 0.125（誤差1%以内）
+- [ ] `.preview-3d`の高さが`.preview-container`の6/8である
+  - 検証: `.preview-3d`の高さ / `.preview-container`の高さ === 0.75（誤差1%以内）
+- [ ] `.toolbar`の背景色が黒（#000000）である
+- [ ] `.texture-panel`の背景色が黒（#000000）である
+- [ ] `#bg-btn`が`.toolbar`内の右端に表示される
+- [ ] `.bg-color-indicator`が現在の背景色で塗りつぶされている
 - [ ] 床面にブロックと同じ大きさの白い枠線が表示される
 - [ ] 床面の高さにFRONT, RIGHT, LEFT, BACKのテキストが表示されている
 - [ ] 立方体が表示される
@@ -139,23 +153,33 @@ src/
 - [ ] 保存ボタンでGAS APIにデータを送信できる
 - [ ] 保存後にブロック一覧が更新される
 
-## 6. テスト検証方法
+## 7. テスト検証コード例
 
-レイアウトの数値検証は以下の手順で行う：
+```javascript
+// レイアウト数値検証
+function verifyLayout() {
+  const container = document.querySelector('.preview-container');
+  const toolbar = document.querySelector('.toolbar');
+  const preview3d = document.querySelector('.preview-3d');
+  const texturePanel = document.querySelector('.texture-panel');
+  const rightColumn = document.querySelector('.right-column');
 
-1. **要素の特定**: 実装のHTML構造を確認し、以下の要素を特定する
-   - 3Dプレビュー枠（ツール枠+プレビュー領域+テクスチャ設定枠を含む親要素）
-   - ツールボタン枠（上部の黒い帯）
-   - 3Dプレビュー領域（中央のThree.js描画領域）
-   - テクスチャ設定枠（下部の黒い帯）
-   - 右カラム
+  const containerRect = container.getBoundingClientRect();
+  const rightColumnStyle = window.getComputedStyle(rightColumn);
+  const rightColumnPadding = parseFloat(rightColumnStyle.paddingLeft) + parseFloat(rightColumnStyle.paddingRight);
+  const rightColumnContentWidth = rightColumn.getBoundingClientRect().width - rightColumnPadding;
 
-2. **寸法の取得**: `getBoundingClientRect()` で各要素の幅・高さを取得する
-
-3. **比率の計算と検証**:
-   - アスペクト比: `幅 / 高さ` が 0.75 に近いか（誤差1%以内）
-   - 各領域の比率: `領域の高さ / 3Dプレビュー枠の高さ` が期待値に近いか（誤差1%以内）
-
-4. **判定基準**:
-   - 誤差1%以内: `Math.abs(実測値 - 期待値) < 0.01`
-   - 誤差1px以内: `Math.abs(実測値 - 期待値) < 1`
+  return {
+    // 全幅検証（誤差1px以内）
+    isFullWidth: Math.abs(containerRect.width - rightColumnContentWidth) < 1,
+    // アスペクト比検証（誤差1%以内）
+    isAspectRatioCorrect: Math.abs(containerRect.width / containerRect.height - 0.75) < 0.01,
+    // ツールバー1/8検証（誤差1%以内）
+    isToolbarCorrect: Math.abs(toolbar.getBoundingClientRect().height / containerRect.height - 0.125) < 0.01,
+    // プレビュー6/8検証（誤差1%以内）
+    isPreview3dCorrect: Math.abs(preview3d.getBoundingClientRect().height / containerRect.height - 0.75) < 0.01,
+    // テクスチャパネル1/8検証（誤差1%以内）
+    isTexturePanelCorrect: Math.abs(texturePanel.getBoundingClientRect().height / containerRect.height - 0.125) < 0.01
+  };
+}
+```
