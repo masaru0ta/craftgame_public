@@ -29,9 +29,9 @@ src/test/ 及び src/game/ のディレクトリは公開用の Github リポジ
 ### 3.2 3Dプレビュー変更点
 
 - ツールボタン枠の左端に、見た目・当たり判定の切り換えボタンを設置
-- 切り換えボタン内にはミニチュア3Dプレビューで形状を表示
-  - 見た目編集モードの時は当たり判定の形状（ワイヤーフレーム）を表示
-  - 当たり判定編集モードの時は見た目の形状（メッシュ）を表示
+- 見た目編集モードの時は当たり判定の形状を表示しない
+- 当たり判定編集モードの時は見た目の形状を表示せず、当たり判定の形状を白いボクセルで表示
+- 切り換えボタン内にはミニチュア3Dプレビューで今編集していない方の形状を表示
 - 当たり判定編集モード時:
   - ブラシサイズ切り替えボタンが [2x] 固定になり、他はグレーアウト
   - 床面のグリッド線は 4x4
@@ -98,27 +98,70 @@ src/
 ### 5.7 カスタムブロック以外
 - shape_type="normal" のブロックを選択した場合は編集不可とし、警告メッセージを表示
 
-## 6. 実装詳細: 当たり判定ワイヤーフレーム
+## 6. 実装詳細: 当たり判定ボクセル表示
 
 ### 6.1 概要
 
-当たり判定ボクセルは、見た目のメッシュと区別しやすいようワイヤーフレームで表示する。
+当たり判定ボクセルは、白いボクセル（MeshStandardMaterial）で表示する。
 
 ### 6.2 表示仕様
 
-- 色: 赤色（#FF0000）
-- 線の太さ: 2px相当
-- サイズ: 見た目ボクセルの2x2x2に相当（ブロック全体を1とすると0.5）
-- わずかに膨張: 見た目メッシュとの重なりを避けるため、1%程度大きく表示
+- 色: 白色（#FFFFFF）
+- サイズ: ブロック全体を1として各当たり判定は1/4
+- 当たり判定モード時は見た目メッシュを非表示にし、当たり判定ボクセルのみ表示
 
 ### 6.3 Three.js実装例
 
 ```javascript
 const collisionSize = 1 / 4; // ブロック全体を1として各当たり判定は1/4
 const geometry = new THREE.BoxGeometry(collisionSize, collisionSize, collisionSize);
-const edges = new THREE.EdgesGeometry(geometry);
-const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
-const wireframe = new THREE.LineSegments(edges, material);
+const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+const mesh = new THREE.Mesh(geometry, material);
+```
+
+## 9. 実装上の注意点
+
+### 9.1 座標系の違いに注意
+
+見た目編集モードと当たり判定編集モードでは座標系が異なる：
+
+| モード | グリッドサイズ | ボクセルサイズ |
+|--------|---------------|---------------|
+| 見た目編集 | 8x8x8 | 1/8 |
+| 当たり判定編集 | 4x4x4 | 1/4 |
+
+### 9.2 highlightedVoxel/highlightedFace の座標系
+
+`showVoxelHighlight()` および `showFloorHighlight()` では、**モードに応じた座標系**で `highlightedVoxel` および `highlightedFace` を設定する。
+
+- 見た目モード: 8x8x8 座標系（0-7）
+- 当たり判定モード: 4x4x4 座標系（0-3）
+
+### 9.3 配置・削除処理での座標変換は不要
+
+**重要**: `placeCollisionVoxel()` および `deleteCollisionVoxel()` では、`highlightedVoxel` と `highlightedFace` が**既に4x4座標系で設定されている**ため、座標変換（`/2` など）を行ってはならない。
+
+```javascript
+// 正しい実装
+deleteCollisionVoxel() {
+  const { x, y, z } = this.highlightedVoxel; // 既に4x4座標系
+  VoxelCollision.set(this.collisionData, x, y, z, 0);
+}
+
+// 誤った実装（座標がずれる）
+deleteCollisionVoxel() {
+  const collX = Math.floor(this.highlightedVoxel.x / 2); // 不要な変換
+  VoxelCollision.set(this.collisionData, collX, ...);
+}
+```
+
+### 9.4 レイキャスト対象の切り替え
+
+`updateHighlight()` では、モードに応じてレイキャスト対象を切り替える：
+
+```javascript
+const targetMesh = this.editMode === 'collision' ? this.collisionMesh : this.blockMesh;
+const intersects = this.raycaster.intersectObjects(targetMesh.children, false);
 ```
 
 ## 7. テスト用CSSセレクタ定義
@@ -142,12 +185,13 @@ const wireframe = new THREE.LineSegments(edges, material);
 ### モード切替ボタン
 - [ ] ツールボタン枠左端にモード切替ボタンが表示される
 - [ ] モード切替ボタンクリックで見た目編集モードと当たり判定編集モードが切り替わる
-- [ ] 見た目モード時はボタンに当たり判定の形状（ワイヤーフレーム）が表示される
+- [ ] 見た目モード時はボタンに当たり判定の形状（白いボクセル）が表示される
 - [ ] 当たり判定モード時はボタンに見た目の形状（メッシュ）が表示される
 
 ### 当たり判定モード表示
 - [ ] 当たり判定編集モードでは床面グリッドが4x4で表示される
-- [ ] 当たり判定ワイヤーフレーム（4x4x4）が赤色で表示される
+- [ ] 当たり判定ボクセル（4x4x4）が白色で表示される
+- [ ] 当たり判定モード時は見た目メッシュが非表示になる
 - [ ] 当たり判定モード時は [2x] 以外のブラシサイズボタンがグレーアウトされる
 - [ ] コントロール枠に「簡易チェック」ボタンが表示される
 
@@ -155,7 +199,7 @@ const wireframe = new THREE.LineSegments(edges, material);
 - [ ] ハイライトサイズは見た目の2x2x2ボクセルに相当（当たり判定1ボクセル分）
 - [ ] 右クリックで当たり判定ボクセルを配置できる
 - [ ] 左クリックで当たり判定ボクセルを削除できる
-- [ ] 配置・削除が即座にワイヤーフレームに反映される
+- [ ] 配置・削除が即座に白いボクセル表示に反映される
 - [ ] 4x4x4の範囲外には配置できない
 
 ### 簡易チェックモード

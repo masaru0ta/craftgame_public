@@ -597,14 +597,12 @@ class CustomBlockEditor {
   deleteCollisionVoxel() {
     if (!this.highlightedVoxel) return;
 
-    // 見た目座標から当たり判定座標に変換
-    const collX = Math.floor(this.highlightedVoxel.x / 2);
-    const collY = Math.floor(this.highlightedVoxel.y / 2);
-    const collZ = Math.floor(this.highlightedVoxel.z / 2);
+    // showVoxelHighlight()で既に4x4座標系で設定されている
+    const { x, y, z } = this.highlightedVoxel;
 
-    if (VoxelCollision.isValidPosition(collX, collY, collZ) &&
-        VoxelCollision.get(this.collisionData, collX, collY, collZ) === 1) {
-      VoxelCollision.set(this.collisionData, collX, collY, collZ, 0);
+    if (VoxelCollision.isValidPosition(x, y, z) &&
+        VoxelCollision.get(this.collisionData, x, y, z) === 1) {
+      VoxelCollision.set(this.collisionData, x, y, z, 0);
       this.rebuildCollisionMesh();
       this.updateHighlight();
       if (this.onCollisionChange) {
