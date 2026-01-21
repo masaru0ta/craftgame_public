@@ -191,10 +191,10 @@ h2 {
   height: 100% !important;
 }
 
-/* テクスチャパネル（下部の黒い帯） */
+/* テクスチャパネル（下部1/8の黒い帯） */
 .texture-panel {
   display: flex;
-  flex-shrink: 0;
+  flex: 0 0 12.5%; /* コンテナの1/8 */
   justify-content: space-around;
   align-items: center;
   padding: 10px;
