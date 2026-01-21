@@ -94,22 +94,53 @@ class CollisionChecker {
   }
 
   /**
+   * 重力の反対方向にスポーン位置を計算
+   * @returns {THREE.Vector3} スポーン位置
+   */
+  getSpawnPosition() {
+    const THREE = this.THREE;
+
+    // 重力の反対方向（カメラの上方向）
+    const upDirection = new THREE.Vector3(0, 1, 0);
+    if (this.camera) {
+      upDirection.applyQuaternion(this.camera.quaternion);
+    }
+
+    // ブロックの中心(0,0,0)から上方向に0.8〜1.3の距離
+    const distance = 0.8 + Math.random() * 0.5;
+    const spawnPos = upDirection.clone().multiplyScalar(distance);
+
+    // 上方向に垂直な面でランダムなオフセットを追加
+    const right = new THREE.Vector3(1, 0, 0);
+    if (this.camera) {
+      right.applyQuaternion(this.camera.quaternion);
+    }
+    const forward = new THREE.Vector3(0, 0, -1);
+    if (this.camera) {
+      forward.applyQuaternion(this.camera.quaternion);
+    }
+
+    spawnPos.add(right.multiplyScalar((Math.random() - 0.5) * 0.8));
+    spawnPos.add(forward.multiplyScalar((Math.random() - 0.5) * 0.8));
+
+    return spawnPos;
+  }
+
+  /**
    * 新しいボールを生成
    */
   spawnBall() {
     const THREE = this.THREE;
 
-    // ランダムな位置（ブロック範囲内の上空）
-    const x = (Math.random() - 0.5) * 0.8; // -0.4 〜 0.4
-    const y = 0.8 + Math.random() * 0.5; // 0.8 〜 1.3
-    const z = (Math.random() - 0.5) * 0.8;
+    // 重力の反対方向にスポーン
+    const spawnPos = this.getSpawnPosition();
 
     // ボールデータ
     const ball = {
-      position: new THREE.Vector3(x, y, z),
+      position: spawnPos,
       velocity: new THREE.Vector3(
         (Math.random() - 0.5) * 0.2,
-        0,
+        (Math.random() - 0.5) * 0.2,
         (Math.random() - 0.5) * 0.2
       )
     };
@@ -162,6 +193,9 @@ class CollisionChecker {
       gravityDirection.applyQuaternion(this.camera.quaternion);
     }
 
+    // ボール同士の衝突判定と反射
+    this.checkBallCollisions();
+
     for (let i = 0; i < this.balls.length; i++) {
       const ball = this.balls[i];
       const mesh = this.ballMeshes[i];
@@ -190,9 +224,51 @@ class CollisionChecker {
       // メッシュ位置を更新
       mesh.position.copy(ball.position);
 
-      // 画面外に落ちたら再生成
-      if (ball.position.y < this.MIN_Y) {
+      // ブロック範囲外に落ちたら再生成
+      if (ball.position.length() > 2.0) {
         this.respawnBall(i);
+      }
+    }
+  }
+
+  /**
+   * ボール同士の衝突判定と反射
+   */
+  checkBallCollisions() {
+    const THREE = this.THREE;
+    const minDist = this.BALL_RADIUS * 2;
+
+    for (let i = 0; i < this.balls.length; i++) {
+      for (let j = i + 1; j < this.balls.length; j++) {
+        const ballA = this.balls[i];
+        const ballB = this.balls[j];
+
+        // 2つのボール間の距離
+        const diff = ballA.position.clone().sub(ballB.position);
+        const dist = diff.length();
+
+        if (dist < minDist && dist > 0) {
+          // 衝突している
+          const normal = diff.normalize();
+
+          // 相対速度
+          const relVel = ballA.velocity.clone().sub(ballB.velocity);
+          const velAlongNormal = relVel.dot(normal);
+
+          // 離れていく方向なら処理しない
+          if (velAlongNormal > 0) continue;
+
+          // 反射（両方のボールに適用）
+          const impulse = normal.clone().multiplyScalar(velAlongNormal * this.BOUNCE_FACTOR);
+          ballA.velocity.sub(impulse);
+          ballB.velocity.add(impulse);
+
+          // めり込み解消
+          const overlap = minDist - dist;
+          const separation = normal.clone().multiplyScalar(overlap / 2);
+          ballA.position.add(separation);
+          ballB.position.sub(separation);
+        }
       }
     }
   }
@@ -283,17 +359,14 @@ class CollisionChecker {
     const ball = this.balls[index];
     const mesh = this.ballMeshes[index];
 
-    // 新しい位置（上空）
-    ball.position.set(
-      (Math.random() - 0.5) * 0.8,
-      0.8 + Math.random() * 0.5,
-      (Math.random() - 0.5) * 0.8
-    );
+    // 重力の反対方向にスポーン
+    const spawnPos = this.getSpawnPosition();
+    ball.position.copy(spawnPos);
 
     // 速度をリセット
     ball.velocity.set(
       (Math.random() - 0.5) * 0.2,
-      0,
+      (Math.random() - 0.5) * 0.2,
       (Math.random() - 0.5) * 0.2
     );
 
