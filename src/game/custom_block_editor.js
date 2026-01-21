@@ -875,13 +875,22 @@ class CustomBlockEditor {
     const gridSize = 4;
     const voxelSize = 1 / gridSize; // 0.25
 
+    // マテリアルを共有（頂点カラー有効）
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      vertexColors: true
+    });
+
     for (let y = 0; y < gridSize; y++) {
       for (let z = 0; z < gridSize; z++) {
         for (let x = 0; x < gridSize; x++) {
           if (VoxelCollision.get(this.collisionData, x, y, z) === 1) {
             // 白いボクセルを作成
             const geometry = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
-            const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+
+            // 面ごとの明るさを設定
+            this.setCollisionFaceBrightness(geometry);
+
             const mesh = new THREE.Mesh(geometry, material);
 
             // 位置を設定
@@ -897,6 +906,34 @@ class CustomBlockEditor {
         }
       }
     }
+  }
+
+  /**
+   * 当たり判定ボクセルの面ごとの明るさを設定
+   * @param {THREE.BoxGeometry} geometry - ジオメトリ
+   */
+  setCollisionFaceBrightness(geometry) {
+    const THREE = this.THREE;
+
+    // 面ごとの明るさ（0.0〜1.0）
+    const faceBrightness = [
+      0.75, // +X (right)
+      0.75, // -X (left)
+      1.0,  // +Y (top)
+      0.5,  // -Y (bottom)
+      0.85, // +Z (front)
+      0.85  // -Z (back)
+    ];
+
+    const colors = [];
+    for (let faceIdx = 0; faceIdx < 6; faceIdx++) {
+      const brightness = faceBrightness[faceIdx];
+      for (let v = 0; v < 4; v++) {
+        colors.push(brightness, brightness, brightness);
+      }
+    }
+
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   }
 
   /**
@@ -1143,12 +1180,17 @@ class CustomBlockEditor {
       const gridSize = 4;
       const voxelSize = 1 / gridSize;
 
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        vertexColors: true
+      });
+
       for (let y = 0; y < gridSize; y++) {
         for (let z = 0; z < gridSize; z++) {
           for (let x = 0; x < gridSize; x++) {
             if (VoxelCollision.get(this.collisionData, x, y, z) === 1) {
               const geometry = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
-              const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+              this.setCollisionFaceBrightness(geometry);
               const mesh = new THREE.Mesh(geometry, material);
 
               const offset = -0.5 + voxelSize / 2;

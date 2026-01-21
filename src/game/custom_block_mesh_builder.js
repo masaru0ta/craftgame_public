@@ -222,7 +222,7 @@ class CustomBlockMeshBuilder {
   /**
    * マテリアルを作成
    * @param {string} textureData - Base64エンコードされたテクスチャデータ
-   * @returns {THREE.MeshStandardMaterial} マテリアル
+   * @returns {THREE.MeshBasicMaterial} マテリアル
    */
   createMaterial(textureData) {
     const THREE = this.THREE;
@@ -238,7 +238,8 @@ class CustomBlockMeshBuilder {
       options.color = 0x808080;
     }
 
-    return new THREE.MeshStandardMaterial(options);
+    // MeshBasicMaterialを使用（ライティングの影響を受けず、頂点カラーで明るさを制御）
+    return new THREE.MeshBasicMaterial(options);
   }
 
   /**
