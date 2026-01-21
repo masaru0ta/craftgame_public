@@ -88,20 +88,20 @@ src/
 - [ ] 右カラムに3Dプレビューが表示される
 
 ### 3Dプレビュー レイアウト（数値検証必須）
-- [ ] 3Dプレビュー枠（.preview-container）が右カラムの横幅いっぱいに表示される
-  - 検証: previewContainerWidth === rightColumnContentWidth（padding除く）
+- [ ] 3Dプレビュー枠が右カラムの横幅いっぱいに表示される
+  - 検証: 3Dプレビュー枠の幅 === 右カラムのコンテンツ幅（誤差1px以内）
 - [ ] 3Dプレビュー枠全体（ツール枠+プレビュー+テクスチャ枠）のアスペクト比が 横:縦 = 3:4 である
-  - 検証: containerWidth / containerHeight === 0.75（誤差1%以内）
-- [ ] ツールボタン枠（.toolbar）の高さがコンテナの1/8である
-  - 検証: toolbarHeight / containerHeight === 0.125（誤差1%以内）
-- [ ] テクスチャ設定枠（.texture-panel）の高さがコンテナの1/8である
-  - 検証: texturePanelHeight / containerHeight === 0.125（誤差1%以内）
-- [ ] 3Dプレビュー領域（.preview-3d）の高さがコンテナの6/8である
-  - 検証: preview3dHeight / containerHeight === 0.75（誤差1%以内）
-- [ ] ツールボタン枠の背景色が黒（#000000）である
-- [ ] テクスチャ設定枠の背景色が黒（#000000）である
+  - 検証: 3Dプレビュー枠の幅 / 高さ === 0.75（誤差1%以内）
+- [ ] ツールボタン枠（上部黒い帯）の高さが3Dプレビュー枠の1/8である
+  - 検証: ツールボタン枠の高さ / 3Dプレビュー枠の高さ === 0.125（誤差1%以内）
+- [ ] テクスチャ設定枠（下部黒い帯）の高さが3Dプレビュー枠の1/8である
+  - 検証: テクスチャ設定枠の高さ / 3Dプレビュー枠の高さ === 0.125（誤差1%以内）
+- [ ] 3Dプレビュー領域（中央）の高さが3Dプレビュー枠の6/8である
+  - 検証: 3Dプレビュー領域の高さ / 3Dプレビュー枠の高さ === 0.75（誤差1%以内）
+- [ ] ツールボタン枠の背景色が黒である
+- [ ] テクスチャ設定枠の背景色が黒である
 - [ ] ツールボタン枠右端に背景色切り換えボタン（BG）が表示される
-- [ ] BGボタンの内部（.bg-color-indicator）が現在の背景色で塗りつぶされている
+- [ ] BGボタンの内部が現在の背景色で塗りつぶされている
 - [ ] 床面にブロックと同じ大きさの白い枠線が表示される
 - [ ] 床面の高さにFRONT, RIGHT, LEFT, BACKのテキストが表示されている
 - [ ] 立方体が表示される
@@ -113,7 +113,7 @@ src/
 
 ### 3Dプレビュー 操作
 - [ ] 背景色切り換えボタンクリックで背景色が変化する（黒 → 青 → 緑 → 黒の3色サイクル）
-- [ ] 背景色変更時にBGボタン内部（.bg-color-indicator）の色も更新される
+- [ ] 背景色変更時にBGボタン内部の色も更新される
 - [ ] マウスドラッグで視点を回転できる
 - [ ] 上下の傾きが上側90度、下側90度までに制限される
 - [ ] マウスホイールで拡大縮小できる
@@ -139,48 +139,23 @@ src/
 - [ ] 保存ボタンでGAS APIにデータを送信できる
 - [ ] 保存後にブロック一覧が更新される
 
-## 6. テスト検証コード例
+## 6. テスト検証方法
 
-レイアウトの数値検証に使用するJavaScriptコード：
+レイアウトの数値検証は以下の手順で行う：
 
-```javascript
-// 3Dプレビュー枠のレイアウト検証
-function verifyLayout() {
-  const container = document.querySelector('.preview-container');
-  const toolbar = document.querySelector('.toolbar');
-  const preview3d = document.querySelector('.preview-3d');
-  const texturePanel = document.querySelector('.texture-panel');
-  const rightColumn = document.querySelector('.right-column');
+1. **要素の特定**: 実装のHTML構造を確認し、以下の要素を特定する
+   - 3Dプレビュー枠（ツール枠+プレビュー領域+テクスチャ設定枠を含む親要素）
+   - ツールボタン枠（上部の黒い帯）
+   - 3Dプレビュー領域（中央のThree.js描画領域）
+   - テクスチャ設定枠（下部の黒い帯）
+   - 右カラム
 
-  const containerRect = container.getBoundingClientRect();
-  const toolbarRect = toolbar.getBoundingClientRect();
-  const preview3dRect = preview3d.getBoundingClientRect();
-  const texturePanelRect = texturePanel.getBoundingClientRect();
-  const rightColumnStyle = window.getComputedStyle(rightColumn);
-  const rightColumnPadding = parseFloat(rightColumnStyle.paddingLeft) + parseFloat(rightColumnStyle.paddingRight);
-  const rightColumnContentWidth = rightColumn.getBoundingClientRect().width - rightColumnPadding;
+2. **寸法の取得**: `getBoundingClientRect()` で各要素の幅・高さを取得する
 
-  const results = {
-    // 全幅表示の検証
-    isFullWidth: Math.abs(containerRect.width - rightColumnContentWidth) < 1,
+3. **比率の計算と検証**:
+   - アスペクト比: `幅 / 高さ` が 0.75 に近いか（誤差1%以内）
+   - 各領域の比率: `領域の高さ / 3Dプレビュー枠の高さ` が期待値に近いか（誤差1%以内）
 
-    // アスペクト比 3:4 の検証（誤差1%以内）
-    aspectRatio: containerRect.width / containerRect.height,
-    isAspectRatioCorrect: Math.abs(containerRect.width / containerRect.height - 0.75) < 0.01,
-
-    // ツールバー 1/8 の検証（誤差1%以内）
-    toolbarRatio: toolbarRect.height / containerRect.height,
-    isToolbarCorrect: Math.abs(toolbarRect.height / containerRect.height - 0.125) < 0.01,
-
-    // テクスチャパネル 1/8 の検証（誤差1%以内）
-    texturePanelRatio: texturePanelRect.height / containerRect.height,
-    isTexturePanelCorrect: Math.abs(texturePanelRect.height / containerRect.height - 0.125) < 0.01,
-
-    // 3Dプレビュー 6/8 の検証（誤差1%以内）
-    preview3dRatio: preview3dRect.height / containerRect.height,
-    isPreview3dCorrect: Math.abs(preview3dRect.height / containerRect.height - 0.75) < 0.01
-  };
-
-  return results;
-}
-```
+4. **判定基準**:
+   - 誤差1%以内: `Math.abs(実測値 - 期待値) < 0.01`
+   - 誤差1px以内: `Math.abs(実測値 - 期待値) < 1`
