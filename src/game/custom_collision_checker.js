@@ -10,16 +10,18 @@ class CollisionChecker {
    * @param {Object} options - オプション
    * @param {THREE} options.THREE - Three.jsライブラリ
    * @param {THREE.Scene} options.scene - Three.jsシーン
+   * @param {THREE.Camera} options.camera - Three.jsカメラ（視点に応じた重力用）
    */
   constructor(options) {
     this.THREE = options.THREE;
     this.scene = options.scene;
+    this.camera = options.camera;
     this.collisionData = null;
 
     // ボール設定
     this.BALL_COUNT = 30;
     this.BALL_RADIUS = 0.075; // 直径0.15ブロック相当
-    this.GRAVITY = -2.0;
+    this.GRAVITY_STRENGTH = 2.0; // 重力の強さ
     this.BOUNCE_FACTOR = 0.7; // 反発係数
     this.MIN_Y = -1.5; // この高さより下に落ちたら再生成
 
@@ -152,12 +154,20 @@ class CollisionChecker {
    * @param {number} dt - デルタタイム（秒）
    */
   update(dt) {
+    const THREE = this.THREE;
+
+    // カメラの画面下方向をワールド座標で取得
+    const gravityDirection = new THREE.Vector3(0, -1, 0);
+    if (this.camera) {
+      gravityDirection.applyQuaternion(this.camera.quaternion);
+    }
+
     for (let i = 0; i < this.balls.length; i++) {
       const ball = this.balls[i];
       const mesh = this.ballMeshes[i];
 
-      // 重力適用
-      ball.velocity.y += this.GRAVITY * dt;
+      // 重力適用（カメラの画面下方向）
+      ball.velocity.add(gravityDirection.clone().multiplyScalar(this.GRAVITY_STRENGTH * dt));
 
       // 次の位置を計算
       const nextPos = ball.position.clone().add(ball.velocity.clone().multiplyScalar(dt));

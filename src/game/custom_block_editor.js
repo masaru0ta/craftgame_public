@@ -1218,6 +1218,14 @@ class CustomBlockEditor {
   getScene() {
     return this.scene;
   }
+
+  /**
+   * カメラを取得（簡易チェッカー用）
+   * @returns {THREE.Camera} カメラ
+   */
+  getCamera() {
+    return this.camera;
+  }
 }
 
 // グローバルにエクスポート

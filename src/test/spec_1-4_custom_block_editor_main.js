@@ -62,7 +62,8 @@ async function init() {
   // 簡易チェッカー初期化
   collisionChecker = new CollisionChecker({
     THREE: THREE,
-    scene: editor.getScene()
+    scene: editor.getScene(),
+    camera: editor.getCamera()
   });
 
   // イベントリスナー設定
