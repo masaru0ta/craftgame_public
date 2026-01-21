@@ -283,8 +283,9 @@ class CustomBlockEditor {
   updateHighlight() {
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // ボクセルとの交差判定
-    const voxelMeshes = this.blockMesh.children;
+    // モードに応じてレイキャスト対象を切り替え
+    const targetMesh = this.editMode === 'collision' ? this.collisionMesh : this.blockMesh;
+    const voxelMeshes = targetMesh.children;
     const intersects = this.raycaster.intersectObjects(voxelMeshes, false);
 
     if (intersects.length > 0) {
@@ -305,7 +306,9 @@ class CustomBlockEditor {
    * ボクセルハイライトを表示
    */
   showVoxelHighlight(hit) {
-    const voxelSize = 1 / 8;
+    // 当たり判定モードでは4x4、見た目モードでは8x8
+    const gridSize = this.editMode === 'collision' ? 4 : 8;
+    const voxelSize = 1 / gridSize;
     const offset = -0.5 + voxelSize / 2;
 
     // ヒットしたボクセルの座標を取得
@@ -325,25 +328,34 @@ class CustomBlockEditor {
       point: hit.point.clone()
     };
 
-    // ブラシサイズに応じたグリッドにスナップした位置を計算
-    let snappedX = this.snapToGrid(x);
-    let snappedY = this.snapToGrid(y);
-    let snappedZ = this.snapToGrid(z);
+    // 当たり判定モードではスナップなし、見た目モードではブラシサイズスナップ
+    let snappedX, snappedY, snappedZ;
+    const effectiveBrushSize = this.editMode === 'collision' ? 1 : this.brushSize;
+
+    if (this.editMode === 'collision') {
+      snappedX = x;
+      snappedY = y;
+      snappedZ = z;
+    } else {
+      snappedX = this.snapToGrid(x);
+      snappedY = this.snapToGrid(y);
+      snappedZ = this.snapToGrid(z);
+    }
 
     // 範囲チェック
-    snappedX = Math.max(0, Math.min(8 - this.brushSize, snappedX));
-    snappedY = Math.max(0, Math.min(8 - this.brushSize, snappedY));
-    snappedZ = Math.max(0, Math.min(8 - this.brushSize, snappedZ));
+    snappedX = Math.max(0, Math.min(gridSize - effectiveBrushSize, snappedX));
+    snappedY = Math.max(0, Math.min(gridSize - effectiveBrushSize, snappedY));
+    snappedZ = Math.max(0, Math.min(gridSize - effectiveBrushSize, snappedZ));
 
     // エッジの位置を更新（スナップされた位置の中心）
-    const edgeCenterX = offset + (snappedX + this.brushSize / 2 - 0.5) * voxelSize;
-    const edgeCenterY = offset + (snappedY + this.brushSize / 2 - 0.5) * voxelSize;
-    const edgeCenterZ = offset + (snappedZ + this.brushSize / 2 - 0.5) * voxelSize;
+    const edgeCenterX = offset + (snappedX + effectiveBrushSize / 2 - 0.5) * voxelSize;
+    const edgeCenterY = offset + (snappedY + effectiveBrushSize / 2 - 0.5) * voxelSize;
+    const edgeCenterZ = offset + (snappedZ + effectiveBrushSize / 2 - 0.5) * voxelSize;
     this.highlight.edges.position.set(edgeCenterX, edgeCenterY, edgeCenterZ);
     this.highlight.edges.visible = true;
 
     // 面の位置と回転を更新
-    const faceOffset = voxelSize * this.brushSize / 2 + 0.001;
+    const faceOffset = voxelSize * effectiveBrushSize / 2 + 0.001;
     this.highlight.face.position.set(edgeCenterX, edgeCenterY, edgeCenterZ);
     this.highlight.face.position.add(normal.clone().multiplyScalar(faceOffset));
 
@@ -358,20 +370,26 @@ class CustomBlockEditor {
    * 床面ハイライトを表示
    */
   showFloorHighlight(hit) {
-    const voxelSize = 1 / 8;
     const halfSize = 0.5;
+
+    // 当たり判定モードでは4x4、見た目モードでは8x8
+    const gridSize = this.editMode === 'collision' ? 4 : 8;
+    const voxelSize = 1 / gridSize;
 
     // グリッド座標を計算
     let x = Math.floor((hit.point.x + halfSize) / voxelSize);
     let z = Math.floor((hit.point.z + halfSize) / voxelSize);
 
-    // ブラシサイズに応じたグリッドにスナップ
-    x = this.snapToGrid(x);
-    z = this.snapToGrid(z);
+    // 当たり判定モードではブラシサイズスナップなし、見た目モードではスナップ
+    if (this.editMode !== 'collision') {
+      x = this.snapToGrid(x);
+      z = this.snapToGrid(z);
+    }
 
     // 範囲チェック
-    x = Math.max(0, Math.min(8 - this.brushSize, x));
-    z = Math.max(0, Math.min(8 - this.brushSize, z));
+    const effectiveBrushSize = this.editMode === 'collision' ? 1 : this.brushSize;
+    x = Math.max(0, Math.min(gridSize - effectiveBrushSize, x));
+    z = Math.max(0, Math.min(gridSize - effectiveBrushSize, z));
 
     this.highlightedVoxel = null;
     this.highlightedFace = {
@@ -381,8 +399,8 @@ class CustomBlockEditor {
     };
 
     // 床面上のハイライト位置
-    const centerX = -halfSize + (x + this.brushSize / 2) * voxelSize;
-    const centerZ = -halfSize + (z + this.brushSize / 2) * voxelSize;
+    const centerX = -halfSize + (x + effectiveBrushSize / 2) * voxelSize;
+    const centerZ = -halfSize + (z + effectiveBrushSize / 2) * voxelSize;
 
     this.highlight.face.position.set(centerX, -0.5 + 0.001, centerZ);
     this.highlight.face.rotation.set(-Math.PI / 2, 0, 0);
@@ -488,34 +506,27 @@ class CustomBlockEditor {
   placeCollisionVoxel() {
     if (!this.highlightedFace) return;
 
-    const gridSize = 4;
-    const voxelSize = 1 / gridSize;
     let placed = false;
 
     if (this.highlightedFace.floor) {
-      // 床面からの配置
-      const baseX = Math.floor(this.highlightedFace.x / 2);
-      const baseZ = Math.floor(this.highlightedFace.z / 2);
+      // 床面からの配置（showFloorHighlightで既に4x4座標系）
+      const baseX = this.highlightedFace.x;
+      const baseZ = this.highlightedFace.z;
 
       if (VoxelCollision.isValidPosition(baseX, 0, baseZ)) {
         VoxelCollision.set(this.collisionData, baseX, 0, baseZ, 1);
         placed = true;
       }
     } else if (this.highlightedVoxel) {
-      // 既存ボクセルに隣接して配置
+      // 既存ボクセルに隣接して配置（座標は既に4x4座標系）
       const normal = this.highlightedFace.normal;
       const nx = Math.round(normal.x);
       const ny = Math.round(normal.y);
       const nz = Math.round(normal.z);
 
-      // 当たり判定座標に変換
-      const collX = Math.floor(this.highlightedVoxel.x / 2);
-      const collY = Math.floor(this.highlightedVoxel.y / 2);
-      const collZ = Math.floor(this.highlightedVoxel.z / 2);
-
-      const targetX = collX + nx;
-      const targetY = collY + ny;
-      const targetZ = collZ + nz;
+      const targetX = this.highlightedVoxel.x + nx;
+      const targetY = this.highlightedVoxel.y + ny;
+      const targetZ = this.highlightedVoxel.z + nz;
 
       if (VoxelCollision.isValidPosition(targetX, targetY, targetZ)) {
         VoxelCollision.set(this.collisionData, targetX, targetY, targetZ, 1);
@@ -691,10 +702,20 @@ class CustomBlockEditor {
     // メッシュを再構築
     this.rebuildMesh();
     this.rebuildCollisionMesh();
+
+    // 初期状態: 見た目モードなので当たり判定は非表示
+    if (this.editMode === 'look') {
+      this.blockMesh.visible = true;
+      this.collisionMesh.visible = false;
+    } else {
+      this.blockMesh.visible = false;
+      this.collisionMesh.visible = true;
+    }
   }
 
   /**
-   * 当たり判定ワイヤーフレームを再構築
+   * 当たり判定メッシュを再構築
+   * 白いボクセルで表示
    */
   rebuildCollisionMesh() {
     const THREE = this.THREE;
@@ -707,35 +728,28 @@ class CustomBlockEditor {
       this.collisionMesh.remove(child);
     }
 
-    // 当たり判定ボクセルをワイヤーフレームで表示
+    // 当たり判定ボクセルを白いボクセルで表示
     const gridSize = 4;
     const voxelSize = 1 / gridSize; // 0.25
-    const scale = 1.01; // 見た目と重ならないよう少し大きく
 
     for (let y = 0; y < gridSize; y++) {
       for (let z = 0; z < gridSize; z++) {
         for (let x = 0; x < gridSize; x++) {
           if (VoxelCollision.get(this.collisionData, x, y, z) === 1) {
-            // ワイヤーフレームを作成
-            const geometry = new THREE.BoxGeometry(
-              voxelSize * scale,
-              voxelSize * scale,
-              voxelSize * scale
-            );
-            const edges = new THREE.EdgesGeometry(geometry);
-            const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
-            const wireframe = new THREE.LineSegments(edges, material);
+            // 白いボクセルを作成
+            const geometry = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
+            const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+            const mesh = new THREE.Mesh(geometry, material);
 
             // 位置を設定
             const offset = -0.5 + voxelSize / 2;
-            wireframe.position.set(
+            mesh.position.set(
               offset + x * voxelSize,
               offset + y * voxelSize,
               offset + z * voxelSize
             );
 
-            this.collisionMesh.add(wireframe);
-            geometry.dispose();
+            this.collisionMesh.add(mesh);
           }
         }
       }
@@ -765,9 +779,9 @@ class CustomBlockEditor {
       this.floorGrid.visible = false;
       this.floorGrid4x4.visible = true;
 
-      // ワイヤーフレームを前面に表示
+      // 当たり判定モード: 見た目を非表示、当たり判定を表示
+      this.blockMesh.visible = false;
       this.collisionMesh.visible = true;
-      this.blockMesh.visible = true;
     } else {
       // 見た目モードに切り替え
       // ブラシサイズを復元
@@ -778,9 +792,9 @@ class CustomBlockEditor {
       this.floorGrid.visible = true;
       this.floorGrid4x4.visible = false;
 
-      // 通常表示
-      this.collisionMesh.visible = true;
+      // 見た目モード: 見た目を表示、当たり判定を非表示
       this.blockMesh.visible = true;
+      this.collisionMesh.visible = false;
     }
 
     this.updateHighlight();
@@ -934,7 +948,7 @@ class CustomBlockEditor {
     }
 
     if (type === 'collision') {
-      // 当たり判定のワイヤーフレームを表示
+      // 当たり判定の白いボクセルを表示
       const gridSize = 4;
       const voxelSize = 1 / gridSize;
 
@@ -943,19 +957,17 @@ class CustomBlockEditor {
           for (let x = 0; x < gridSize; x++) {
             if (VoxelCollision.get(this.collisionData, x, y, z) === 1) {
               const geometry = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
-              const edges = new THREE.EdgesGeometry(geometry);
-              const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
-              const wireframe = new THREE.LineSegments(edges, material);
+              const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+              const mesh = new THREE.Mesh(geometry, material);
 
               const offset = -0.5 + voxelSize / 2;
-              wireframe.position.set(
+              mesh.position.set(
                 offset + x * voxelSize,
                 offset + y * voxelSize,
                 offset + z * voxelSize
               );
 
-              this.miniMesh.add(wireframe);
-              geometry.dispose();
+              this.miniMesh.add(mesh);
             }
           }
         }
