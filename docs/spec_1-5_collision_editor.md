@@ -29,9 +29,11 @@ src/test/ 及び src/game/ のディレクトリは公開用の Github リポジ
 ### 3.2 3Dプレビュー変更点
 
 - ツールボタン枠の左端に、見た目・当たり判定の切り換えボタンを設置
+  - ボタンサイズはツールバーの高さいっぱい（正方形）
+  - ボタン内にはミニチュア3Dプレビューで今編集していない方の形状を表示
+  - ミニプレビューのカメラはメインカメラと同期（視点回転が連動）
 - 見た目編集モードの時は当たり判定の形状を表示しない
 - 当たり判定編集モードの時は見た目の形状を表示せず、当たり判定の形状を白いボクセルで表示
-- 切り換えボタン内にはミニチュア3Dプレビューで今編集していない方の形状を表示
 - 当たり判定編集モード時:
   - ブラシサイズ切り替えボタンが [2x] 固定になり、他はグレーアウト
   - 床面のグリッド線は 4x4
@@ -130,24 +132,44 @@ src/
 ### 5.7 カスタムブロック以外
 - shape_type="normal" のブロックを選択した場合は編集不可とし、警告メッセージを表示
 
-## 6. 実装詳細: 当たり判定ボクセル表示
+## 6. 実装詳細: ボクセル表示
 
-### 6.1 概要
+### 6.1 面ごとの明るさ
 
-当たり判定ボクセルは、白いボクセル（MeshStandardMaterial）で表示する。
+ボクセルの視認性向上のため、面ごとに異なる明るさを適用する。
 
-### 6.2 表示仕様
+| 面 | 明るさ |
+|---|---|
+| +Y (上面) | 1.0 (最も明るい) |
+| +Z, -Z (前後) | 0.85 |
+| +X, -X (左右) | 0.75 |
+| -Y (底面) | 0.5 (最も暗い) |
 
-- 色: 白色（#FFFFFF）
+- `MeshBasicMaterial` と頂点カラーを使用（ライティングの影響を受けない）
+- 見た目ボクセル、当たり判定ボクセルの両方に適用
+
+### 6.2 当たり判定ボクセル表示仕様
+
+- 色: 白色（#FFFFFF）× 面ごとの明るさ
 - サイズ: ブロック全体を1として各当たり判定は1/4
 - 当たり判定モード時は見た目メッシュを非表示にし、当たり判定ボクセルのみ表示
 
 ### 6.3 Three.js実装例
 
 ```javascript
-const collisionSize = 1 / 4; // ブロック全体を1として各当たり判定は1/4
+const collisionSize = 1 / 4;
 const geometry = new THREE.BoxGeometry(collisionSize, collisionSize, collisionSize);
-const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+
+// 面ごとの明るさを頂点カラーで設定
+const faceBrightness = [0.75, 0.75, 1.0, 0.5, 0.85, 0.85];
+const colors = [];
+for (let faceIdx = 0; faceIdx < 6; faceIdx++) {
+  const b = faceBrightness[faceIdx];
+  for (let v = 0; v < 4; v++) colors.push(b, b, b);
+}
+geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+const material = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true });
 const mesh = new THREE.Mesh(geometry, material);
 ```
 
