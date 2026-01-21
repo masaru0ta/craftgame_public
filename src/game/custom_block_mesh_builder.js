@@ -86,7 +86,7 @@ class CustomBlockMeshBuilder {
 
       // 面ごとにジオメトリを作成
       faces.forEach(face => {
-        const geometry = this.createFaceGeometry(face, voxelSize);
+        const geometry = this.createFaceGeometry(face, voxelSize, x, y, z);
         const mesh = new this.THREE.Mesh(geometry, threeMaterials[materialIndex]);
         mesh.position.set(posX, posY, posZ);
         mesh.userData = { x, y, z, face, materialIndex: value };
@@ -126,45 +126,94 @@ class CustomBlockMeshBuilder {
 
   /**
    * 面のジオメトリを作成
+   * 8x8全体で1枚のテクスチャを貼るUV座標を設定
    * @param {string} face - 面の名前
    * @param {number} size - サイズ
+   * @param {number} x - X座標（0-7）
+   * @param {number} y - Y座標（0-7）
+   * @param {number} z - Z座標（0-7）
    * @returns {THREE.PlaneGeometry} ジオメトリ
    */
-  createFaceGeometry(face, size) {
+  createFaceGeometry(face, size, x = 0, y = 0, z = 0) {
     const geometry = new this.THREE.PlaneGeometry(size, size);
     const halfSize = size / 2;
+    const gridSize = 8;
+
+    // UV座標を設定
+    const uvAttribute = geometry.attributes.uv;
+    let uCoord, vCoord;
+    let flipU = false, flipV = false;
 
     switch (face) {
-      case 'right': // +X
+      case 'right': // +X: Z と Y を使用
         geometry.rotateY(Math.PI / 2);
         geometry.translate(halfSize, 0, 0);
+        uCoord = 7 - z;
+        vCoord = y;
+        flipU = true;
         break;
-      case 'left': // -X
+      case 'left': // -X: Z と Y を使用
         geometry.rotateY(-Math.PI / 2);
         geometry.translate(-halfSize, 0, 0);
+        uCoord = z;
+        vCoord = y;
+        flipU = false;
         break;
-      case 'top': // +Y
+      case 'top': // +Y: X と Z を使用
         geometry.rotateX(-Math.PI / 2);
         geometry.translate(0, halfSize, 0);
+        uCoord = x;
+        vCoord = 7 - z;
+        flipU = true;
+        flipV = false;
         break;
-      case 'bottom': // -Y
+      case 'bottom': // -Y: X と Z を使用
         geometry.rotateX(Math.PI / 2);
         geometry.translate(0, -halfSize, 0);
+        uCoord = x;
+        vCoord = z;
+        flipU = true;
         break;
-      case 'front': // +Z
+      case 'front': // +Z: X と Y を使用
         geometry.translate(0, 0, halfSize);
+        uCoord = x;
+        vCoord = y;
+        flipU = true;
         break;
-      case 'back': // -Z
+      case 'back': // -Z: X と Y を使用
         geometry.rotateY(Math.PI);
         geometry.translate(0, 0, -halfSize);
+        uCoord = 7 - x;
+        vCoord = y;
+        flipU = true;
         break;
     }
+
+    // UV座標を設定
+    const uMin = uCoord / gridSize;
+    const uMax = (uCoord + 1) / gridSize;
+    const vMin = vCoord / gridSize;
+    const vMax = (vCoord + 1) / gridSize;
+
+    // デフォルトは左から右（uMin→uMax）
+    const u0 = flipU ? uMax : uMin;
+    const u1 = flipU ? uMin : uMax;
+    const v0 = flipV ? vMin : vMax;
+    const v1 = flipV ? vMax : vMin;
+
+    // PlaneGeometry の頂点順序
+    uvAttribute.setXY(0, u0, v0);
+    uvAttribute.setXY(1, u1, v0);
+    uvAttribute.setXY(2, u0, v1);
+    uvAttribute.setXY(3, u1, v1);
+    uvAttribute.needsUpdate = true;
 
     return geometry;
   }
 
   /**
    * 編集用の個別ボクセルメッシュを作成
+   * 8x8全体で1枚のテクスチャを貼るUV座標を設定
    * @param {number} x - X座標
    * @param {number} y - Y座標
    * @param {number} z - Z座標
@@ -175,6 +224,10 @@ class CustomBlockMeshBuilder {
    */
   createVoxelMesh(x, y, z, materialIndex, material, voxelSize = 1 / 8) {
     const geometry = new this.THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
+
+    // UV座標を8x8グリッド用に設定
+    this.setVoxelUV(geometry, x, y, z);
+
     const mesh = new this.THREE.Mesh(geometry, material);
 
     // 位置を設定（8x8x8グリッドの中心が原点）
@@ -187,6 +240,62 @@ class CustomBlockMeshBuilder {
     mesh.userData = { x, y, z, materialIndex };
 
     return mesh;
+  }
+
+  /**
+   * ボクセルのUV座標を設定（8x8全体で1枚のテクスチャ）
+   * @param {THREE.BoxGeometry} geometry - ボックスジオメトリ
+   * @param {number} x - X座標（0-7）
+   * @param {number} y - Y座標（0-7）
+   * @param {number} z - Z座標（0-7）
+   */
+  setVoxelUV(geometry, x, y, z) {
+    const uvAttribute = geometry.attributes.uv;
+    const gridSize = 8;
+
+    // BoxGeometryの面順序: +X, -X, +Y, -Y, +Z, -Z
+    // 各面は4頂点（2三角形）
+
+    // UV座標計算用のヘルパー
+    const getUV = (u, v) => {
+      return {
+        uMin: u / gridSize,
+        uMax: (u + 1) / gridSize,
+        vMin: v / gridSize,
+        vMax: (v + 1) / gridSize
+      };
+    };
+
+    // 各面のUV設定
+    // BoxGeometryの頂点順序: [uMax,vMax], [uMin,vMax], [uMax,vMin], [uMin,vMin]
+    const setFaceUV = (startIdx, uCoord, vCoord, flipU = false, flipV = false) => {
+      const uv = getUV(uCoord, vCoord);
+      // デフォルトは左から右（uMin→uMax）で貼る
+      let u0 = flipU ? uv.uMax : uv.uMin;
+      let u1 = flipU ? uv.uMin : uv.uMax;
+      let v0 = flipV ? uv.vMin : uv.vMax;
+      let v1 = flipV ? uv.vMax : uv.vMin;
+
+      uvAttribute.setXY(startIdx + 0, u1, v0);
+      uvAttribute.setXY(startIdx + 1, u0, v0);
+      uvAttribute.setXY(startIdx + 2, u1, v1);
+      uvAttribute.setXY(startIdx + 3, u0, v1);
+    };
+
+    // +X (right): Z と Y を使用
+    setFaceUV(0, 7 - z, y, true, false);
+    // -X (left): Z と Y を使用
+    setFaceUV(4, z, y, false, false);
+    // +Y (top): X と Z を使用
+    setFaceUV(8, x, 7 - z, true, false);
+    // -Y (bottom): X と Z を使用
+    setFaceUV(12, x, z, true, false);
+    // +Z (front): X と Y を使用
+    setFaceUV(16, x, y, true, false);
+    // -Z (back): X と Y を使用
+    setFaceUV(20, 7 - x, y, true, false);
+
+    uvAttribute.needsUpdate = true;
   }
 
   /**

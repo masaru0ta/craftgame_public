@@ -229,6 +229,57 @@ select:focus {
   display: block;
 }
 
+/* プレビュー内マテリアル表示 */
+.material-overlay {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  z-index: 10;
+}
+
+.material-overlay-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.material-overlay-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.material-overlay-item.selected {
+  border-color: #4a9eff;
+  background-color: rgba(74, 158, 255, 0.2);
+}
+
+.material-overlay-preview {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #666;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  image-rendering: pixelated;
+}
+
+.material-overlay-label {
+  font-size: 0.875rem;
+  font-weight: bold;
+  color: #fff;
+}
+
 /* テクスチャ選択モーダル */
 .texture-modal {
   position: fixed;

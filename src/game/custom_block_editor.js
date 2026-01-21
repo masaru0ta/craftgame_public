@@ -52,11 +52,16 @@ class CustomBlockEditor {
 
     // ハイライト用
     this.highlightedVoxel = null;
+    this.highlightedFloor = null; // 床面ハイライト用
     this.highlightMeshes = [];
+    this.floorPlane = null; // 床面のPlane（レイキャスト用）
 
     // テクスチャ選択モーダル
     this.textureModal = null;
     this.currentEditingMaterial = null;
+
+    // プレビュー内マテリアル表示
+    this.materialOverlay = null;
 
     // イベントコールバック
     this.onDataChange = null;
@@ -71,6 +76,7 @@ class CustomBlockEditor {
   init() {
     this.initThreeJS();
     this.initMaterialSlots();
+    this.initMaterialOverlay();
     this.initEventListeners();
     this.animate();
   }
@@ -115,6 +121,9 @@ class CustomBlockEditor {
     this.voxelGroup = new this.THREE.Group();
     this.scene.add(this.voxelGroup);
 
+    // 床面用のPlane（レイキャスト用、非表示）
+    this.floorPlane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), 0.5);
+
     // 初期ボクセルメッシュを作成
     this.rebuildVoxelMesh();
   }
@@ -149,6 +158,66 @@ class CustomBlockEditor {
       sprite.scale.set(0.5, 0.125, 1);
       this.scene.add(sprite);
       this.labels.push(sprite);
+    });
+  }
+
+  /**
+   * プレビュー内マテリアル表示UIを初期化
+   */
+  initMaterialOverlay() {
+    this.materialOverlay = document.createElement('div');
+    this.materialOverlay.className = 'material-overlay';
+
+    for (let i = 1; i <= 3; i++) {
+      const item = document.createElement('div');
+      item.className = 'material-overlay-item' + (i === this.currentMaterial ? ' selected' : '');
+      item.dataset.material = i;
+
+      const preview = document.createElement('div');
+      preview.className = 'material-overlay-preview';
+
+      const label = document.createElement('div');
+      label.className = 'material-overlay-label';
+      label.textContent = i;
+
+      item.appendChild(preview);
+      item.appendChild(label);
+      this.materialOverlay.appendChild(item);
+
+      // クリックでマテリアル選択
+      item.addEventListener('click', () => {
+        this.selectMaterial(i);
+      });
+    }
+
+    this.previewContainer.appendChild(this.materialOverlay);
+  }
+
+  /**
+   * プレビュー内マテリアル表示を更新
+   */
+  updateMaterialOverlay() {
+    if (!this.materialOverlay) return;
+
+    const items = this.materialOverlay.querySelectorAll('.material-overlay-item');
+    items.forEach((item, i) => {
+      const material = this.materials[i];
+      const preview = item.querySelector('.material-overlay-preview');
+
+      if (material && material.image_base64) {
+        preview.style.backgroundImage = `url(${material.image_base64})`;
+        preview.style.backgroundColor = '';
+      } else {
+        preview.style.backgroundImage = '';
+        const colors = ['#ff4444', '#44ff44', '#4444ff'];
+        preview.style.backgroundColor = colors[i];
+      }
+
+      if (i + 1 === this.currentMaterial) {
+        item.classList.add('selected');
+      } else {
+        item.classList.remove('selected');
+      }
     });
   }
 
@@ -311,14 +380,26 @@ class CustomBlockEditor {
     this.clearHighlight();
 
     if (intersects.length > 0) {
+      // ボクセルとの交差あり
       const hit = intersects[0];
       const voxelMesh = hit.object;
       const { x, y, z } = voxelMesh.userData;
 
       this.highlightedVoxel = { x, y, z, hit };
+      this.highlightedFloor = null;
 
       // ハイライトボックスを作成
       this.createHighlightBox(x, y, z, hit);
+    } else {
+      // ボクセルとの交差なし、床面との交差判定
+      const floorPos = this.getFloorIntersection();
+      if (floorPos) {
+        this.highlightedVoxel = null;
+        this.highlightedFloor = floorPos;
+
+        // 床面ハイライトを作成
+        this.createFloorHighlight(floorPos.x, floorPos.z);
+      }
     }
   }
 
@@ -385,6 +466,57 @@ class CustomBlockEditor {
     });
     this.highlightMeshes = [];
     this.highlightedVoxel = null;
+    this.highlightedFloor = null;
+  }
+
+  /**
+   * 床面との交差判定
+   * @returns {Object|null} 床面上のグリッド座標 {x, z}
+   */
+  getFloorIntersection() {
+    const intersectPoint = new this.THREE.Vector3();
+    const ray = this.raycaster.ray;
+
+    // 床面（Y = -0.5 = ボクセルY=0の底面）との交差判定
+    if (ray.intersectPlane(this.floorPlane, intersectPoint)) {
+      // 3D座標をグリッド座標に変換
+      const gridX = Math.floor((intersectPoint.x / this.voxelSize) + 4);
+      const gridZ = Math.floor((intersectPoint.z / this.voxelSize) + 4);
+
+      // グリッド範囲内かチェック
+      if (gridX >= 0 && gridX < 8 && gridZ >= 0 && gridZ < 8) {
+        return { x: gridX, z: gridZ };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 床面ハイライトを作成
+   * @param {number} x - X座標
+   * @param {number} z - Z座標
+   */
+  createFloorHighlight(x, z) {
+    const size = this.voxelSize * 0.98;
+    const geometry = new this.THREE.PlaneGeometry(size, size);
+    const material = new this.THREE.MeshBasicMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.5,
+      side: this.THREE.DoubleSide
+    });
+
+    const highlightMesh = new this.THREE.Mesh(geometry, material);
+    // 床面の高さに配置（Y = -0.5 より少し上）
+    highlightMesh.rotation.x = -Math.PI / 2;
+    highlightMesh.position.set(
+      (x - 3.5) * this.voxelSize,
+      -0.5 + 0.001,
+      (z - 3.5) * this.voxelSize
+    );
+
+    this.scene.add(highlightMesh);
+    this.highlightMeshes.push(highlightMesh);
   }
 
   /**
@@ -392,22 +524,25 @@ class CustomBlockEditor {
    * @param {MouseEvent} e - マウスイベント
    */
   handleVoxelPlace(e) {
-    if (!this.highlightedVoxel) {
-      // ボクセルがない場合は中央に配置
-      const centerPos = this.getCenterPosition();
-      this.voxelData.set(centerPos.x, centerPos.y, centerPos.z, this.currentMaterial);
+    if (this.highlightedFloor) {
+      // 床面がハイライトされている場合、床面上に配置
+      const { x, z } = this.highlightedFloor;
+      this.voxelData.set(x, 0, z, this.currentMaterial);
       this.rebuildVoxelMesh();
       this.triggerDataChange();
       return;
     }
 
-    const { hit } = this.highlightedVoxel;
-    const pos = this.getAdjacentPosition(hit);
+    if (this.highlightedVoxel) {
+      // ボクセルがハイライトされている場合、隣接位置に配置
+      const { hit } = this.highlightedVoxel;
+      const pos = this.getAdjacentPosition(hit);
 
-    if (pos && this.isInBounds(pos.x, pos.y, pos.z)) {
-      this.voxelData.set(pos.x, pos.y, pos.z, this.currentMaterial);
-      this.rebuildVoxelMesh();
-      this.triggerDataChange();
+      if (pos && this.isInBounds(pos.x, pos.y, pos.z)) {
+        this.voxelData.set(pos.x, pos.y, pos.z, this.currentMaterial);
+        this.rebuildVoxelMesh();
+        this.triggerDataChange();
+      }
     }
   }
 
@@ -469,6 +604,7 @@ class CustomBlockEditor {
   selectMaterial(index) {
     this.currentMaterial = index;
     this.updateMaterialSlots();
+    this.updateMaterialOverlay();
   }
 
   /**
@@ -584,6 +720,7 @@ class CustomBlockEditor {
   selectTexture(materialIndex, texture) {
     this.materials[materialIndex - 1] = texture;
     this.updateMaterialSlots();
+    this.updateMaterialOverlay();
     this.rebuildVoxelMesh();
     this.closeTextureSelector();
     this.triggerDataChange();
@@ -706,6 +843,7 @@ class CustomBlockEditor {
     this.materials[2] = findTexture(blockData.material_3);
 
     this.updateMaterialSlots();
+    this.updateMaterialOverlay();
     this.rebuildVoxelMesh();
   }
 
