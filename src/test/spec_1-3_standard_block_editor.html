@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>標準ブロックエディタ</title>
-  <link rel="stylesheet" href="spec_1-3_standard_block_editor_style.css?v=3">
+  <link rel="stylesheet" href="spec_1-3_standard_block_editor_style.css?v=4">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
@@ -38,6 +38,14 @@
     <!-- 右カラム: 3Dプレビュー -->
     <div class="right-column">
       <div class="preview-container">
+        <!-- ツールボタン枠 -->
+        <div class="toolbar">
+          <button id="bg-btn" class="bg-btn" title="背景色切り替え">
+            <span class="bg-color-indicator"></span>
+            <span class="bg-label">BG</span>
+          </button>
+        </div>
+
         <div id="preview-3d" class="preview-3d"></div>
 
         <!-- テクスチャ選択エリア -->
@@ -90,9 +98,9 @@
     </div>
   </div>
 
-  <script src="../game/gas_api.js?v=3"></script>
-  <script src="../game/standard_block_mesh_builder.js?v=3"></script>
-  <script src="../game/standard_block_editor.js?v=3"></script>
-  <script src="spec_1-3_standard_block_editor_main.js?v=3"></script>
+  <script src="../game/gas_api.js?v=4"></script>
+  <script src="../game/standard_block_mesh_builder.js?v=4"></script>
+  <script src="../game/standard_block_editor.js?v=4"></script>
+  <script src="spec_1-3_standard_block_editor_main.js?v=4"></script>
 </body>
 </html>

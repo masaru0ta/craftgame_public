@@ -32,6 +32,10 @@ class StandardBlockEditor {
     // イベントコールバック
     this.onTextureChange = null;
 
+    // 背景色の設定
+    this.bgColors = [0x808080, 0x4169e1, 0x228b22, 0x000000]; // グレー、青、緑、黒
+    this.currentBgColorIndex = 0;
+
     // Three.js初期化
     this.initThree();
     this.initEventListeners();
@@ -259,6 +263,26 @@ class StandardBlockEditor {
    */
   getTextureData(textureName) {
     return this.textureMap[textureName] || null;
+  }
+
+  /**
+   * 背景色を次の色に切り替え
+   * @returns {string} 新しい背景色のCSS形式
+   */
+  toggleBackgroundColor() {
+    this.currentBgColorIndex = (this.currentBgColorIndex + 1) % this.bgColors.length;
+    const color = this.bgColors[this.currentBgColorIndex];
+    this.scene.background = new this.THREE.Color(color);
+    return '#' + color.toString(16).padStart(6, '0');
+  }
+
+  /**
+   * 現在の背景色をCSS形式で取得
+   * @returns {string} 背景色のCSS形式
+   */
+  getCurrentBackgroundColor() {
+    const color = this.bgColors[this.currentBgColorIndex];
+    return '#' + color.toString(16).padStart(6, '0');
   }
 
   /**

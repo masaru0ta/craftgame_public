@@ -64,6 +64,28 @@ function setupEventListeners() {
       closeTextureModal();
     }
   });
+
+  // 背景色切り替えボタン
+  document.getElementById('bg-btn').addEventListener('click', onToggleBackground);
+}
+
+/**
+ * 背景色切り替え処理
+ */
+function onToggleBackground() {
+  if (!editor) return;
+  const newColor = editor.toggleBackgroundColor();
+  updateBgIndicator(newColor);
+}
+
+/**
+ * BGボタンのインジケーター色を更新
+ */
+function updateBgIndicator(color) {
+  const indicator = document.querySelector('.bg-color-indicator');
+  if (indicator) {
+    indicator.style.backgroundColor = color;
+  }
 }
 
 /**

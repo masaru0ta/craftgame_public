@@ -121,18 +121,62 @@ h2 {
 /* プレビューコンテナ */
 .preview-container {
   width: 100%;
-  max-width: 600px;
+  max-width: 500px;
   background-color: #1a1a2e;
   border: 2px solid #333;
   border-radius: 8px;
   overflow: hidden;
 }
 
-/* 3Dプレビュー領域 */
+/* ツールバー（上部1/6） */
+.toolbar {
+  height: 48px;
+  background-color: #000;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 8px;
+}
+
+/* 背景色切り替えボタン */
+.bg-btn {
+  width: 48px;
+  height: 36px;
+  background-color: #333;
+  border: 2px solid #555;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px;
+}
+
+.bg-btn:hover {
+  border-color: #888;
+}
+
+.bg-color-indicator {
+  width: 28px;
+  height: 16px;
+  background-color: #808080;
+  border: 1px solid #666;
+  border-radius: 2px;
+}
+
+.bg-label {
+  font-size: 9px;
+  color: #aaa;
+  font-weight: bold;
+}
+
+/* 3Dプレビュー領域（アスペクト比 2:3） */
 .preview-3d {
   width: 100%;
   height: 0;
-  padding-bottom: 100%; /* アスペクト比1:1を維持 */
+  padding-bottom: 150%; /* アスペクト比2:3を維持 */
   background-color: #808080;
   position: relative;
 }
