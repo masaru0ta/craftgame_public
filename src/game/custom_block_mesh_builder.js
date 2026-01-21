@@ -157,7 +157,7 @@ class CustomBlockMeshBuilder {
         geometry.translate(-halfSize, 0, 0);
         uCoord = z;
         vCoord = y;
-        flipU = false;
+        flipU = true;
         break;
       case 'top': // +Y: X と Z を使用
         geometry.rotateX(-Math.PI / 2);
@@ -285,7 +285,7 @@ class CustomBlockMeshBuilder {
     // +X (right): Z と Y を使用
     setFaceUV(0, 7 - z, y, true, false);
     // -X (left): Z と Y を使用
-    setFaceUV(4, z, y, false, false);
+    setFaceUV(4, z, y, true, false);
     // +Y (top): X と Z を使用
     setFaceUV(8, x, 7 - z, true, false);
     // -Y (bottom): X と Z を使用
