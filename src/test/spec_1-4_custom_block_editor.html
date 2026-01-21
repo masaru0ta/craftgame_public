@@ -40,6 +40,10 @@
       <div class="preview-container">
         <!-- ツールボタン枠 -->
         <div class="toolbar">
+          <!-- モード切替ボタン -->
+          <button id="mode-toggle-btn" class="mode-toggle-btn" title="見た目/当たり判定切り替え">
+            <canvas id="mode-preview-canvas" width="40" height="40"></canvas>
+          </button>
           <!-- ブラシサイズ切り替えボタン -->
           <div class="brush-size-group">
             <button class="brush-size-btn" data-size="4" title="4x4ブラシ">
@@ -61,8 +65,8 @@
 
         <div id="preview-3d" class="preview-3d"></div>
 
-        <!-- マテリアル選択エリア -->
-        <div class="material-panel">
+        <!-- マテリアル選択エリア（見た目モード時表示） -->
+        <div class="material-panel control-panel" id="material-panel">
           <div class="material-slot active" data-material="1">
             <div class="material-image"></div>
             <span class="material-label">1</span>
@@ -75,6 +79,10 @@
             <div class="material-image"></div>
             <span class="material-label">3</span>
           </div>
+        </div>
+        <!-- 当たり判定モード用コントロールパネル（当たり判定モード時表示） -->
+        <div class="collision-control-panel control-panel" id="collision-panel" style="display: none;">
+          <button id="check-btn" class="check-btn">簡易チェック</button>
         </div>
       </div>
     </div>
@@ -97,8 +105,10 @@
 
   <script src="../game/gas_api.js?v=5"></script>
   <script src="../game/voxel_data.js?v=1"></script>
+  <script src="../game/custom_collision.js?v=1"></script>
   <script src="../game/custom_block_mesh_builder.js?v=1"></script>
-  <script src="../game/custom_block_editor.js?v=1"></script>
-  <script src="spec_1-4_custom_block_editor_main.js?v=1"></script>
+  <script src="../game/custom_block_editor.js?v=2"></script>
+  <script src="../game/custom_collision_checker.js?v=1"></script>
+  <script src="spec_1-4_custom_block_editor_main.js?v=2"></script>
 </body>
 </html>

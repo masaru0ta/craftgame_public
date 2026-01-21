@@ -12,6 +12,8 @@ let editor;
 let blocks = [];
 let textures = [];
 let selectedMaterial = null;
+let collisionChecker = null;
+let isCheckMode = false;
 
 /**
  * 初期化
@@ -34,8 +36,34 @@ async function init() {
 
   // ボクセル変更時のコールバック
   editor.onVoxelChange = (voxelData) => {
-    // 変更があったことを示す（必要に応じてUI更新）
+    // ミニプレビューを更新（見た目モード時）
+    if (editor.getEditMode() === 'look') {
+      editor.updateMiniPreview('collision');
+    }
   };
+
+  // 当たり判定変更時のコールバック
+  editor.onCollisionChange = (collisionData) => {
+    // ミニプレビューを更新（当たり判定モード時）
+    if (editor.getEditMode() === 'collision') {
+      editor.updateMiniPreview('look');
+    }
+  };
+
+  // モード変更時のコールバック
+  editor.onModeChange = (mode) => {
+    updateModeUI(mode);
+  };
+
+  // ミニプレビュー初期化
+  const miniCanvas = document.getElementById('mode-preview-canvas');
+  editor.initMiniPreview(miniCanvas);
+
+  // 簡易チェッカー初期化
+  collisionChecker = new CollisionChecker({
+    THREE: THREE,
+    scene: editor.getScene()
+  });
 
   // イベントリスナー設定
   setupEventListeners();
@@ -82,11 +110,21 @@ function setupEventListeners() {
   // ブラシサイズボタン
   document.querySelectorAll('.brush-size-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      // 当たり判定モードでは2x以外は無効
+      if (editor.getEditMode() === 'collision' && parseInt(btn.dataset.size) !== 2) {
+        return;
+      }
       const size = parseInt(btn.dataset.size);
       editor.setBrushSize(size);
       updateBrushSizeSelection(size);
     });
   });
+
+  // モード切替ボタン
+  document.getElementById('mode-toggle-btn').addEventListener('click', onToggleMode);
+
+  // 簡易チェックボタン
+  document.getElementById('check-btn').addEventListener('click', onToggleCheck);
 }
 
 /**
@@ -183,6 +221,11 @@ function onBlockSelect(e) {
   const block = blocks.find(b => b.block_id === blockId);
   if (!block) return;
 
+  // shape_type が normal の場合は警告
+  if (block.shape_type === 'normal') {
+    showStatus('通常ブロックは当たり判定編集ができません', 'error');
+  }
+
   // フォームを更新
   document.getElementById('block-str-id').value = block.block_str_id || '';
   document.getElementById('block-name').value = block.name || '';
@@ -192,6 +235,111 @@ function onBlockSelect(e) {
 
   // マテリアルスロットを更新
   updateAllMaterialSlots(block);
+
+  // ミニプレビューを更新（現在のモードに応じて反対のデータを表示）
+  const currentMode = editor.getEditMode();
+  if (currentMode === 'look') {
+    editor.updateMiniPreview('collision');
+  } else {
+    editor.updateMiniPreview('look');
+  }
+}
+
+/**
+ * モード切替処理
+ */
+function onToggleMode() {
+  if (!editor.getBlockData()) {
+    showStatus('先にブロックを選択してください', 'error');
+    return;
+  }
+
+  // 簡易チェック中の場合は停止
+  if (isCheckMode) {
+    stopCheck();
+  }
+
+  const currentMode = editor.getEditMode();
+  const newMode = currentMode === 'look' ? 'collision' : 'look';
+  editor.setEditMode(newMode);
+}
+
+/**
+ * モードUIを更新
+ */
+function updateModeUI(mode) {
+  const materialPanel = document.getElementById('material-panel');
+  const collisionPanel = document.getElementById('collision-panel');
+
+  if (mode === 'collision') {
+    // 当たり判定モード
+    materialPanel.style.display = 'none';
+    collisionPanel.style.display = 'flex';
+
+    // ブラシサイズボタンを更新（2x以外はdisabled）
+    document.querySelectorAll('.brush-size-btn').forEach(btn => {
+      const size = parseInt(btn.dataset.size);
+      btn.disabled = size !== 2;
+      btn.classList.toggle('active', size === 2);
+    });
+
+    // ミニプレビューに見た目を表示
+    editor.updateMiniPreview('look');
+  } else {
+    // 見た目モード
+    materialPanel.style.display = 'flex';
+    collisionPanel.style.display = 'none';
+
+    // ブラシサイズボタンを有効化
+    document.querySelectorAll('.brush-size-btn').forEach(btn => {
+      btn.disabled = false;
+    });
+    updateBrushSizeSelection(editor.brushSize);
+
+    // ミニプレビューに当たり判定を表示
+    editor.updateMiniPreview('collision');
+  }
+}
+
+/**
+ * 簡易チェック切替処理
+ */
+function onToggleCheck() {
+  if (!editor.getBlockData()) {
+    showStatus('先にブロックを選択してください', 'error');
+    return;
+  }
+
+  if (isCheckMode) {
+    stopCheck();
+  } else {
+    startCheck();
+  }
+}
+
+/**
+ * 簡易チェック開始
+ */
+function startCheck() {
+  isCheckMode = true;
+
+  // 当たり判定データを設定
+  collisionChecker.setCollisionData(editor.getCollisionData());
+  collisionChecker.start();
+
+  // ボタンテキストを変更
+  document.getElementById('check-btn').textContent = '編集に戻る';
+}
+
+/**
+ * 簡易チェック停止
+ */
+function stopCheck() {
+  isCheckMode = false;
+  collisionChecker.stop();
+
+  // ボタンテキストを変更
+  document.getElementById('check-btn').textContent = '簡易チェック';
 }
 
 /**

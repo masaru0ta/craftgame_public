@@ -1,6 +1,7 @@
 /**
  * カスタムブロックエディタ UI
  * 8x8x8ボクセルの3Dプレビュー、編集、マテリアル選択を管理
+ * 当たり判定編集モード（4x4x4）をサポート
  */
 
 class CustomBlockEditor {
@@ -22,10 +23,18 @@ class CustomBlockEditor {
     this.textureList = [];
     this.blockMesh = null;
 
+    // 当たり判定データ
+    this.collisionData = VoxelCollision.createEmpty();
+    this.collisionMesh = null;
+
+    // 編集モード: 'look' または 'collision'
+    this.editMode = 'look';
+
     // マテリアル設定
     this.materialTextures = { 1: null, 2: null, 3: null };
     this.currentMaterial = 1;
     this.brushSize = 1;
+    this.savedBrushSize = 1; // モード切替時に保存
 
     // カメラ制御
     this.cameraDistance = 3;
@@ -43,11 +52,19 @@ class CustomBlockEditor {
 
     // イベントコールバック
     this.onVoxelChange = null;
+    this.onCollisionChange = null;
     this.onMaterialChange = null;
+    this.onModeChange = null;
 
     // 背景色の設定
     this.bgColors = [0x000000, 0x4169e1, 0x228b22];
     this.currentBgColorIndex = 0;
+
+    // ミニプレビュー用
+    this.miniRenderer = null;
+    this.miniScene = null;
+    this.miniCamera = null;
+    this.miniMesh = null;
 
     // Three.js初期化
     this.initThree();
@@ -116,6 +133,47 @@ class CustomBlockEditor {
     // ボクセルメッシュグループ
     this.blockMesh = new THREE.Group();
     this.scene.add(this.blockMesh);
+
+    // 当たり判定ワイヤーフレームグループ
+    this.collisionMesh = new THREE.Group();
+    this.scene.add(this.collisionMesh);
+
+    // 4x4グリッド（当たり判定モード用、初期非表示）
+    this.floorGrid4x4 = this.createFloorGrid4x4(1);
+    this.floorGrid4x4.position.y = -0.5;
+    this.floorGrid4x4.visible = false;
+    this.scene.add(this.floorGrid4x4);
+  }
+
+  /**
+   * 4x4床面グリッドを作成
+   * @param {number} size - グリッド全体のサイズ
+   * @returns {THREE.LineSegments} グリッド線
+   */
+  createFloorGrid4x4(size = 1) {
+    const THREE = this.THREE;
+    const halfSize = size / 2;
+    const step = size / 4;
+
+    const points = [];
+
+    // グリッド線（X方向）
+    for (let i = 0; i <= 4; i++) {
+      const z = -halfSize + i * step;
+      points.push(new THREE.Vector3(-halfSize, 0, z));
+      points.push(new THREE.Vector3(halfSize, 0, z));
+    }
+
+    // グリッド線（Z方向）
+    for (let i = 0; i <= 4; i++) {
+      const x = -halfSize + i * step;
+      points.push(new THREE.Vector3(x, 0, -halfSize));
+      points.push(new THREE.Vector3(x, 0, halfSize));
+    }
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: 0xffff00, opacity: 0.7, transparent: true });
+    return new THREE.LineSegments(geometry, material);
   }
 
   /**
@@ -348,6 +406,12 @@ class CustomBlockEditor {
   placeVoxel() {
     if (!this.highlightedFace) return;
 
+    // 当たり判定モードの場合は専用処理
+    if (this.editMode === 'collision') {
+      this.placeCollisionVoxel();
+      return;
+    }
+
     const voxelSize = 1 / 8;
     const offset = -0.5 + voxelSize / 2;
     let placed = false;
@@ -419,10 +483,65 @@ class CustomBlockEditor {
   }
 
   /**
+   * 当たり判定ボクセルを配置
+   */
+  placeCollisionVoxel() {
+    if (!this.highlightedFace) return;
+
+    const gridSize = 4;
+    const voxelSize = 1 / gridSize;
+    let placed = false;
+
+    if (this.highlightedFace.floor) {
+      // 床面からの配置
+      const baseX = Math.floor(this.highlightedFace.x / 2);
+      const baseZ = Math.floor(this.highlightedFace.z / 2);
+
+      if (VoxelCollision.isValidPosition(baseX, 0, baseZ)) {
+        VoxelCollision.set(this.collisionData, baseX, 0, baseZ, 1);
+        placed = true;
+      }
+    } else if (this.highlightedVoxel) {
+      // 既存ボクセルに隣接して配置
+      const normal = this.highlightedFace.normal;
+      const nx = Math.round(normal.x);
+      const ny = Math.round(normal.y);
+      const nz = Math.round(normal.z);
+
+      // 当たり判定座標に変換
+      const collX = Math.floor(this.highlightedVoxel.x / 2);
+      const collY = Math.floor(this.highlightedVoxel.y / 2);
+      const collZ = Math.floor(this.highlightedVoxel.z / 2);
+
+      const targetX = collX + nx;
+      const targetY = collY + ny;
+      const targetZ = collZ + nz;
+
+      if (VoxelCollision.isValidPosition(targetX, targetY, targetZ)) {
+        VoxelCollision.set(this.collisionData, targetX, targetY, targetZ, 1);
+        placed = true;
+      }
+    }
+
+    if (placed) {
+      this.rebuildCollisionMesh();
+      if (this.onCollisionChange) {
+        this.onCollisionChange(this.collisionData);
+      }
+    }
+  }
+
+  /**
    * ボクセルを削除
    */
   deleteVoxel() {
     if (!this.highlightedVoxel) return;
+
+    // 当たり判定モードの場合は専用処理
+    if (this.editMode === 'collision') {
+      this.deleteCollisionVoxel();
+      return;
+    }
 
     const { x, y, z } = this.highlightedVoxel;
     let deleted = false;
@@ -457,6 +576,28 @@ class CustomBlockEditor {
       this.updateHighlight();
       if (this.onVoxelChange) {
         this.onVoxelChange(this.voxelData);
+      }
+    }
+  }
+
+  /**
+   * 当たり判定ボクセルを削除
+   */
+  deleteCollisionVoxel() {
+    if (!this.highlightedVoxel) return;
+
+    // 見た目座標から当たり判定座標に変換
+    const collX = Math.floor(this.highlightedVoxel.x / 2);
+    const collY = Math.floor(this.highlightedVoxel.y / 2);
+    const collZ = Math.floor(this.highlightedVoxel.z / 2);
+
+    if (VoxelCollision.isValidPosition(collX, collY, collZ) &&
+        VoxelCollision.get(this.collisionData, collX, collY, collZ) === 1) {
+      VoxelCollision.set(this.collisionData, collX, collY, collZ, 0);
+      this.rebuildCollisionMesh();
+      this.updateHighlight();
+      if (this.onCollisionChange) {
+        this.onCollisionChange(this.collisionData);
       }
     }
   }
@@ -536,6 +677,9 @@ class CustomBlockEditor {
     // voxel_lookをデコード
     this.voxelData = VoxelData.decode(blockData.voxel_look || '');
 
+    // voxel_collisionをデコード
+    this.collisionData = VoxelCollision.decode(blockData.voxel_collision || '');
+
     // マテリアルテクスチャを設定
     for (let m = 1; m <= 3; m++) {
       const texName = blockData[`material_${m}`];
@@ -546,6 +690,112 @@ class CustomBlockEditor {
 
     // メッシュを再構築
     this.rebuildMesh();
+    this.rebuildCollisionMesh();
+  }
+
+  /**
+   * 当たり判定ワイヤーフレームを再構築
+   */
+  rebuildCollisionMesh() {
+    const THREE = this.THREE;
+
+    // 既存のメッシュを削除
+    while (this.collisionMesh.children.length > 0) {
+      const child = this.collisionMesh.children[0];
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+      this.collisionMesh.remove(child);
+    }
+
+    // 当たり判定ボクセルをワイヤーフレームで表示
+    const gridSize = 4;
+    const voxelSize = 1 / gridSize; // 0.25
+    const scale = 1.01; // 見た目と重ならないよう少し大きく
+
+    for (let y = 0; y < gridSize; y++) {
+      for (let z = 0; z < gridSize; z++) {
+        for (let x = 0; x < gridSize; x++) {
+          if (VoxelCollision.get(this.collisionData, x, y, z) === 1) {
+            // ワイヤーフレームを作成
+            const geometry = new THREE.BoxGeometry(
+              voxelSize * scale,
+              voxelSize * scale,
+              voxelSize * scale
+            );
+            const edges = new THREE.EdgesGeometry(geometry);
+            const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 2 });
+            const wireframe = new THREE.LineSegments(edges, material);
+
+            // 位置を設定
+            const offset = -0.5 + voxelSize / 2;
+            wireframe.position.set(
+              offset + x * voxelSize,
+              offset + y * voxelSize,
+              offset + z * voxelSize
+            );
+
+            this.collisionMesh.add(wireframe);
+            geometry.dispose();
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * 編集モードを切り替え
+   * @param {string} mode - 'look' または 'collision'
+   */
+  setEditMode(mode) {
+    if (mode !== 'look' && mode !== 'collision') return;
+    if (this.editMode === mode) return;
+
+    const previousMode = this.editMode;
+    this.editMode = mode;
+
+    if (mode === 'collision') {
+      // 当たり判定モードに切り替え
+      // 現在のブラシサイズを保存
+      this.savedBrushSize = this.brushSize;
+      // ブラシサイズを2に固定（当たり判定1ボクセル = 見た目2x2x2）
+      this.brushSize = 2;
+      this.meshBuilder.updateHighlightSize(this.highlight, 2);
+
+      // グリッド切り替え
+      this.floorGrid.visible = false;
+      this.floorGrid4x4.visible = true;
+
+      // ワイヤーフレームを前面に表示
+      this.collisionMesh.visible = true;
+      this.blockMesh.visible = true;
+    } else {
+      // 見た目モードに切り替え
+      // ブラシサイズを復元
+      this.brushSize = this.savedBrushSize;
+      this.meshBuilder.updateHighlightSize(this.highlight, this.brushSize);
+
+      // グリッド切り替え
+      this.floorGrid.visible = true;
+      this.floorGrid4x4.visible = false;
+
+      // 通常表示
+      this.collisionMesh.visible = true;
+      this.blockMesh.visible = true;
+    }
+
+    this.updateHighlight();
+
+    if (this.onModeChange) {
+      this.onModeChange(mode);
+    }
+  }
+
+  /**
+   * 現在の編集モードを取得
+   * @returns {string} 'look' または 'collision'
+   */
+  getEditMode() {
+    return this.editMode;
   }
 
   /**
@@ -618,8 +868,119 @@ class CustomBlockEditor {
 
     return {
       ...this.currentBlock,
-      voxel_look: VoxelData.encode(this.voxelData)
+      voxel_look: VoxelData.encode(this.voxelData),
+      voxel_collision: VoxelCollision.encode(this.collisionData)
     };
+  }
+
+  /**
+   * 当たり判定データを取得
+   * @returns {number[][][]} 当たり判定データ
+   */
+  getCollisionData() {
+    return this.collisionData;
+  }
+
+  /**
+   * ミニプレビュー用のレンダラーを初期化
+   * @param {HTMLCanvasElement} canvas - キャンバス要素
+   */
+  initMiniPreview(canvas) {
+    const THREE = this.THREE;
+    const size = canvas.width;
+
+    // ミニシーン
+    this.miniScene = new THREE.Scene();
+    this.miniScene.background = new THREE.Color(0x222222);
+
+    // ミニカメラ
+    this.miniCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    this.miniCamera.position.set(1.5, 1, 1.5);
+    this.miniCamera.lookAt(0, 0, 0);
+
+    // ミニレンダラー
+    this.miniRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    this.miniRenderer.setSize(size, size);
+    this.miniRenderer.setPixelRatio(window.devicePixelRatio);
+
+    // ライト
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    this.miniScene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 10, 5);
+    this.miniScene.add(directionalLight);
+
+    // メッシュグループ
+    this.miniMesh = new THREE.Group();
+    this.miniScene.add(this.miniMesh);
+  }
+
+  /**
+   * ミニプレビューを更新
+   * @param {string} type - 'look' または 'collision'
+   */
+  updateMiniPreview(type) {
+    if (!this.miniRenderer || !this.miniScene) return;
+
+    const THREE = this.THREE;
+
+    // 既存のメッシュを削除
+    while (this.miniMesh.children.length > 0) {
+      const child = this.miniMesh.children[0];
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+      this.miniMesh.remove(child);
+    }
+
+    if (type === 'collision') {
+      // 当たり判定のワイヤーフレームを表示
+      const gridSize = 4;
+      const voxelSize = 1 / gridSize;
+
+      for (let y = 0; y < gridSize; y++) {
+        for (let z = 0; z < gridSize; z++) {
+          for (let x = 0; x < gridSize; x++) {
+            if (VoxelCollision.get(this.collisionData, x, y, z) === 1) {
+              const geometry = new THREE.BoxGeometry(voxelSize, voxelSize, voxelSize);
+              const edges = new THREE.EdgesGeometry(geometry);
+              const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+              const wireframe = new THREE.LineSegments(edges, material);
+
+              const offset = -0.5 + voxelSize / 2;
+              wireframe.position.set(
+                offset + x * voxelSize,
+                offset + y * voxelSize,
+                offset + z * voxelSize
+              );
+
+              this.miniMesh.add(wireframe);
+              geometry.dispose();
+            }
+          }
+        }
+      }
+    } else {
+      // 見た目のメッシュを表示
+      const newMesh = this.meshBuilder.buildMesh(this.voxelData, this.materialTextures);
+      while (newMesh.children.length > 0) {
+        const child = newMesh.children[0];
+        newMesh.remove(child);
+        this.miniMesh.add(child);
+      }
+    }
+
+    // レンダリング
+    this.miniRenderer.render(this.miniScene, this.miniCamera);
+  }
+
+  /**
+   * ミニプレビューをレンダリング
+   */
+  renderMiniPreview() {
+    if (this.miniRenderer && this.miniScene && this.miniCamera) {
+      this.miniRenderer.render(this.miniScene, this.miniCamera);
+    }
   }
 
   /**
@@ -666,12 +1027,41 @@ class CustomBlockEditor {
       this.blockMesh.remove(child);
     }
 
+    // 当たり判定メッシュを破棄
+    while (this.collisionMesh.children.length > 0) {
+      const child = this.collisionMesh.children[0];
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+      this.collisionMesh.remove(child);
+    }
+
+    // ミニプレビューを破棄
+    if (this.miniRenderer) {
+      this.miniRenderer.dispose();
+    }
+    if (this.miniMesh) {
+      while (this.miniMesh.children.length > 0) {
+        const child = this.miniMesh.children[0];
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+        this.miniMesh.remove(child);
+      }
+    }
+
     this.meshBuilder.clearTextureCache();
     this.renderer.dispose();
 
     if (this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
     }
+  }
+
+  /**
+   * シーンを取得（簡易チェッカー用）
+   * @returns {THREE.Scene} シーン
+   */
+  getScene() {
+    return this.scene;
   }
 }
 

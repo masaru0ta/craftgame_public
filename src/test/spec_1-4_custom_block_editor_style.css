@@ -140,6 +140,32 @@ h2 {
   padding: 0 8px;
 }
 
+/* モード切替ボタン */
+.mode-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  cursor: pointer;
+  transition: transform 0.2s, background-color 0.2s;
+  background-color: #333;
+  border: 2px solid #444;
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.mode-toggle-btn:hover {
+  transform: scale(1.1);
+  background-color: #444;
+}
+
+.mode-toggle-btn canvas {
+  width: 40px;
+  height: 40px;
+  border-radius: 2px;
+}
+
 /* ブラシサイズボタングループ */
 .brush-size-group {
   display: flex;
@@ -171,6 +197,16 @@ h2 {
 .brush-size-btn.active {
   border-color: #e94560;
   background-color: #4a2030;
+}
+
+.brush-size-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.brush-size-btn:disabled:hover {
+  transform: none;
+  background-color: #333;
 }
 
 .brush-size-icon {
@@ -225,15 +261,44 @@ h2 {
   height: 100% !important;
 }
 
+/* コントロールパネル（下部1/8の黒い帯）共通 */
+.control-panel {
+  flex: 0 0 12.5%; /* コンテナの1/8 */
+  background-color: #000000;
+}
+
 /* マテリアルパネル（下部1/8の黒い帯） */
 .material-panel {
   display: flex;
-  flex: 0 0 12.5%; /* コンテナの1/8 */
   justify-content: center;
   align-items: center;
   padding: 10px;
-  background-color: #000000;
   gap: 20px;
+}
+
+/* 当たり判定コントロールパネル */
+.collision-control-panel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  gap: 20px;
+}
+
+/* 簡易チェックボタン */
+.check-btn {
+  padding: 12px 24px;
+  background-color: #e94560;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.check-btn:hover {
+  background-color: #ff6b6b;
 }
 
 .material-slot {
