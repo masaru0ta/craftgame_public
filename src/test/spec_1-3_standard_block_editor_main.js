@@ -157,7 +157,7 @@ function onBlockSelect(e) {
  * 全テクスチャスロットを更新
  */
 function updateAllTextureSlots(block) {
-  const faces = ['default', 'top', 'bottom', 'front', 'left', 'right', 'back'];
+  const faces = ['default', 'front', 'top', 'bottom', 'left', 'right', 'back'];
   faces.forEach(face => {
     const textureName = block[`tex_${face}`] || null;
     updateTextureSlotDisplay(face, textureName);

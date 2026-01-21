@@ -33,7 +33,7 @@ class StandardBlockEditor {
     this.onTextureChange = null;
 
     // 背景色の設定
-    this.bgColors = [0x808080, 0x4169e1, 0x228b22, 0x000000]; // グレー、青、緑、黒
+    this.bgColors = [0x000000, 0x4169e1, 0x228b22]; // 黒、青、緑
     this.currentBgColorIndex = 0;
 
     // Three.js初期化
@@ -53,7 +53,7 @@ class StandardBlockEditor {
 
     // シーン
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x808080);
+    this.scene.background = new THREE.Color(0x000000);
 
     // カメラ
     this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);

@@ -161,7 +161,7 @@ h2 {
 .bg-color-indicator {
   width: 28px;
   height: 16px;
-  background-color: #808080;
+  background-color: #000000;
   border: 1px solid #666;
   border-radius: 2px;
 }
@@ -172,12 +172,12 @@ h2 {
   font-weight: bold;
 }
 
-/* 3Dプレビュー領域（アスペクト比 2:3） */
+/* 3Dプレビュー領域（アスペクト比 3:4） */
 .preview-3d {
   width: 100%;
   height: 0;
-  padding-bottom: 150%; /* アスペクト比2:3を維持 */
-  background-color: #808080;
+  padding-bottom: 133.33%; /* アスペクト比3:4を維持 */
+  background-color: #000000;
   position: relative;
 }
 
