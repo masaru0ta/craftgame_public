@@ -189,13 +189,13 @@ h2 {
   height: 100% !important;
 }
 
-/* テクスチャパネル */
+/* テクスチャパネル（下部1/8の黒い帯） */
 .texture-panel {
   display: flex;
   justify-content: space-around;
   align-items: center;
   padding: 10px;
-  background-color: #16213e;
+  background-color: #000000;
   gap: 5px;
   flex-wrap: wrap;
 }
