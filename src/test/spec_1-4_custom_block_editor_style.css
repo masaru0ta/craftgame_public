@@ -147,8 +147,8 @@ h2 {
   justify-content: center;
   height: calc(100% - 8px);
   aspect-ratio: 1 / 1;
-  max-width: 80px;
-  max-height: 80px;
+  max-width: 150px;
+  max-height: 150px;
   cursor: pointer;
   transition: background-color 0.2s;
   background-color: #333;
