@@ -271,12 +271,56 @@ class CollisionChecker {
       }
     }
 
-    // 床面との衝突（y = -0.5）
-    if (to.y - this.BALL_RADIUS < -0.5) {
+    // ブロック境界ボックスとの衝突（6面すべて）
+    const BOUND = 0.5;
+    const r = this.BALL_RADIUS;
+
+    // 下面（Y-）
+    if (to.y - r < -BOUND) {
       return {
         hit: true,
-        point: new THREE.Vector3(to.x, -0.5 + this.BALL_RADIUS, to.z),
+        point: new THREE.Vector3(to.x, -BOUND + r, to.z),
         normal: new THREE.Vector3(0, 1, 0)
+      };
+    }
+    // 上面（Y+）
+    if (to.y + r > BOUND) {
+      return {
+        hit: true,
+        point: new THREE.Vector3(to.x, BOUND - r, to.z),
+        normal: new THREE.Vector3(0, -1, 0)
+      };
+    }
+    // 左面（X-）
+    if (to.x - r < -BOUND) {
+      return {
+        hit: true,
+        point: new THREE.Vector3(-BOUND + r, to.y, to.z),
+        normal: new THREE.Vector3(1, 0, 0)
+      };
+    }
+    // 右面（X+）
+    if (to.x + r > BOUND) {
+      return {
+        hit: true,
+        point: new THREE.Vector3(BOUND - r, to.y, to.z),
+        normal: new THREE.Vector3(-1, 0, 0)
+      };
+    }
+    // 手前面（Z-）
+    if (to.z - r < -BOUND) {
+      return {
+        hit: true,
+        point: new THREE.Vector3(to.x, to.y, -BOUND + r),
+        normal: new THREE.Vector3(0, 0, 1)
+      };
+    }
+    // 奥面（Z+）
+    if (to.z + r > BOUND) {
+      return {
+        hit: true,
+        point: new THREE.Vector3(to.x, to.y, BOUND - r),
+        normal: new THREE.Vector3(0, 0, -1)
       };
     }
 
