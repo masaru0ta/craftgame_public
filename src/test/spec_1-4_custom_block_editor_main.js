@@ -129,6 +129,9 @@ function setupEventListeners() {
 
   // 衝突テストボタン（見た目モード）
   document.getElementById('check-btn-look').addEventListener('click', onToggleCheck);
+
+  // 自動作成ボタン
+  document.getElementById('auto-create-btn').addEventListener('click', onAutoCreateCollision);
 }
 
 /**
@@ -346,6 +349,23 @@ function stopCheck() {
   // ボタンテキストを変更
   document.getElementById('check-btn').textContent = '衝突テスト';
   document.getElementById('check-btn-look').textContent = '衝突テスト';
+}
+
+/**
+ * 当たり判定自動作成処理
+ */
+function onAutoCreateCollision() {
+  if (!editor.getBlockData()) {
+    showStatus('先にブロックを選択してください', 'error');
+    return;
+  }
+
+  const changed = editor.autoCreateCollision();
+  if (changed) {
+    showStatus('当たり判定を自動作成しました', 'success');
+  } else {
+    showStatus('変更はありませんでした', 'success');
+  }
 }
 
 /**

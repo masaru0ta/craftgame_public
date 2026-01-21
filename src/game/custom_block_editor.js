@@ -1039,6 +1039,54 @@ class CustomBlockEditor {
   }
 
   /**
+   * 見た目データから当たり判定を自動作成
+   * 見た目の2x2x2ボクセルに1つでもボクセルがあれば、対応する当たり判定を1にする
+   * @returns {boolean} 変更があったかどうか
+   */
+  autoCreateCollision() {
+    let changed = false;
+
+    // 当たり判定は4x4x4、見た目は8x8x8
+    for (let cy = 0; cy < 4; cy++) {
+      for (let cz = 0; cz < 4; cz++) {
+        for (let cx = 0; cx < 4; cx++) {
+          // 対応する見た目の2x2x2領域をチェック
+          let hasVoxel = false;
+          for (let dy = 0; dy < 2 && !hasVoxel; dy++) {
+            for (let dz = 0; dz < 2 && !hasVoxel; dz++) {
+              for (let dx = 0; dx < 2 && !hasVoxel; dx++) {
+                const lx = cx * 2 + dx;
+                const ly = cy * 2 + dy;
+                const lz = cz * 2 + dz;
+                if (VoxelData.get(this.voxelData, lx, ly, lz) !== 0) {
+                  hasVoxel = true;
+                }
+              }
+            }
+          }
+
+          // 当たり判定を設定
+          const newValue = hasVoxel ? 1 : 0;
+          const oldValue = VoxelCollision.get(this.collisionData, cx, cy, cz);
+          if (newValue !== oldValue) {
+            VoxelCollision.set(this.collisionData, cx, cy, cz, newValue);
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      this.rebuildCollisionMesh();
+      if (this.onCollisionChange) {
+        this.onCollisionChange(this.collisionData);
+      }
+    }
+
+    return changed;
+  }
+
+  /**
    * ミニプレビュー用のレンダラーを初期化
    * @param {HTMLCanvasElement} canvas - キャンバス要素
    */
