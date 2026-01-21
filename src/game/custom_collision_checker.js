@@ -18,7 +18,7 @@ class CollisionChecker {
 
     // ボール設定
     this.BALL_COUNT = 30;
-    this.BALL_RADIUS = 0.15; // 直径0.3ブロック相当
+    this.BALL_RADIUS = 0.075; // 直径0.15ブロック相当
     this.GRAVITY = -2.0;
     this.BOUNCE_FACTOR = 0.7; // 反発係数
     this.MIN_Y = -1.5; // この高さより下に落ちたら再生成
