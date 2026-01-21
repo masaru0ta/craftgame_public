@@ -118,10 +118,9 @@ h2 {
   color: #efef7f;
 }
 
-/* プレビューコンテナ */
+/* プレビューコンテナ（右カラムの横幅いっぱいに表示） */
 .preview-container {
   width: 100%;
-  max-width: 500px;
   background-color: #1a1a2e;
   border: 2px solid #333;
   border-radius: 8px;
