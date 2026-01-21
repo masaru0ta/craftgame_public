@@ -267,13 +267,26 @@ class CustomBlockEditor {
       point: hit.point.clone()
     };
 
-    // エッジの位置を更新
-    this.highlight.edges.position.copy(pos);
+    // ブラシサイズに応じたグリッドにスナップした位置を計算
+    let snappedX = this.snapToGrid(x);
+    let snappedY = this.snapToGrid(y);
+    let snappedZ = this.snapToGrid(z);
+
+    // 範囲チェック
+    snappedX = Math.max(0, Math.min(8 - this.brushSize, snappedX));
+    snappedY = Math.max(0, Math.min(8 - this.brushSize, snappedY));
+    snappedZ = Math.max(0, Math.min(8 - this.brushSize, snappedZ));
+
+    // エッジの位置を更新（スナップされた位置の中心）
+    const edgeCenterX = offset + (snappedX + this.brushSize / 2 - 0.5) * voxelSize;
+    const edgeCenterY = offset + (snappedY + this.brushSize / 2 - 0.5) * voxelSize;
+    const edgeCenterZ = offset + (snappedZ + this.brushSize / 2 - 0.5) * voxelSize;
+    this.highlight.edges.position.set(edgeCenterX, edgeCenterY, edgeCenterZ);
     this.highlight.edges.visible = true;
 
     // 面の位置と回転を更新
     const faceOffset = voxelSize * this.brushSize / 2 + 0.001;
-    this.highlight.face.position.copy(pos);
+    this.highlight.face.position.set(edgeCenterX, edgeCenterY, edgeCenterZ);
     this.highlight.face.position.add(normal.clone().multiplyScalar(faceOffset));
 
     // 面の向きを法線に合わせる
@@ -294,11 +307,9 @@ class CustomBlockEditor {
     let x = Math.floor((hit.point.x + halfSize) / voxelSize);
     let z = Math.floor((hit.point.z + halfSize) / voxelSize);
 
-    // ブラシサイズに応じてスナップ
-    if (this.brushSize > 1) {
-      x = Math.floor(x / this.brushSize) * this.brushSize;
-      z = Math.floor(z / this.brushSize) * this.brushSize;
-    }
+    // ブラシサイズに応じたグリッドにスナップ
+    x = this.snapToGrid(x);
+    z = this.snapToGrid(z);
 
     // 範囲チェック
     x = Math.max(0, Math.min(8 - this.brushSize, x));
@@ -342,7 +353,7 @@ class CustomBlockEditor {
     let placed = false;
 
     if (this.highlightedFace.floor) {
-      // 床面からの配置
+      // 床面からの配置（座標は既にスナップ済み）
       const baseX = this.highlightedFace.x;
       const baseZ = this.highlightedFace.z;
 
@@ -363,35 +374,33 @@ class CustomBlockEditor {
       const ny = Math.round(normal.y);
       const nz = Math.round(normal.z);
 
-      const baseX = this.highlightedVoxel.x + nx;
-      const baseY = this.highlightedVoxel.y + ny;
-      const baseZ = this.highlightedVoxel.z + nz;
+      // 配置先の基準座標を計算
+      let baseX = this.highlightedVoxel.x + nx;
+      let baseY = this.highlightedVoxel.y + ny;
+      let baseZ = this.highlightedVoxel.z + nz;
 
-      // ブラシサイズに応じて配置位置を調整
-      for (let i = 0; i < this.brushSize; i++) {
-        for (let j = 0; j < this.brushSize; j++) {
-          let px, py, pz;
+      // ブラシサイズに応じたグリッドにスナップ
+      baseX = this.snapToGrid(baseX);
+      baseY = this.snapToGrid(baseY);
+      baseZ = this.snapToGrid(baseZ);
 
-          if (Math.abs(ny) > 0.5) {
-            // 上下面
-            px = baseX + i - Math.floor(this.brushSize / 2);
-            py = baseY;
-            pz = baseZ + j - Math.floor(this.brushSize / 2);
-          } else if (Math.abs(nx) > 0.5) {
-            // 左右面
-            px = baseX;
-            py = baseY + i - Math.floor(this.brushSize / 2);
-            pz = baseZ + j - Math.floor(this.brushSize / 2);
-          } else {
-            // 前後面
-            px = baseX + i - Math.floor(this.brushSize / 2);
-            py = baseY + j - Math.floor(this.brushSize / 2);
-            pz = baseZ;
-          }
+      // 範囲チェック
+      baseX = Math.max(0, Math.min(8 - this.brushSize, baseX));
+      baseY = Math.max(0, Math.min(8 - this.brushSize, baseY));
+      baseZ = Math.max(0, Math.min(8 - this.brushSize, baseZ));
 
-          if (VoxelData.isValidPosition(px, py, pz)) {
-            VoxelData.set(this.voxelData, px, py, pz, this.currentMaterial);
-            placed = true;
+      // ブラシサイズ分のボクセルを配置
+      for (let dx = 0; dx < this.brushSize; dx++) {
+        for (let dy = 0; dy < this.brushSize; dy++) {
+          for (let dz = 0; dz < this.brushSize; dz++) {
+            const px = baseX + dx;
+            const py = baseY + dy;
+            const pz = baseZ + dz;
+
+            if (VoxelData.isValidPosition(px, py, pz)) {
+              VoxelData.set(this.voxelData, px, py, pz, this.currentMaterial);
+              placed = true;
+            }
           }
         }
       }
@@ -414,14 +423,23 @@ class CustomBlockEditor {
     const { x, y, z } = this.highlightedVoxel;
     let deleted = false;
 
-    // ブラシサイズに応じて削除
-    const half = Math.floor(this.brushSize / 2);
-    for (let dx = -half; dx < this.brushSize - half; dx++) {
-      for (let dy = -half; dy < this.brushSize - half; dy++) {
-        for (let dz = -half; dz < this.brushSize - half; dz++) {
-          const px = x + dx;
-          const py = y + dy;
-          const pz = z + dz;
+    // ブラシサイズに応じたグリッドにスナップ
+    let baseX = this.snapToGrid(x);
+    let baseY = this.snapToGrid(y);
+    let baseZ = this.snapToGrid(z);
+
+    // 範囲チェック
+    baseX = Math.max(0, Math.min(8 - this.brushSize, baseX));
+    baseY = Math.max(0, Math.min(8 - this.brushSize, baseY));
+    baseZ = Math.max(0, Math.min(8 - this.brushSize, baseZ));
+
+    // ブラシサイズ分のボクセルを削除
+    for (let dx = 0; dx < this.brushSize; dx++) {
+      for (let dy = 0; dy < this.brushSize; dy++) {
+        for (let dz = 0; dz < this.brushSize; dz++) {
+          const px = baseX + dx;
+          const py = baseY + dy;
+          const pz = baseZ + dz;
           if (VoxelData.isValidPosition(px, py, pz) && VoxelData.get(this.voxelData, px, py, pz) !== 0) {
             VoxelData.set(this.voxelData, px, py, pz, 0);
             deleted = true;
@@ -564,6 +582,27 @@ class CustomBlockEditor {
       this.brushSize = size;
       this.meshBuilder.updateHighlightSize(this.highlight, size);
     }
+  }
+
+  /**
+   * 座標をブラシサイズに応じたグリッドにスナップ
+   * - 1x: スナップなし（0-7の任意の位置）
+   * - 2x: 4x4x4グリッド（0, 2, 4, 6）
+   * - 4x: 2x2x2グリッド（0, 4）
+   * @param {number} coord - 座標値（0-7）
+   * @returns {number} スナップ後の座標
+   */
+  snapToGrid(coord) {
+    if (this.brushSize === 1) {
+      return coord;
+    } else if (this.brushSize === 2) {
+      // 4x4x4グリッド: 0, 2, 4, 6
+      return Math.floor(coord / 2) * 2;
+    } else if (this.brushSize === 4) {
+      // 2x2x2グリッド: 0, 4
+      return Math.floor(coord / 4) * 4;
+    }
+    return coord;
   }
 
   /**
