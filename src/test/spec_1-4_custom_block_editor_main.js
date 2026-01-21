@@ -19,7 +19,6 @@ const blockNameField = document.getElementById('block-name');
 const saveBtn = document.getElementById('save-btn');
 const statusMessage = document.getElementById('status-message');
 const previewContainer = document.getElementById('preview-container');
-const materialContainer = document.getElementById('material-container');
 
 /**
  * ステータスメッセージを表示
@@ -178,7 +177,6 @@ async function init() {
   // エディタ初期化
   editor = new CustomBlockEditor({
     previewContainer: previewContainer,
-    materialContainer: materialContainer,
     THREE: THREE,
     meshBuilder: meshBuilder
   });

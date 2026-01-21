@@ -8,13 +8,13 @@ class CustomBlockEditor {
    * コンストラクタ
    * @param {Object} options - 設定オプション
    * @param {HTMLElement} options.previewContainer - 3Dプレビューを描画するコンテナ
-   * @param {HTMLElement} options.materialContainer - マテリアルスロットを表示するコンテナ
+   * @param {HTMLElement} [options.materialContainer] - マテリアルスロットを表示するコンテナ（オプション）
    * @param {THREE} options.THREE - Three.jsライブラリ
    * @param {CustomBlockMeshBuilder} options.meshBuilder - メッシュビルダー
    */
   constructor(options) {
     this.previewContainer = options.previewContainer;
-    this.materialContainer = options.materialContainer;
+    this.materialContainer = options.materialContainer || null;
     this.THREE = options.THREE;
     this.meshBuilder = options.meshBuilder;
 
@@ -75,7 +75,6 @@ class CustomBlockEditor {
    */
   init() {
     this.initThreeJS();
-    this.initMaterialSlots();
     this.initMaterialOverlay();
     this.initEventListeners();
     this.animate();
@@ -232,50 +231,6 @@ class CustomBlockEditor {
     this.camera.position.y = this.cameraDistance * Math.sin(vRad);
     this.camera.position.z = this.cameraDistance * Math.cos(vRad) * Math.cos(hRad);
     this.camera.lookAt(0, 0, 0);
-  }
-
-  /**
-   * マテリアルスロットの初期化
-   */
-  initMaterialSlots() {
-    this.materialContainer.innerHTML = '';
-
-    for (let i = 1; i <= 3; i++) {
-      const slot = document.createElement('div');
-      slot.className = 'material-slot' + (i === this.currentMaterial ? ' selected' : '');
-      slot.dataset.material = i;
-
-      const preview = document.createElement('div');
-      preview.className = 'material-preview';
-
-      const label = document.createElement('div');
-      label.className = 'material-label';
-      label.textContent = `material_${i}`;
-
-      const keyHint = document.createElement('div');
-      keyHint.className = 'material-key-hint';
-      keyHint.textContent = i;
-
-      slot.appendChild(preview);
-      slot.appendChild(label);
-      slot.appendChild(keyHint);
-      this.materialContainer.appendChild(slot);
-
-      slot.addEventListener('click', (e) => {
-        if (e.shiftKey || e.ctrlKey) {
-          // Shift/Ctrlクリックでテクスチャ選択
-          this.openTextureSelector(i);
-        } else {
-          // 通常クリックでマテリアル選択
-          this.selectMaterial(i);
-        }
-      });
-
-      slot.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        this.openTextureSelector(i);
-      });
-    }
   }
 
   /**
@@ -608,9 +563,11 @@ class CustomBlockEditor {
   }
 
   /**
-   * マテリアルスロットの表示を更新
+   * マテリアルスロットの表示を更新（左カラムにmaterialContainerがある場合のみ）
    */
   updateMaterialSlots() {
+    if (!this.materialContainer) return;
+
     const slots = this.materialContainer.querySelectorAll('.material-slot');
     slots.forEach((slot, i) => {
       const material = this.materials[i];
