@@ -130,10 +130,9 @@ h2 {
   flex-direction: column;
 }
 
-/* ツールバー（上部） */
+/* ツールバー（上部1/8） */
 .toolbar {
-  height: 48px;
-  flex-shrink: 0;
+  flex: 0 0 12.5%; /* コンテナの1/8 */
   background-color: #000;
   display: flex;
   justify-content: flex-end;
