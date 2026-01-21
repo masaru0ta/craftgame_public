@@ -33,6 +33,8 @@ class CollisionChecker {
     this.isRunning = false;
     this.animationId = null;
     this.lastTime = 0;
+    this.accumulator = 0;
+    this.FIXED_TIMESTEP = 1 / 60; // 60fps固定
 
     // ボールのマテリアル（共有）
     this.ballMaterial = new this.THREE.MeshStandardMaterial({
@@ -61,6 +63,7 @@ class CollisionChecker {
 
     this.isRunning = true;
     this.lastTime = performance.now();
+    this.accumulator = 0;
 
     // ボールを生成
     this.createBalls();
@@ -167,6 +170,7 @@ class CollisionChecker {
 
   /**
    * アニメーションループ
+   * 固定タイムステップ（60fps）で物理演算を実行
    */
   animate() {
     if (!this.isRunning) return;
@@ -174,10 +178,17 @@ class CollisionChecker {
     this.animationId = requestAnimationFrame(() => this.animate());
 
     const currentTime = performance.now();
-    const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.05); // 最大50ms
+    const frameTime = Math.min((currentTime - this.lastTime) / 1000, 0.1); // 最大100ms
     this.lastTime = currentTime;
 
-    this.update(deltaTime);
+    // 経過時間を蓄積
+    this.accumulator += frameTime;
+
+    // 固定タイムステップで物理演算を実行
+    while (this.accumulator >= this.FIXED_TIMESTEP) {
+      this.update(this.FIXED_TIMESTEP);
+      this.accumulator -= this.FIXED_TIMESTEP;
+    }
   }
 
   /**
