@@ -140,38 +140,34 @@ h2 {
   padding: 0 8px;
 }
 
-/* 背景色切り替えボタン */
+/* 背景色切り替えボタン（テクスチャスロットと同じスタイル） */
 .bg-btn {
-  width: 48px;
-  height: 36px;
-  background-color: #333;
-  border: 2px solid #555;
-  border-radius: 4px;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 2px;
+  gap: 4px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  background: none;
+  border: none;
+  padding: 0;
 }
 
 .bg-btn:hover {
-  border-color: #888;
+  transform: scale(1.1);
 }
 
 .bg-color-indicator {
-  width: 28px;
-  height: 16px;
+  width: 48px;
+  height: 48px;
   background-color: #000000;
-  border: 1px solid #666;
-  border-radius: 2px;
+  border: 2px solid #444;
+  border-radius: 4px;
 }
 
 .bg-label {
-  font-size: 9px;
-  color: #aaa;
-  font-weight: bold;
+  font-size: 10px;
+  color: #888;
 }
 
 /* 3Dプレビュー領域（残りのスペースを埋める） */
