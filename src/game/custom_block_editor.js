@@ -357,13 +357,17 @@ class CustomBlockEditor {
       const baseX = this.highlightedFace.x;
       const baseZ = this.highlightedFace.z;
 
+      // ブラシサイズ分のボクセルを配置（X, Y, Z全方向）
       for (let dx = 0; dx < this.brushSize; dx++) {
-        for (let dz = 0; dz < this.brushSize; dz++) {
-          const x = baseX + dx;
-          const z = baseZ + dz;
-          if (VoxelData.isValidPosition(x, 0, z)) {
-            VoxelData.set(this.voxelData, x, 0, z, this.currentMaterial);
-            placed = true;
+        for (let dy = 0; dy < this.brushSize; dy++) {
+          for (let dz = 0; dz < this.brushSize; dz++) {
+            const x = baseX + dx;
+            const y = dy;
+            const z = baseZ + dz;
+            if (VoxelData.isValidPosition(x, y, z)) {
+              VoxelData.set(this.voxelData, x, y, z, this.currentMaterial);
+              placed = true;
+            }
           }
         }
       }
