@@ -316,8 +316,8 @@ class CustomBlockEditor {
             if (navigator.vibrate) {
               navigator.vibrate(50);
             }
-            // ロングプレスで配置
-            this.placeVoxel();
+            // ロングプレスで削除
+            this.deleteVoxel();
           }
         }, 500);
       } else if (e.touches.length === 2) {
@@ -382,11 +382,11 @@ class CustomBlockEditor {
       e.preventDefault();
       clearTimeout(this.touchState.longPressTimer);
 
-      // タップ（短いタッチでドラッグなし）で削除
+      // タップ（短いタッチでドラッグなし）で配置
       if (!this.touchState.isDragging && !this.touchState.isLongPress) {
         const touchDuration = Date.now() - this.touchState.startTime;
         if (touchDuration < 300) {
-          this.deleteVoxel();
+          this.placeVoxel();
         }
       }
 
