@@ -45,8 +45,14 @@ class CustomBlockEditor {
     this.cameraAngleH = 45;
     this.cameraAngleV = 30;
     this.isDragging = false;
+    this.dragStartX = 0;
+    this.dragStartY = 0;
     this.lastMouseX = 0;
     this.lastMouseY = 0;
+
+    // ハイライト用
+    this.highlightedVoxel = null;
+    this.highlightMeshes = [];
 
     // テクスチャ選択モーダル
     this.textureModal = null;
@@ -211,35 +217,57 @@ class CustomBlockEditor {
 
     // マウスダウン
     canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 1) { // 中クリック
+      if (e.button === 0) { // 左クリック: ドラッグ開始 or 削除
         this.isDragging = true;
+        this.dragStartX = e.clientX;
+        this.dragStartY = e.clientY;
         this.lastMouseX = e.clientX;
         this.lastMouseY = e.clientY;
-      } else if (e.button === 0 || e.button === 2) { // 左クリック or 右クリック
-        this.handleVoxelClick(e);
+      } else if (e.button === 2) { // 右クリック: 配置
+        this.handleVoxelPlace(e);
       }
     });
 
     // マウス移動
-    document.addEventListener('mousemove', (e) => {
-      if (!this.isDragging) return;
+    canvas.addEventListener('mousemove', (e) => {
+      // ハイライト更新
+      this.updateHighlight(e);
 
-      const deltaX = e.clientX - this.lastMouseX;
-      const deltaY = e.clientY - this.lastMouseY;
+      // ドラッグ中なら視点回転
+      if (this.isDragging) {
+        const deltaX = e.clientX - this.lastMouseX;
+        const deltaY = e.clientY - this.lastMouseY;
 
-      this.cameraAngleH -= deltaX * 0.5;
-      this.cameraAngleV += deltaY * 0.5;
-      this.cameraAngleV = Math.max(-90, Math.min(90, this.cameraAngleV));
+        // 右にドラッグするとブロックが右に回転
+        this.cameraAngleH -= deltaX * 0.5;
+        this.cameraAngleV += deltaY * 0.5;
+        this.cameraAngleV = Math.max(-90, Math.min(90, this.cameraAngleV));
 
-      this.updateCameraPosition();
+        this.updateCameraPosition();
 
-      this.lastMouseX = e.clientX;
-      this.lastMouseY = e.clientY;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+      }
     });
 
     // マウスアップ
-    document.addEventListener('mouseup', () => {
+    canvas.addEventListener('mouseup', (e) => {
+      if (e.button === 0 && this.isDragging) {
+        // ドラッグ距離が小さければクリックとして削除
+        const dx = e.clientX - this.dragStartX;
+        const dy = e.clientY - this.dragStartY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < 5) {
+          this.handleVoxelDelete(e);
+        }
+      }
       this.isDragging = false;
+    });
+
+    // マウスがキャンバスから出たらハイライト解除
+    canvas.addEventListener('mouseleave', () => {
+      this.clearHighlight();
     });
 
     // 右クリックメニュー無効化
@@ -267,51 +295,134 @@ class CustomBlockEditor {
   }
 
   /**
-   * ボクセルクリック処理
+   * ハイライト更新
    * @param {MouseEvent} e - マウスイベント
    */
-  handleVoxelClick(e) {
+  updateHighlight(e) {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // バウンディングボックス内の全オブジェクトとの交差判定
     const intersects = this.raycaster.intersectObjects(this.voxelGroup.children, true);
 
-    if (e.button === 0) { // 左クリック：配置
-      if (intersects.length > 0) {
-        const hit = intersects[0];
-        if (e.shiftKey) {
-          // Shiftキー押下時：クリックしたボクセルを置換
-          const { x, y, z } = hit.object.userData;
-          this.voxelData.set(x, y, z, this.currentMaterial);
-        } else {
-          // 通常：隣接位置に配置
-          const pos = this.getAdjacentPosition(hit);
-          if (pos && this.isInBounds(pos.x, pos.y, pos.z)) {
-            this.voxelData.set(pos.x, pos.y, pos.z, this.currentMaterial);
-          }
-        }
+    // 以前のハイライトをクリア
+    this.clearHighlight();
+
+    if (intersects.length > 0) {
+      const hit = intersects[0];
+      const voxelMesh = hit.object;
+      const { x, y, z } = voxelMesh.userData;
+
+      this.highlightedVoxel = { x, y, z, hit };
+
+      // ハイライトボックスを作成
+      this.createHighlightBox(x, y, z, hit);
+    }
+  }
+
+  /**
+   * ハイライトボックスを作成
+   * @param {number} x - X座標
+   * @param {number} y - Y座標
+   * @param {number} z - Z座標
+   * @param {Object} hit - レイキャスト結果
+   */
+  createHighlightBox(x, y, z, hit) {
+    const size = this.voxelSize * 1.02; // 少し大きく
+    const geometry = new this.THREE.BoxGeometry(size, size, size);
+
+    // 面ごとに色を設定（緑:選択面、赤:その他）
+    const materials = [];
+    const normal = hit.face.normal.clone();
+    normal.transformDirection(hit.object.matrixWorld);
+
+    // Three.js BoxGeometry の面順序: +X, -X, +Y, -Y, +Z, -Z
+    const faceNormals = [
+      new this.THREE.Vector3(1, 0, 0),   // +X (right)
+      new this.THREE.Vector3(-1, 0, 0),  // -X (left)
+      new this.THREE.Vector3(0, 1, 0),   // +Y (top)
+      new this.THREE.Vector3(0, -1, 0),  // -Y (bottom)
+      new this.THREE.Vector3(0, 0, 1),   // +Z (front)
+      new this.THREE.Vector3(0, 0, -1),  // -Z (back)
+    ];
+
+    faceNormals.forEach(faceNormal => {
+      const isSelectedFace = faceNormal.dot(normal) > 0.9;
+      const color = isSelectedFace ? 0x00ff00 : 0xff0000;
+      materials.push(new this.THREE.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: 0.3,
+        side: this.THREE.FrontSide
+      }));
+    });
+
+    const highlightMesh = new this.THREE.Mesh(geometry, materials);
+    highlightMesh.position.set(
+      (x - 3.5) * this.voxelSize,
+      (y - 3.5) * this.voxelSize,
+      (z - 3.5) * this.voxelSize
+    );
+
+    this.scene.add(highlightMesh);
+    this.highlightMeshes.push(highlightMesh);
+  }
+
+  /**
+   * ハイライトをクリア
+   */
+  clearHighlight() {
+    this.highlightMeshes.forEach(mesh => {
+      this.scene.remove(mesh);
+      mesh.geometry.dispose();
+      if (Array.isArray(mesh.material)) {
+        mesh.material.forEach(m => m.dispose());
       } else {
-        // 何もない場所をクリック：中央に配置を試みる
-        const centerPos = this.getCenterPosition();
-        if (centerPos) {
-          this.voxelData.set(centerPos.x, centerPos.y, centerPos.z, this.currentMaterial);
-        }
+        mesh.material.dispose();
       }
+    });
+    this.highlightMeshes = [];
+    this.highlightedVoxel = null;
+  }
+
+  /**
+   * ボクセル配置（右クリック）
+   * @param {MouseEvent} e - マウスイベント
+   */
+  handleVoxelPlace(e) {
+    if (!this.highlightedVoxel) {
+      // ボクセルがない場合は中央に配置
+      const centerPos = this.getCenterPosition();
+      this.voxelData.set(centerPos.x, centerPos.y, centerPos.z, this.currentMaterial);
       this.rebuildVoxelMesh();
       this.triggerDataChange();
-    } else if (e.button === 2) { // 右クリック：削除
-      if (intersects.length > 0) {
-        const hit = intersects[0];
-        const { x, y, z } = hit.object.userData;
-        this.voxelData.set(x, y, z, 0);
-        this.rebuildVoxelMesh();
-        this.triggerDataChange();
-      }
+      return;
     }
+
+    const { hit } = this.highlightedVoxel;
+    const pos = this.getAdjacentPosition(hit);
+
+    if (pos && this.isInBounds(pos.x, pos.y, pos.z)) {
+      this.voxelData.set(pos.x, pos.y, pos.z, this.currentMaterial);
+      this.rebuildVoxelMesh();
+      this.triggerDataChange();
+    }
+  }
+
+  /**
+   * ボクセル削除（左クリック）
+   * @param {MouseEvent} e - マウスイベント
+   */
+  handleVoxelDelete(e) {
+    if (!this.highlightedVoxel) return;
+
+    const { x, y, z } = this.highlightedVoxel;
+    this.voxelData.set(x, y, z, 0);
+    this.rebuildVoxelMesh();
+    this.clearHighlight();
+    this.triggerDataChange();
   }
 
   /**
