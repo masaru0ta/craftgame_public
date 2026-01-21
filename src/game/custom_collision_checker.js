@@ -21,7 +21,7 @@ class CollisionChecker {
     // ボール設定
     this.BALL_COUNT = 30;
     this.BALL_RADIUS = 0.075; // 直径0.15ブロック相当
-    this.GRAVITY_STRENGTH = 2.0; // 重力の強さ
+    this.GRAVITY_STRENGTH = 4.0; // 重力の強さ
     this.BOUNCE_FACTOR = 0.7; // 反発係数
     this.MIN_Y = -1.5; // この高さより下に落ちたら再生成
 
