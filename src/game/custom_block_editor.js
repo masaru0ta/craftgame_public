@@ -183,9 +183,15 @@ class CustomBlockEditor {
       item.appendChild(label);
       this.materialOverlay.appendChild(item);
 
-      // クリックでマテリアル選択
+      // クリックでマテリアル選択 or テクスチャ選択
       item.addEventListener('click', () => {
-        this.selectMaterial(i);
+        if (this.currentMaterial === i) {
+          // 既に選択中のマテリアルをクリック → テクスチャ選択画面を表示
+          this.openTextureSelector(i);
+        } else {
+          // 別のマテリアルをクリック → マテリアル切り替え
+          this.selectMaterial(i);
+        }
       });
     }
 
