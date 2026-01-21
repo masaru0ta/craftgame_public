@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>カスタムブロックエディタ</title>
+  <link rel="stylesheet" href="spec_1-4_custom_block_editor_style.css?v=1">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <!-- 左カラム: ブロック選択・情報 -->
+    <div class="left-column">
+      <h2>カスタムブロックエディタ</h2>
+
+      <div class="form-group">
+        <label for="block-select">ブロック選択</label>
+        <select id="block-select">
+          <option value="">-- 選択してください --</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="block-str-id">block_str_id</label>
+        <input type="text" id="block-str-id" readonly>
+      </div>
+
+      <div class="form-group">
+        <label for="block-name">name</label>
+        <input type="text" id="block-name" readonly>
+      </div>
+
+      <button id="save-btn" class="save-btn">保存</button>
+
+      <div id="status-message" class="status-message"></div>
+    </div>
+
+    <!-- 右カラム: 3Dプレビュー -->
+    <div class="right-column">
+      <div class="preview-container">
+        <!-- ツールボタン枠 -->
+        <div class="toolbar">
+          <!-- ブラシサイズ切り替えボタン -->
+          <div class="brush-size-group">
+            <button class="brush-size-btn" data-size="4" title="4x4ブラシ">
+              <span class="brush-size-icon">4x</span>
+            </button>
+            <button class="brush-size-btn" data-size="2" title="2x2ブラシ">
+              <span class="brush-size-icon">2x</span>
+            </button>
+            <button class="brush-size-btn active" data-size="1" title="1x1ブラシ">
+              <span class="brush-size-icon">1x</span>
+            </button>
+          </div>
+          <!-- 背景色切り替えボタン -->
+          <button id="bg-btn" class="bg-btn" title="背景色切り替え">
+            <span class="bg-color-indicator"></span>
+            <span class="bg-label">BG</span>
+          </button>
+        </div>
+
+        <div id="preview-3d" class="preview-3d"></div>
+
+        <!-- マテリアル選択エリア -->
+        <div class="material-panel">
+          <div class="material-slot active" data-material="1">
+            <div class="material-image"></div>
+            <span class="material-label">1</span>
+          </div>
+          <div class="material-slot" data-material="2">
+            <div class="material-image"></div>
+            <span class="material-label">2</span>
+          </div>
+          <div class="material-slot" data-material="3">
+            <div class="material-image"></div>
+            <span class="material-label">3</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ選択モーダル -->
+  <div id="texture-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>テクスチャ選択</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="texture-grid" class="texture-grid">
+          <!-- テクスチャがここに表示される -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../game/gas_api.js?v=5"></script>
+  <script src="../game/voxel_data.js?v=1"></script>
+  <script src="../game/custom_block_mesh_builder.js?v=1"></script>
+  <script src="../game/custom_block_editor.js?v=1"></script>
+  <script src="spec_1-4_custom_block_editor_main.js?v=1"></script>
+</body>
+</html>

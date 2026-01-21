@@ -1,0 +1,428 @@
+/* カスタムブロックエディタ スタイル */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #1a1a2e;
+  color: #eee;
+  min-height: 100vh;
+}
+
+.container {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* 左カラム: 40% */
+.left-column {
+  flex: 4;
+  padding: 20px;
+  background-color: #16213e;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+/* 右カラム: 60% */
+.right-column {
+  flex: 6;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+h2 {
+  margin-bottom: 10px;
+  color: #e94560;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-group label {
+  font-size: 14px;
+  color: #aaa;
+}
+
+.form-group select,
+.form-group input {
+  padding: 10px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background-color: #0f3460;
+  color: #eee;
+  font-size: 14px;
+}
+
+.form-group select:focus,
+.form-group input:focus {
+  outline: none;
+  border-color: #e94560;
+}
+
+.form-group input[readonly] {
+  background-color: #1a1a2e;
+  color: #888;
+}
+
+.save-btn {
+  padding: 12px 20px;
+  background-color: #e94560;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  margin-top: 10px;
+}
+
+.save-btn:hover {
+  background-color: #ff6b6b;
+}
+
+.save-btn:disabled {
+  background-color: #666;
+  cursor: not-allowed;
+}
+
+.status-message {
+  padding: 10px;
+  border-radius: 4px;
+  font-size: 14px;
+  min-height: 40px;
+}
+
+.status-message.success {
+  background-color: #2d5a27;
+  color: #7fef7f;
+}
+
+.status-message.error {
+  background-color: #5a2727;
+  color: #ef7f7f;
+}
+
+.status-message.loading {
+  background-color: #5a5a27;
+  color: #efef7f;
+}
+
+/* プレビューコンテナ（右カラムの横幅いっぱいに表示、全体で3:4） */
+.preview-container {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background-color: #1a1a2e;
+  border: 2px solid #333;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ツールバー（上部1/8） */
+.toolbar {
+  flex: 0 0 12.5%; /* コンテナの1/8 */
+  background-color: #000;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8px;
+}
+
+/* ブラシサイズボタングループ */
+.brush-size-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ブラシサイズ切り替えボタン */
+.brush-size-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  cursor: pointer;
+  transition: transform 0.2s, background-color 0.2s;
+  background-color: #333;
+  border: 2px solid #444;
+  border-radius: 4px;
+  padding: 0;
+}
+
+.brush-size-btn:hover {
+  transform: scale(1.1);
+  background-color: #444;
+}
+
+.brush-size-btn.active {
+  border-color: #e94560;
+  background-color: #4a2030;
+}
+
+.brush-size-icon {
+  font-size: 16px;
+  font-weight: bold;
+  color: #eee;
+}
+
+/* 背景色切り替えボタン（マテリアルスロットと同じスタイル） */
+.bg-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.bg-btn:hover {
+  transform: scale(1.1);
+}
+
+.bg-color-indicator {
+  width: 48px;
+  height: 48px;
+  background-color: #000000;
+  border: 2px solid #444;
+  border-radius: 4px;
+}
+
+.bg-label {
+  font-size: 10px;
+  color: #888;
+}
+
+/* 3Dプレビュー領域（中央6/8） */
+.preview-3d {
+  width: 100%;
+  flex: 1;
+  background-color: #000000;
+  position: relative;
+}
+
+.preview-3d canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* マテリアルパネル（下部1/8の黒い帯） */
+.material-panel {
+  display: flex;
+  flex: 0 0 12.5%; /* コンテナの1/8 */
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  background-color: #000000;
+  gap: 20px;
+}
+
+.material-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.material-slot:hover {
+  transform: scale(1.1);
+}
+
+.material-image {
+  width: 48px;
+  height: 48px;
+  background-color: #000;
+  border: 2px solid #444;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+}
+
+.material-slot.active .material-image {
+  border-color: #e94560;
+}
+
+.material-label {
+  font-size: 10px;
+  color: #888;
+  text-align: center;
+}
+
+/* モーダル */
+.modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  z-index: 1000;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal.active {
+  display: flex;
+}
+
+.modal-content {
+  background-color: #16213e;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 1px solid #333;
+}
+
+.modal-header h3 {
+  color: #e94560;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  color: #fff;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* テクスチャグリッド */
+.texture-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 15px;
+}
+
+.texture-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px;
+  background-color: #0f3460;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.texture-item:hover {
+  background-color: #1a4a7a;
+}
+
+.texture-item.no-texture {
+  background-color: #333;
+}
+
+.texture-item.add-texture {
+  background-color: #2d5a27;
+}
+
+.texture-item .preview {
+  width: 64px;
+  height: 64px;
+  background-color: #000;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.texture-item.no-texture .preview {
+  background-color: #1a1a1a;
+  font-size: 24px;
+  color: #666;
+}
+
+.texture-item.add-texture .preview {
+  background-color: #1a3a1a;
+  font-size: 32px;
+  color: #4a8a4a;
+}
+
+.texture-item .name {
+  font-size: 11px;
+  color: #aaa;
+  text-align: center;
+  word-break: break-all;
+  max-width: 80px;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 768px) {
+  .container {
+    flex-direction: column;
+  }
+
+  .left-column,
+  .right-column {
+    flex: none;
+    width: 100%;
+  }
+
+  .preview-container {
+    max-width: 100%;
+  }
+
+  .material-panel {
+    gap: 10px;
+  }
+
+  .material-image {
+    width: 40px;
+    height: 40px;
+  }
+
+  .brush-size-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .brush-size-icon {
+    font-size: 14px;
+  }
+}
