@@ -162,6 +162,7 @@ body {
 
 .preview-3d {
   flex: 6;
+  min-height: 0;
   position: relative;
   background: #000;
   display: flex;

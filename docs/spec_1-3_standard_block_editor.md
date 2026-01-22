@@ -157,6 +157,8 @@ constructor(options) {
 特記事項
 - .editor-containerの比率は横3：縦4（aspect-ratio: 3 / 4）とする。
 - 3Dプレビュー領域はレスポンシブで、右カラム幅に合わせてサイズを変更する。
+- 3Dプレビュー領域の上部 1/8 はツール枠
+- 3Dプレビュー領域の下部 1/8 はテクスチャ枠
 - テクスチャ選択スロットはセンター寄せにする。
 
 ### 4.6 UI操作
@@ -363,6 +365,8 @@ BlockEditorUIが生成するUI要素。サイズ・色の詳細は `mockups/mock
 
 - [ ] UIがモックHTMLと同じ見た目で表示される
 - [ ] .editor-containerの比率が横3：縦4（aspect-ratio: 3 / 4）である
+- [ ] .preview-toolbarの高さが.preview-containerの1/8である
+- [ ] .control-panelの高さが.preview-containerの1/8である
 - [ ] ツールバーが3カラム構成（left-group, center-group, right-group）である
 - [ ] テクスチャスロット（.material-item）が7つ表示される（default, front, top, bottom, left, right, back）
 - [ ] BGボタンが右グループに表示される
