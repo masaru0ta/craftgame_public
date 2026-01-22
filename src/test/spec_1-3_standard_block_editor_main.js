@@ -36,6 +36,9 @@ async function init() {
   });
   editorUI.init();
 
+  // テスト用にグローバル公開
+  window.editorUI = editorUI;
+
   // データ読み込み
   await loadData();
 

@@ -343,7 +343,7 @@ class StandardBlockEditor {
     const deltaY = e.clientY - this.lastMouseY;
 
     // 水平回転（右にドラッグするとブロックが右に回転 = カメラが左に移動）
-    this.horizontalAngle += deltaX * 0.5;
+    this.horizontalAngle -= deltaX * 0.5;
 
     // 垂直回転（上下90度まで）
     this.verticalAngle += deltaY * 0.5;
