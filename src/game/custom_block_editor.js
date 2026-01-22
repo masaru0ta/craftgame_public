@@ -33,7 +33,7 @@ class CustomBlockEditor {
     this.currentMaterial = 1; // 1-3
 
     // 編集設定
-    this.brushSize = 1; // 1, 2, 4
+    this.brushSize = 2; // 1, 2, 4（初期値は2）
     this.editMode = 'look'; // 'look' or 'collision'
 
     // カメラ設定
