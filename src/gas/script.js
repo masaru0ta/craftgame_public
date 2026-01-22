@@ -35,6 +35,9 @@ function doGet(e) {
         result = getAll();
         break;
       // 書き込み系
+      case 'createBlock':
+        result = createBlock(data);
+        break;
       case 'saveBlock':
         result = saveBlock(data);
         break;
@@ -69,6 +72,9 @@ function doPost(e) {
 
     let result;
     switch (action) {
+      case 'createBlock':
+        result = createBlock(body);
+        break;
       case 'saveBlock':
         result = saveBlock(body);
         break;
@@ -227,6 +233,79 @@ function createErrorResponse(message) {
   return ContentService
     .createTextOutput(JSON.stringify(response))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * ブロックを新規作成
+ * @param {Object} blockData - ブロックデータ
+ * @returns {Object} 結果
+ */
+function createBlock(blockData) {
+  // バリデーション: block_str_id が空でないこと
+  if (!blockData.block_str_id || blockData.block_str_id.trim() === '') {
+    throw new Error('block_str_id is required');
+  }
+
+  // バリデーション: block_str_id が英数字とアンダースコアのみで構成されること
+  if (!/^[a-zA-Z0-9_]+$/.test(blockData.block_str_id)) {
+    throw new Error('block_str_id must contain only alphanumeric characters and underscores');
+  }
+
+  // バリデーション: name が空でないこと
+  if (!blockData.name || blockData.name.trim() === '') {
+    throw new Error('name is required');
+  }
+
+  // バリデーション: shape_type が "normal" または "custom" であること
+  if (blockData.shape_type !== 'normal' && blockData.shape_type !== 'custom') {
+    throw new Error('shape_type must be "normal" or "custom"');
+  }
+
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_BLOCKS);
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+
+  // block_str_id の重複チェック
+  const blockStrIdIndex = headers.indexOf('block_str_id');
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][blockStrIdIndex] === blockData.block_str_id) {
+      throw new Error('block_str_id already exists');
+    }
+  }
+
+  // 新しい block_id を取得（最大値 + 1）
+  const blockIdIndex = headers.indexOf('block_id');
+  let maxBlockId = 0;
+  for (let i = 1; i < data.length; i++) {
+    const id = data[i][blockIdIndex];
+    if (id && id > maxBlockId) {
+      maxBlockId = id;
+    }
+  }
+  const newBlockId = maxBlockId + 1;
+
+  // 行データを作成
+  const rowData = headers.map(header => {
+    if (header === 'block_id') {
+      return newBlockId;
+    }
+    if (blockData.hasOwnProperty(header)) {
+      return blockData[header];
+    }
+    // デフォルト値
+    if (header === 'is_transparent') {
+      return false;
+    }
+    if (header === 'light_level') {
+      return 0;
+    }
+    return '';
+  });
+
+  // 新規行を追加
+  sheet.appendRow(rowData);
+
+  return { block_id: newBlockId };
 }
 
 /**

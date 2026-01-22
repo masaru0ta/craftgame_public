@@ -236,12 +236,12 @@
 - [x] 不正なリクエストでエラーレスポンスが返る
 
 ### 書き込みAPI
-- [ ] createBlockでブロックを新規作成できる
-- [ ] createBlockでblock_str_idが空の場合エラーになる
-- [ ] createBlockでblock_str_idが重複する場合エラーになる
-- [ ] createBlockでblock_str_idが不正な文字を含む場合エラーになる
-- [ ] createBlockでnameが空の場合エラーになる
-- [ ] createBlockでshape_typeが不正な値の場合エラーになる
+- [x] createBlockでブロックを新規作成できる
+- [x] createBlockでblock_str_idが空の場合エラーになる
+- [x] createBlockでblock_str_idが重複する場合エラーになる
+- [x] createBlockでblock_str_idが不正な文字を含む場合エラーになる
+- [x] createBlockでnameが空の場合エラーになる
+- [x] createBlockでshape_typeが不正な値の場合エラーになる
 - [x] saveBlockで既存ブロックを更新できる
 - [x] deleteBlockでブロックを削除できる
 - [x] saveTextureでテクスチャを追加できる
