@@ -196,8 +196,8 @@ body {
 }
 
 .bg-color-indicator {
-  width: 32px;
-  height: 32px;
+  width: clamp(24px, 5vw, 48px);
+  height: clamp(24px, 5vw, 48px);
   border: 2px solid #444;
   border-radius: 2px;
   background: #000;
@@ -208,7 +208,7 @@ body {
 }
 
 .bg-btn span.bg-label {
-  font-size: 9px;
+  font-size: clamp(8px, 1vw, 12px);
   color: #888;
 }
 
@@ -253,8 +253,8 @@ body {
 }
 
 .slot-image {
-  width: 32px;
-  height: 32px;
+  width: clamp(24px, 5vw, 48px);
+  height: clamp(24px, 5vw, 48px);
   background: #000;
   border: 2px solid #444;
   border-radius: 2px;
@@ -271,7 +271,7 @@ body {
 }
 
 .material-item span {
-  font-size: 9px;
+  font-size: clamp(8px, 1vw, 12px);
   color: #888;
 }
 
