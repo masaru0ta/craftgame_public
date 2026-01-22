@@ -292,14 +292,16 @@ BoxGeometryの面は以下の順序で定義されている（各面4頂点）:
 
 各面でどの座標軸をU/Vに使用するか:
 
-| 面            | U座標   | V座標   | flipU | flipV  |
-|---------------|---------|---------|-------|--------|
-| +X (right)    | 7 - z   | y       | true  | false  |
-| -X (left)     | z       | y       | true  | false  |
-| +Y (top)      | x       | 7 - z   | true  | false  |
-| -Y (bottom)   | x       | z       | true  | false  |
-| +Z (front)    | x       | y       | true  | false  |
-| -Z (back)     | 7 - x   | y       | true  | false  |
+| 面            | U座標   | V座標   |
+|---------------|---------|---------|
+| +X (right)    | 7 - z   | y       |
+| -X (left)     | z       | y       |
+| +Y (top)      | x       | 7 - z   |
+| -Y (bottom)   | x       | z       |
+| +Z (front)    | x       | y       |
+| -Z (back)     | 7 - x   | y       |
+
+※ `7 - 座標` の形式はその軸方向の反転を意味する
 
 ## 10. テスト用CSSセレクタ定義
 

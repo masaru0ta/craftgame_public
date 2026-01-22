@@ -123,17 +123,16 @@ class CustomBlockMeshBuilder {
     // テクスチャの1セル分のサイズ（8x8分割）
     const cellSize = 1 / 8;
 
-    // 各面のUV計算
+    // 各面のUV計算（仕様書 9.3 に基づく）
     // BoxGeometryの面順序:
     // 0-3: +X (right), 4-7: -X (left), 8-11: +Y (top), 12-15: -Y (bottom), 16-19: +Z (front), 20-23: -Z (back)
-
     const faces = [
-      { start: 0, u: 7 - z, v: y, flipU: true },      // +X (right)
-      { start: 4, u: z, v: y, flipU: true },          // -X (left)
-      { start: 8, u: x, v: 7 - z, flipU: true },      // +Y (top)
-      { start: 12, u: x, v: z, flipU: true },         // -Y (bottom)
-      { start: 16, u: x, v: y, flipU: true },         // +Z (front)
-      { start: 20, u: 7 - x, v: y, flipU: true }      // -Z (back)
+      { start: 0, u: 7 - z, v: y },   // +X (right)
+      { start: 4, u: z, v: y },       // -X (left)
+      { start: 8, u: x, v: 7 - z },   // +Y (top)
+      { start: 12, u: x, v: z },      // -Y (bottom)
+      { start: 16, u: x, v: y },      // +Z (front)
+      { start: 20, u: 7 - x, v: y }   // -Z (back)
     ];
 
     faces.forEach(face => {
@@ -142,7 +141,6 @@ class CustomBlockMeshBuilder {
 
       // 4頂点のUV座標（BoxGeometryの頂点順序に合わせる）
       // Three.js BoxGeometryの頂点順序: [左上, 右上, 左下, 右下]
-      // flipU: true は仕様書の定義で、反転しない状態が正
       const uvCoords = [
         [baseU, baseV + cellSize],            // 左上
         [baseU + cellSize, baseV + cellSize], // 右上
