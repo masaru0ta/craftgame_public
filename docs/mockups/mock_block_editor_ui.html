@@ -86,6 +86,7 @@
        ======================================== */
     .preview-3d {
       flex: 6;
+      min-height: 0;
       position: relative;
       background: #000;
       display: flex;
@@ -97,16 +98,23 @@
 
     /* ========================================
        5. コントロールパネル (flex: 1 = 高さ1/8)
+       標準ブロック: justify-content: center
+       カスタムブロック: justify-content: space-between
        ======================================== */
     .control-panel {
       flex: 1;
       min-height: 0;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
       padding: 0 12px;
       background: rgba(0, 0, 0, 0.5);
       overflow: hidden;
+    }
+
+    /* カスタムブロック用: 衝突テストボタンがある場合 */
+    .control-panel.has-check-btn {
+      justify-content: space-between;
     }
 
     /* ========================================
@@ -573,7 +581,7 @@
           </div>
 
           <!-- コントロールパネル (1/8) -->
-          <div class="control-panel">
+          <div class="control-panel has-check-btn">
             <div class="slots-container">
               <div class="material-item active">
                 <div class="slot-image"></div>
@@ -630,7 +638,7 @@
           </div>
 
           <!-- コントロールパネル (1/8) -->
-          <div class="control-panel">
+          <div class="control-panel has-check-btn">
             <div class="slots-container">
               <button class="auto-create-btn">自動作成</button>
             </div>
@@ -884,7 +892,7 @@
       </tr>
       <tr>
         <td style="padding: 8px; border: 1px solid #333;">背景色インジケーター .bg-color-indicator</td>
-        <td style="padding: 8px; border: 1px solid #333;">32px x 32px</td>
+        <td style="padding: 8px; border: 1px solid #333;">clamp(24px, 5vw, 48px) レスポンシブ</td>
         <td style="padding: 8px; border: 1px solid #333;">(動的)</td>
         <td style="padding: 8px; border: 1px solid #333;">2px solid #444</td>
         <td style="padding: 8px; border: 1px solid #333;">2px</td>
@@ -919,7 +927,7 @@
       </tr>
       <tr>
         <td style="padding: 8px; border: 1px solid #333;">スロット画像 .slot-image</td>
-        <td style="padding: 8px; border: 1px solid #333;">32px x 32px</td>
+        <td style="padding: 8px; border: 1px solid #333;">clamp(24px, 5vw, 48px) レスポンシブ</td>
         <td style="padding: 8px; border: 1px solid #333;">#000</td>
         <td style="padding: 8px; border: 1px solid #333;">2px solid #444 / #e91e63 (active)</td>
         <td style="padding: 8px; border: 1px solid #333;">2px</td>
@@ -946,8 +954,8 @@
         <td style="padding: 8px; border: 1px solid #333;">4px</td>
       </tr>
       <tr>
-        <td style="padding: 8px; border: 1px solid #333;">スロットラベル</td>
-        <td style="padding: 8px; border: 1px solid #333;">font-size: 9px</td>
+        <td style="padding: 8px; border: 1px solid #333;">スロットラベル / BGラベル</td>
+        <td style="padding: 8px; border: 1px solid #333;">font-size: clamp(8px, 1vw, 12px) レスポンシブ</td>
         <td style="padding: 8px; border: 1px solid #333;">-</td>
         <td style="padding: 8px; border: 1px solid #333;">color: #888</td>
         <td style="padding: 8px; border: 1px solid #333;">-</td>
