@@ -16,6 +16,8 @@ let customBlockEditor = null;
 let currentEditor = null;
 let hasUnsavedChanges = false;
 let pendingAction = null;
+let collisionChecker = null;
+let isCollisionTestRunning = false;
 
 // サムネイルキャッシュ
 const thumbnailCache = new Map();
@@ -183,6 +185,11 @@ function onBlockTileClick(index) {
  * ブロックを選択
  */
 function selectBlock(index) {
+  // 衝突テスト実行中なら停止
+  if (isCollisionTestRunning) {
+    stopCollisionTest();
+  }
+
   selectedBlockIndex = index;
   const block = blocks[index];
 
@@ -215,7 +222,8 @@ function selectBlock(index) {
 function updatePreview(block) {
   const container = document.getElementById('previewCanvas');
   const normalControls = document.getElementById('normalControls');
-  const customControls = document.getElementById('customControls');
+  const customLookControls = document.getElementById('customLookControls');
+  const customCollisionControls = document.getElementById('customCollisionControls');
   const modeBtn = document.getElementById('modeToggleBtn');
   const brushSizeGroup = document.getElementById('brushSizeGroup');
 
@@ -236,19 +244,23 @@ function updatePreview(block) {
     customBlockEditor.loadBlock(block);
     currentEditor = customBlockEditor;
 
-    // UI切り替え
+    // ミニプレビューを初期化
+    const miniCanvas = document.getElementById('modePreviewCanvas');
+    if (miniCanvas) {
+      customBlockEditor.initMiniPreview(miniCanvas);
+      // 初期は当たり判定（反対のモード）を表示
+      customBlockEditor.updateMiniPreview('collision');
+    }
+
+    // UI切り替え（見た目モードがデフォルト）
     normalControls.style.display = 'none';
-    customControls.style.display = 'flex';
+    customLookControls.style.display = 'flex';
+    customCollisionControls.style.display = 'none';
     modeBtn.style.display = 'flex';
     brushSizeGroup.style.display = 'flex';
 
     // マテリアルスロット更新
     updateMaterialSlots(block);
-
-    // モード切替ボタンのミニプレビュー更新コールバック設定
-    customBlockEditor.onModePreviewUpdate = (imageData) => {
-      updateModePreviewCanvas(imageData);
-    };
 
     // コールバック設定
     customBlockEditor.onVoxelChange = () => {
@@ -269,7 +281,8 @@ function updatePreview(block) {
 
     // UI切り替え
     normalControls.style.display = 'flex';
-    customControls.style.display = 'none';
+    customLookControls.style.display = 'none';
+    customCollisionControls.style.display = 'none';
     modeBtn.style.display = 'none';
     brushSizeGroup.style.display = 'none';
 
@@ -528,8 +541,35 @@ function setupEventListeners() {
   // モード切替ボタン
   document.getElementById('modeToggleBtn').addEventListener('click', () => {
     if (customBlockEditor) {
-      const mode = customBlockEditor.getEditMode();
-      customBlockEditor.setEditMode(mode === 'look' ? 'collision' : 'look');
+      const currentMode = customBlockEditor.getEditMode();
+      const newMode = currentMode === 'look' ? 'collision' : 'look';
+      customBlockEditor.setEditMode(newMode);
+
+      // コントロールパネル切り替え
+      const customLookControls = document.getElementById('customLookControls');
+      const customCollisionControls = document.getElementById('customCollisionControls');
+      customLookControls.style.display = newMode === 'look' ? 'flex' : 'none';
+      customCollisionControls.style.display = newMode === 'collision' ? 'flex' : 'none';
+
+      // ミニプレビュー更新（反対のモードを表示）
+      customBlockEditor.updateMiniPreview(newMode === 'look' ? 'collision' : 'look');
+    }
+  });
+
+  // 衝突テストボタン（見た目モード）
+  document.getElementById('checkBtnLook').addEventListener('click', toggleCollisionTest);
+
+  // 衝突テストボタン（当たり判定モード）
+  document.getElementById('checkBtnCollision').addEventListener('click', toggleCollisionTest);
+
+  // 自動作成ボタン
+  document.getElementById('autoCreateBtn').addEventListener('click', () => {
+    if (customBlockEditor) {
+      customBlockEditor.autoCreateCollision();
+      hasUnsavedChanges = true;
+      // ミニプレビュー更新
+      const currentMode = customBlockEditor.getEditMode();
+      customBlockEditor.updateMiniPreview(currentMode === 'look' ? 'collision' : 'look');
     }
   });
 
@@ -950,6 +990,56 @@ function hideSuccessMessage() {
   if (el) {
     el.classList.remove('show');
   }
+}
+
+/**
+ * 衝突テストのトグル
+ */
+function toggleCollisionTest() {
+  if (!customBlockEditor) return;
+
+  if (isCollisionTestRunning) {
+    stopCollisionTest();
+  } else {
+    startCollisionTest();
+  }
+}
+
+/**
+ * 衝突テスト開始
+ */
+function startCollisionTest() {
+  if (!customBlockEditor) return;
+
+  const container = document.getElementById('previewCanvas');
+  if (!collisionChecker) {
+    collisionChecker = new CollisionChecker({
+      container: container,
+      THREE: THREE
+    });
+  }
+
+  collisionChecker.setCollisionData(customBlockEditor.getCollisionData());
+  collisionChecker.start();
+  isCollisionTestRunning = true;
+
+  // ボタンテキスト更新
+  document.getElementById('checkBtnLook').textContent = '停止';
+  document.getElementById('checkBtnCollision').textContent = '停止';
+}
+
+/**
+ * 衝突テスト停止
+ */
+function stopCollisionTest() {
+  if (collisionChecker) {
+    collisionChecker.stop();
+  }
+  isCollisionTestRunning = false;
+
+  // ボタンテキスト更新
+  document.getElementById('checkBtnLook').textContent = '衝突テスト';
+  document.getElementById('checkBtnCollision').textContent = '衝突テスト';
 }
 
 // 初期化実行

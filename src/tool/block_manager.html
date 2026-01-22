@@ -99,7 +99,7 @@
         <!-- コントロール枠 -->
         <div class="preview-control">
           <!-- 通常ブロック用：テクスチャスロット -->
-          <div id="normalControls">
+          <div class="control-panel" id="normalControls">
             <div class="material-item"><div class="preview" id="tex_default"></div><div class="tex-name">default</div></div>
             <div class="material-item"><div class="preview" id="tex_top"></div><div class="tex-name">top</div></div>
             <div class="material-item"><div class="preview" id="tex_bottom"></div><div class="tex-name">bottom</div></div>
@@ -108,11 +108,17 @@
             <div class="material-item"><div class="preview" id="tex_left"></div><div class="tex-name">left</div></div>
             <div class="material-item"><div class="preview" id="tex_right"></div><div class="tex-name">right</div></div>
           </div>
-          <!-- カスタムブロック用：マテリアルスロット -->
-          <div id="customControls" style="display:none;">
+          <!-- カスタムブロック用：見た目モードパネル -->
+          <div class="control-panel material-panel" id="customLookControls" style="display:none;">
             <div class="material-item"><div class="preview" id="mat_1"></div><div class="tex-name">1</div></div>
             <div class="material-item"><div class="preview" id="mat_2"></div><div class="tex-name">2</div></div>
             <div class="material-item"><div class="preview" id="mat_3"></div><div class="tex-name">3</div></div>
+            <button class="check-btn" id="checkBtnLook">衝突テスト</button>
+          </div>
+          <!-- カスタムブロック用：当たり判定モードパネル -->
+          <div class="control-panel collision-panel" id="customCollisionControls" style="display:none;">
+            <button class="auto-create-btn" id="autoCreateBtn">自動作成</button>
+            <button class="check-btn" id="checkBtnCollision">衝突テスト</button>
           </div>
         </div>
       </div>
@@ -206,6 +212,7 @@
   <script src="../game/gas_api.js"></script>
   <script src="../game/voxel_data.js"></script>
   <script src="../game/custom_collision.js"></script>
+  <script src="../game/custom_collision_checker.js"></script>
   <script src="../game/standard_block_mesh_builder.js"></script>
   <script src="../game/custom_block_mesh_builder.js"></script>
   <script src="../game/standard_block_editor.js"></script>
