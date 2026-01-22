@@ -296,7 +296,7 @@ class BlockEditorUI {
     [4, 2, 1].forEach(size => {
       const btn = document.createElement('button');
       btn.className = 'brush-size-btn';
-      btn.textContent = `${size}x`;
+      btn.textContent = `${size}`;
       btn.dataset.size = size;
       btn.style.display = 'none';
       if (size === 1) btn.classList.add('active');
