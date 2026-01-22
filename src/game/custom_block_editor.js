@@ -61,6 +61,9 @@ class CustomBlockEditor {
     this.isDragging = false;
     this.lastMouseX = 0;
     this.lastMouseY = 0;
+    this.dragStartX = 0;
+    this.dragStartY = 0;
+    this.dragThreshold = 5; // ドラッグ判定のしきい値（ピクセル）
     this.raycaster = null;
     this.mouse = null;
 
@@ -591,11 +594,13 @@ class CustomBlockEditor {
    * @private
    */
   _handleMouseDown(event) {
-    if (event.button === 2) {
-      // 右クリックはカメラドラッグ開始
+    if (event.button === 0) {
+      // 左クリックでカメラドラッグ開始
       this.isDragging = true;
       this.lastMouseX = event.clientX;
       this.lastMouseY = event.clientY;
+      this.dragStartX = event.clientX;
+      this.dragStartY = event.clientY;
     }
   }
 
@@ -631,6 +636,17 @@ class CustomBlockEditor {
    * @private
    */
   _handleMouseUp(event) {
+    if (this.isDragging && event.button === 0) {
+      // ドラッグ距離をチェック
+      const dx = event.clientX - this.dragStartX;
+      const dy = event.clientY - this.dragStartY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      // ドラッグ距離が小さい場合はクリックとして扱い、ボクセル削除
+      if (distance < this.dragThreshold) {
+        this._removeVoxel(event);
+      }
+    }
     this.isDragging = false;
   }
 
@@ -659,13 +675,11 @@ class CustomBlockEditor {
   }
 
   /**
-   * クリックハンドラ（左クリックでボクセル削除）
+   * クリックハンドラ（現在は使用しない - ボクセル削除はマウスアップで処理）
    * @private
    */
   _handleClick(event) {
-    if (event.button === 0) {
-      this._removeVoxel(event);
-    }
+    // ボクセル削除はマウスアップで処理するため、ここでは何もしない
   }
 
   /**
@@ -692,14 +706,35 @@ class CustomBlockEditor {
         this.highlightEdges.position.copy(hitObject.position);
         this.highlightEdges.visible = true;
 
-        // 面ハイライト
+        // 面ハイライト - 設置可能な場合のみ表示
         const normal = hitFace.normal.clone();
         normal.transformDirection(hitObject.matrixWorld);
 
-        this.highlightFace.position.copy(hitObject.position);
-        this.highlightFace.position.add(normal.multiplyScalar(0.0625 + 0.001));
-        this.highlightFace.lookAt(this.highlightFace.position.clone().add(normal));
-        this.highlightFace.visible = true;
+        // ヒットしたボクセルの座標を取得
+        const voxelSize = 0.125;
+        const offset = 0.5 - voxelSize / 2;
+        const hitX = Math.round((hitObject.position.x + offset) / voxelSize);
+        const hitY = Math.round((hitObject.position.y + offset) / voxelSize);
+        const hitZ = Math.round((hitObject.position.z + offset) / voxelSize);
+
+        // 法線方向に隣接する位置
+        const targetX = hitX + Math.round(normal.x);
+        const targetY = hitY + Math.round(normal.y);
+        const targetZ = hitZ + Math.round(normal.z);
+
+        // 設置可能かチェック（8x8x8の範囲内）
+        const canPlace = targetX >= 0 && targetX < 8 &&
+                         targetY >= 0 && targetY < 8 &&
+                         targetZ >= 0 && targetZ < 8;
+
+        if (canPlace) {
+          this.highlightFace.position.copy(hitObject.position);
+          this.highlightFace.position.add(normal.multiplyScalar(0.0625 + 0.001));
+          this.highlightFace.lookAt(this.highlightFace.position.clone().add(normal));
+          this.highlightFace.visible = true;
+        } else {
+          this.highlightFace.visible = false;
+        }
 
         this.gridHighlight.visible = false;
         return;
