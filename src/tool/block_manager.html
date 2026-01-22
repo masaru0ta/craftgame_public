@@ -67,15 +67,32 @@
       <div class="preview-container">
         <!-- ツールバー -->
         <div class="preview-toolbar">
-          <!-- カスタムブロック用：モード切替ボタン -->
-          <button class="toolbar-btn" id="modeToggleBtn" style="display:none;" title="見た目/当たり判定切り替え">M</button>
-          <!-- カスタムブロック用：ブラシサイズ -->
-          <button class="toolbar-btn brush-btn" data-size="4" style="display:none;">4x</button>
-          <button class="toolbar-btn brush-btn" data-size="2" style="display:none;">2x</button>
-          <button class="toolbar-btn brush-btn active" data-size="1" style="display:none;">1x</button>
-          <div style="flex:1;"></div>
-          <!-- 共通：背景色切り替え -->
-          <button class="toolbar-btn" id="bgBtn" title="背景色切り替え">BG</button>
+          <!-- 左側：カスタムブロック用コントロール -->
+          <div class="preview-toolbar-left">
+            <!-- モード切替ボタン -->
+            <button class="mode-toggle-btn" id="modeToggleBtn" style="display:none;" title="見た目/当たり判定切り替え">
+              <canvas id="modePreviewCanvas" width="80" height="80"></canvas>
+            </button>
+            <!-- ブラシサイズ -->
+            <div class="brush-size-group" id="brushSizeGroup" style="display:none;">
+              <button class="brush-size-btn" data-size="4" title="4x4ブラシ">
+                <span class="brush-size-icon">4x</span>
+              </button>
+              <button class="brush-size-btn" data-size="2" title="2x2ブラシ">
+                <span class="brush-size-icon">2x</span>
+              </button>
+              <button class="brush-size-btn active" data-size="1" title="1x1ブラシ">
+                <span class="brush-size-icon">1x</span>
+              </button>
+            </div>
+          </div>
+          <!-- 右側：背景色切り替え -->
+          <div class="preview-toolbar-right">
+            <button class="bg-btn" id="bgBtn" title="背景色切り替え">
+              <span class="bg-color-indicator"></span>
+              <span class="bg-label">BG</span>
+            </button>
+          </div>
         </div>
         <!-- 3Dプレビュー領域 -->
         <div class="preview-3d" id="previewCanvas"></div>

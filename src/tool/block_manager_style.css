@@ -69,19 +69,78 @@ button { padding: 8px 20px; border: none; border-radius: 4px; font-size: 14px; c
 
 /* 3Dプレビュー枠 */
 .preview-container { width: 100%; aspect-ratio: 3 / 4; background: #000; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-.preview-toolbar { height: 12.5%; background: #1a1a1a; display: flex; align-items: center; padding: 0 8px; gap: 8px; }
-.preview-3d { flex: 1; display: flex; align-items: center; justify-content: center; color: #666; position: relative; }
+.preview-toolbar { flex: 0 0 12.5%; background: #000; display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; }
+.preview-toolbar-left { display: flex; align-items: center; gap: 8px; height: 100%; }
+.preview-toolbar-right { display: flex; align-items: center; height: 100%; }
+.preview-3d { flex: 1; display: flex; align-items: center; justify-content: center; color: #666; position: relative; background: #000; }
 .preview-3d canvas { width: 100% !important; height: 100% !important; }
-.preview-control { height: 12.5%; background: #1a1a1a; display: flex; align-items: center; justify-content: center; padding: 0 8px; gap: 8px; }
-.toolbar-btn { width: 32px; height: 32px; background: #333; border: 1px solid #555; border-radius: 4px; color: #fff; cursor: pointer; font-size: 11px; }
-.toolbar-btn:hover { background: #444; }
-.toolbar-btn.active { background: #4285f4; border-color: #4285f4; }
+.preview-control { flex: 0 0 12.5%; background: #000; display: flex; align-items: center; justify-content: center; padding: 10px; gap: 20px; }
+
+/* モード切替ボタン */
+.preview-toolbar .mode-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  background-color: #333;
+  border: 2px solid #444;
+  border-radius: 4px;
+  padding: 0 !important;
+  overflow: hidden;
+}
+.preview-toolbar .mode-toggle-btn:hover { background-color: #444; }
+.preview-toolbar .mode-toggle-btn canvas { width: 100%; height: 100%; display: block; }
+
+/* ブラシサイズボタングループ */
+.brush-size-group { display: flex; gap: 8px; align-items: center; height: 100%; }
+
+/* ブラシサイズ切り替えボタン */
+.preview-toolbar .brush-size-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  cursor: pointer;
+  transition: transform 0.2s, background-color 0.2s;
+  background-color: #333;
+  border: 2px solid #444;
+  border-radius: 4px;
+  padding: 0 !important;
+}
+.preview-toolbar .brush-size-btn:hover { transform: scale(1.1); background-color: #444; }
+.preview-toolbar .brush-size-btn.active { border-color: #e94560; background-color: #4a2030; }
+.preview-toolbar .brush-size-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.preview-toolbar .brush-size-btn:disabled:hover { transform: none; background-color: #333; }
+.brush-size-icon { font-size: 16px; font-weight: bold; color: #eee; }
+
+/* 背景色切り替えボタン */
+.preview-toolbar .bg-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+}
+.preview-toolbar .bg-btn:hover { transform: scale(1.1); }
+.bg-color-indicator { width: 48px; height: 48px; background-color: #000000; border: 2px solid #444; border-radius: 4px; }
+.bg-label { font-size: 10px; color: #888; }
 
 /* マテリアルアイテム */
-.material-item { display: inline-block; text-align: center; margin: 0 4px; }
-.material-item .preview { width: 32px; height: 32px; border: 1px solid #444; border-radius: 4px; cursor: pointer; background-size: cover; background-position: center; }
+.material-item { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; margin: 0 4px; cursor: pointer; transition: transform 0.2s; }
+.material-item:hover { transform: scale(1.1); }
+.material-item .preview { width: 48px; height: 48px; border: 2px solid #444; border-radius: 4px; background-size: cover; background-position: center; background-color: #000; }
 .material-item .preview:hover { border-color: #4285f4; }
-.material-item .tex-name { font-size: 9px; color: #888; }
+.material-item.active .preview { border-color: #4285f4; }
+.material-item .tex-name { font-size: 10px; color: #888; text-align: center; }
 
 /* テクスチャ選択ポップアップ */
 .picker-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; align-items: center; justify-content: center; z-index: 1000; }

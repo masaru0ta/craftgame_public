@@ -217,7 +217,7 @@ function updatePreview(block) {
   const normalControls = document.getElementById('normalControls');
   const customControls = document.getElementById('customControls');
   const modeBtn = document.getElementById('modeToggleBtn');
-  const brushBtns = document.querySelectorAll('.brush-btn');
+  const brushSizeGroup = document.getElementById('brushSizeGroup');
 
   // 既存のエディタを破棄
   if (currentEditor) {
@@ -238,12 +238,17 @@ function updatePreview(block) {
 
     // UI切り替え
     normalControls.style.display = 'none';
-    customControls.style.display = 'block';
-    modeBtn.style.display = 'block';
-    brushBtns.forEach(btn => btn.style.display = 'block');
+    customControls.style.display = 'flex';
+    modeBtn.style.display = 'flex';
+    brushSizeGroup.style.display = 'flex';
 
     // マテリアルスロット更新
     updateMaterialSlots(block);
+
+    // モード切替ボタンのミニプレビュー更新コールバック設定
+    customBlockEditor.onModePreviewUpdate = (imageData) => {
+      updateModePreviewCanvas(imageData);
+    };
 
     // コールバック設定
     customBlockEditor.onVoxelChange = () => {
@@ -263,10 +268,10 @@ function updatePreview(block) {
     currentEditor = standardBlockEditor;
 
     // UI切り替え
-    normalControls.style.display = 'block';
+    normalControls.style.display = 'flex';
     customControls.style.display = 'none';
     modeBtn.style.display = 'none';
-    brushBtns.forEach(btn => btn.style.display = 'none');
+    brushSizeGroup.style.display = 'none';
 
     // テクスチャスロット更新
     updateTextureSlots(block);
@@ -275,6 +280,43 @@ function updatePreview(block) {
     standardBlockEditor.onTextureChange = () => {
       hasUnsavedChanges = true;
     };
+  }
+}
+
+/**
+ * モード切替ボタンのミニプレビューを更新
+ */
+function updateModePreviewCanvas(imageData) {
+  const canvas = document.getElementById('modePreviewCanvas');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  if (imageData) {
+    const img = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    };
+    img.src = imageData;
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+// 背景色リスト
+const bgColors = ['#000000', '#808080', '#FFFFFF'];
+let currentBgColorIndex = 0;
+
+/**
+ * 背景色インジケーターを更新
+ */
+function updateBackgroundColorIndicator() {
+  currentBgColorIndex = (currentBgColorIndex + 1) % bgColors.length;
+  const indicator = document.querySelector('.bg-color-indicator');
+  if (indicator) {
+    indicator.style.backgroundColor = bgColors[currentBgColorIndex];
   }
 }
 
@@ -479,6 +521,7 @@ function setupEventListeners() {
   document.getElementById('bgBtn').addEventListener('click', () => {
     if (currentEditor) {
       currentEditor.toggleBackgroundColor();
+      updateBackgroundColorIndicator();
     }
   });
 
@@ -491,12 +534,12 @@ function setupEventListeners() {
   });
 
   // ブラシサイズボタン
-  document.querySelectorAll('.brush-btn').forEach(btn => {
+  document.querySelectorAll('.brush-size-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const size = parseInt(btn.dataset.size);
       if (customBlockEditor) {
         customBlockEditor.setBrushSize(size);
-        document.querySelectorAll('.brush-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.brush-size-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
       }
     });
