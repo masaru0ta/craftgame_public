@@ -16,4 +16,8 @@ venv/
 
 # clasp
 .clasp.json
+
+# Playwright
 .playwright-mcp/
+tests/playwright-report/
+tests/test-results/
