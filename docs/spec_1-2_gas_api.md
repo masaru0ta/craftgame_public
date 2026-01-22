@@ -11,7 +11,8 @@
 - getAll: 全データ取得
 
 ### 2.2 書き込みAPI（POST）
-- saveBlock: ブロックの追加/更新
+- createBlock: ブロックの新規作成
+- saveBlock: ブロックの更新
 - deleteBlock: ブロックの削除
 - saveTexture: テクスチャの追加/更新
 - deleteTexture: テクスチャの削除
@@ -96,7 +97,49 @@
 }
 ```
 
-### saveBlock - ブロックの追加/更新
+### createBlock - ブロックの新規作成
+
+**リクエスト:** POST `?action=createBlock`
+
+**リクエストボディ:**
+```json
+{
+  "block_str_id": "new_block",
+  "name": "新しいブロック",
+  "shape_type": "normal"
+}
+```
+
+| パラメータ | 必須 | 説明 |
+|-----------|------|------|
+| block_str_id | ○ | ブロックの文字列ID（英数字とアンダースコアのみ） |
+| name | ○ | 表示名 |
+| shape_type | ○ | "normal" または "custom" |
+
+**バリデーション:**
+- block_str_id が空でないこと
+- block_str_id が既存のブロックと重複しないこと
+- block_str_id が英数字とアンダースコアのみで構成されること
+- name が空でないこと
+- shape_type が "normal" または "custom" であること
+
+**レスポンス:**
+```json
+{
+  "success": true,
+  "data": { "block_id": 10 }
+}
+```
+
+**エラーレスポンス:**
+```json
+{
+  "success": false,
+  "error": "block_str_id already exists"
+}
+```
+
+### saveBlock - ブロックの更新
 
 **リクエスト:** POST `?action=saveBlock`
 
@@ -112,7 +155,7 @@
   "tex_default": "stone"
 }
 ```
-- block_idが既存の場合は更新、存在しない場合は追加
+- block_id は必須（既存ブロックの更新のみ）
 
 **レスポンス:**
 ```json
@@ -193,7 +236,12 @@
 - [x] 不正なリクエストでエラーレスポンスが返る
 
 ### 書き込みAPI
-- [x] saveBlockでブロックを追加できる
+- [ ] createBlockでブロックを新規作成できる
+- [ ] createBlockでblock_str_idが空の場合エラーになる
+- [ ] createBlockでblock_str_idが重複する場合エラーになる
+- [ ] createBlockでblock_str_idが不正な文字を含む場合エラーになる
+- [ ] createBlockでnameが空の場合エラーになる
+- [ ] createBlockでshape_typeが不正な値の場合エラーになる
 - [x] saveBlockで既存ブロックを更新できる
 - [x] deleteBlockでブロックを削除できる
 - [x] saveTextureでテクスチャを追加できる
