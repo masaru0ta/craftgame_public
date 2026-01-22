@@ -37,11 +37,11 @@ BlockEditorUI (この仕様で作成、1-4/1-5で拡張)
 
 ### 3.2 責務分離
 
-| クラス | 責務 |
-|--------|------|
-| BlockEditorUI | UI生成、イベントハンドリング、レイアウト管理 |
-| StandardBlockEditor | Three.jsシーン管理、カメラ操作、テクスチャ切替 |
-| StandardBlockMeshBuilder | ブロックメッシュの生成 |
+| クラス                   | 責務                                    |
+|-------------------------|-----------------------------------------|
+| BlockEditorUI           | UI生成、イベントハンドリング、レイアウト管理      |
+| StandardBlockEditor     | Three.jsシーン管理、カメラ操作、テクスチャ切替    |
+| StandardBlockMeshBuilder| ブロックメッシュの生成                        |
 
 ### 3.3 処理シーケンス
 
@@ -108,15 +108,15 @@ constructor(options) {
 
 ### 4.3 公開メソッド
 
-| メソッド | 説明 |
-|----------|------|
-| `init()` | UIを生成し、エディタを初期化 |
-| `loadBlock(blockData, textures)` | ブロックデータをロードして表示 |
-| `setTextures(textures)` | テクスチャ一覧を設定 |
-| `setTexture(slot, textureName)` | 指定スロットにテクスチャを設定 |
-| `getBlockData()` | 現在のブロックデータを取得 |
-| `resize()` | リサイズ処理 |
-| `dispose()` | リソース解放 |
+| メソッド                      | 説明                                 |
+|------------------------------|--------------------------------------|
+| `init()`                     | UIを生成し、エディタを初期化         |
+| `loadBlock(blockData, textures)` | ブロックデータをロードして表示    |
+| `setTextures(textures)`      | テクスチャ一覧を設定                  |
+| `setTexture(slot, textureName)` | 指定スロットにテクスチャを設定    |
+| `getBlockData()`             | 現在のブロックデータを取得            |
+| `resize()`                   | リサイズ処理                         |
+| `dispose()`                  | リソース解放                         |
 
 ### 4.4 UI構造（標準ブロック用）
 
@@ -154,6 +154,11 @@ constructor(options) {
 
 サイズ・色・枠線などの詳細仕様は `mockups/mock_block_editor_ui.html` を参照。
 
+特記事項
+- .editor-containerの比率は横3：縦4（aspect-ratio: 3 / 4）とする。
+- 3Dプレビュー領域はレスポンシブで、右カラム幅に合わせてサイズを変更する。
+- テクスチャ選択スロットはセンター寄せにする。
+
 ### 4.6 UI操作
 
 #### 4.6.1 テクスチャスロットクリック
@@ -168,11 +173,11 @@ constructor(options) {
 
 **テクスチャ選択モーダルでの選択:**
 
-| 選択項目 | 動作 |
-|----------|------|
-| テクスチャ | 選択したテクスチャをスロットに設定、3Dプレビュー更新 |
-| 「なし」 | スロットのテクスチャを解除（default スロットの場合は紫色のデフォルトテクスチャを使用） |
-| 「追加」 | `onTextureAdd` コールバックで外部に通知（アップロード処理は外部で実装） |
+| 選択項目    | 動作                                                                             |
+|------------|----------------------------------------------------------------------------------|
+| テクスチャ  | 選択したテクスチャをスロットに設定、3Dプレビュー更新                            |
+| 「なし」    | スロットのテクスチャを解除（defaultスロットの場合は紫色のデフォルトテクスチャを使用） |
+| 「追加」    | `onTextureAdd`コールバックで外部に通知（アップロード処理は外部で実装）           |
 
 **モーダルを閉じる操作:**
 - ×ボタンクリック
@@ -357,6 +362,7 @@ BlockEditorUIが生成するUI要素。サイズ・色の詳細は `mockups/mock
 ※ サイズ・色の詳細仕様は `mockups/mock_block_editor_ui.html` を参照
 
 - [ ] UIがモックHTMLと同じ見た目で表示される
+- [ ] .editor-containerの比率が横3：縦4（aspect-ratio: 3 / 4）である
 - [ ] ツールバーが3カラム構成（left-group, center-group, right-group）である
 - [ ] テクスチャスロット（.material-item）が7つ表示される（default, front, top, bottom, left, right, back）
 - [ ] BGボタンが右グループに表示される
