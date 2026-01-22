@@ -239,7 +239,10 @@ body {
 
 /* モード切替ボタン */
 .mode-toggle-btn {
-  padding: 4px 12px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
   background: #333;
   border: 1px solid #444;
   border-radius: 4px;
@@ -254,9 +257,13 @@ body {
   border-color: #555;
 }
 
-/* ブラシサイズボタン */
+/* ブラシサイズボタン（BGボタンと同じサイズ） */
 .brush-size-btn {
-  padding: 4px 8px;
+  width: clamp(24px, 5vw, 48px);
+  height: clamp(24px, 5vw, 48px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #333;
   border: 1px solid #444;
   border-radius: 4px;
@@ -264,7 +271,6 @@ body {
   font-size: clamp(10px, 1.5vw, 14px);
   cursor: pointer;
   transition: all 0.2s;
-  min-width: clamp(28px, 4vw, 40px);
 }
 
 .brush-size-btn:hover {
