@@ -1,6 +1,7 @@
 /**
  * BlockEditorUI
  * UI生成・イベントハンドリングを担当するクラス
+ * shape_typeに応じてStandardBlockEditorまたはCustomBlockEditorを切り替え
  * 1-4, 1-5で拡張され、最終的にblock_manager（1-6）で使用される
  */
 class BlockEditorUI {
@@ -17,20 +18,37 @@ class BlockEditorUI {
     this.onTextureAdd = options.onTextureAdd || null;
     this.onBlockChange = options.onBlockChange || null;
 
+    // エディタ
     this.standardBlockEditor = null;
+    this.customBlockEditor = null;
+    this.currentEditor = null;
+    this.currentShapeType = 'normal'; // 'normal' or 'custom'
+
     this.textures = [];
     this.currentBlockData = null;
     this.currentSlot = null;
 
     // UI要素
+    this.editorContainer = null;
     this.previewContainer = null;
     this.preview3d = null;
+    this.toolbar = null;
+    this.controlPanel = null;
     this.modalOverlay = null;
     this.bgIndicator = null;
 
-    // テクスチャスロット
-    this.slots = ['default', 'front', 'top', 'bottom', 'left', 'right', 'back'];
+    // 標準ブロック用スロット
+    this.normalSlots = ['default', 'front', 'top', 'bottom', 'left', 'right', 'back'];
     this.slotElements = {};
+
+    // カスタムブロック用スロット
+    this.customSlots = [1, 2, 3];
+    this.materialSlotElements = {};
+
+    // カスタムブロック用UI要素
+    this.modeToggleBtn = null;
+    this.brushSizeButtons = [];
+    this.currentMaterialSlot = 1;
   }
 
   /**
@@ -39,7 +57,6 @@ class BlockEditorUI {
   init() {
     this._createUI();
     this._createModal();
-    this._initEditor();
     this._attachEvents();
   }
 
@@ -55,18 +72,25 @@ class BlockEditorUI {
       this.setTextures(textures);
     }
 
+    // shape_typeに応じてエディタを切り替え
+    const shapeType = blockData.shape_type || 'normal';
+    this._switchEditor(shapeType);
+
     // テクスチャ画像データを設定
     const textureImages = {};
     this.textures.forEach(tex => {
       textureImages[tex.file_name] = tex.image_base64;
     });
-    this.standardBlockEditor.setTextureImages(textureImages);
 
-    // ブロックをロード
-    this.standardBlockEditor.loadBlock(blockData);
-
-    // スロットUIを更新
-    this._updateSlotUI();
+    if (shapeType === 'custom') {
+      this.customBlockEditor.setTextureImages(textureImages);
+      this.customBlockEditor.loadBlock(blockData);
+      this._updateMaterialSlotUI();
+    } else {
+      this.standardBlockEditor.setTextureImages(textureImages);
+      this.standardBlockEditor.loadBlock(blockData);
+      this._updateSlotUI();
+    }
   }
 
   /**
@@ -75,25 +99,29 @@ class BlockEditorUI {
    */
   setTextures(textures) {
     this.textures = textures;
-    // テクスチャ画像データを設定
     const textureImages = {};
     this.textures.forEach(tex => {
       textureImages[tex.file_name] = tex.image_base64;
     });
+
     if (this.standardBlockEditor) {
       this.standardBlockEditor.setTextureImages(textureImages);
+    }
+    if (this.customBlockEditor) {
+      this.customBlockEditor.setTextureImages(textureImages);
     }
   }
 
   /**
-   * 指定スロットにテクスチャを設定
+   * 指定スロットにテクスチャを設定（標準ブロック用）
    * @param {string} slot - スロット名
    * @param {string|null} textureName - テクスチャ名（nullの場合は解除）
    */
   setTexture(slot, textureName) {
+    if (this.currentShapeType !== 'normal') return;
+
     this.standardBlockEditor.setTexture(slot, textureName);
 
-    // currentBlockDataを更新
     const texKey = slot === 'default' ? 'tex_default' : `tex_${slot}`;
     if (textureName) {
       this.currentBlockData[texKey] = textureName;
@@ -101,13 +129,69 @@ class BlockEditorUI {
       delete this.currentBlockData[texKey];
     }
 
-    // スロットUIを更新
     this._updateSlotUI();
 
-    // コールバック呼び出し
     if (this.onBlockChange) {
       this.onBlockChange(this.getBlockData());
     }
+  }
+
+  /**
+   * 指定マテリアルスロットにテクスチャを設定（カスタムブロック用）
+   * @param {number} slot - スロット番号 (1-3)
+   * @param {string|null} textureName - テクスチャ名
+   */
+  setMaterial(slot, textureName) {
+    if (this.currentShapeType !== 'custom') return;
+
+    this.customBlockEditor.setMaterial(slot, textureName);
+
+    const matKey = `material_${slot}`;
+    if (textureName) {
+      this.currentBlockData[matKey] = textureName;
+    } else {
+      delete this.currentBlockData[matKey];
+    }
+
+    this._updateMaterialSlotUI();
+
+    if (this.onBlockChange) {
+      this.onBlockChange(this.getBlockData());
+    }
+  }
+
+  /**
+   * 配置時に使用するマテリアル番号を設定（カスタムブロック用）
+   * @param {number} num - マテリアル番号 (1-3)
+   */
+  setCurrentMaterial(num) {
+    if (this.currentShapeType !== 'custom') return;
+
+    this.customBlockEditor.setCurrentMaterial(num);
+    this.currentMaterialSlot = num;
+    this._updateMaterialSlotSelection();
+  }
+
+  /**
+   * ブラシサイズを設定（カスタムブロック用）
+   * @param {number} size - ブラシサイズ (1, 2, 4)
+   */
+  setBrushSize(size) {
+    if (this.currentShapeType !== 'custom') return;
+
+    this.customBlockEditor.setBrushSize(size);
+    this._updateBrushSizeButtons();
+  }
+
+  /**
+   * 編集モードを設定（カスタムブロック用）
+   * @param {string} mode - 'look' または 'collision'
+   */
+  setEditMode(mode) {
+    if (this.currentShapeType !== 'custom') return;
+
+    this.customBlockEditor.setEditMode(mode);
+    this._updateModeToggleButton();
   }
 
   /**
@@ -115,17 +199,25 @@ class BlockEditorUI {
    * @returns {Object} ブロックデータ
    */
   getBlockData() {
-    const textures = this.standardBlockEditor.getTextures();
     const blockData = { ...this.currentBlockData };
 
-    // テクスチャ情報を更新
-    blockData.tex_default = textures.default || '';
-    blockData.tex_front = textures.front || '';
-    blockData.tex_top = textures.top || '';
-    blockData.tex_bottom = textures.bottom || '';
-    blockData.tex_left = textures.left || '';
-    blockData.tex_right = textures.right || '';
-    blockData.tex_back = textures.back || '';
+    if (this.currentShapeType === 'custom') {
+      const materials = this.customBlockEditor.getMaterials();
+      blockData.material_1 = materials.material_1 || '';
+      blockData.material_2 = materials.material_2 || '';
+      blockData.material_3 = materials.material_3 || '';
+      blockData.voxel_look = this.customBlockEditor.getVoxelLookData();
+      blockData.voxel_collision = this.customBlockEditor.getVoxelCollisionData();
+    } else {
+      const textures = this.standardBlockEditor.getTextures();
+      blockData.tex_default = textures.default || '';
+      blockData.tex_front = textures.front || '';
+      blockData.tex_top = textures.top || '';
+      blockData.tex_bottom = textures.bottom || '';
+      blockData.tex_left = textures.left || '';
+      blockData.tex_right = textures.right || '';
+      blockData.tex_back = textures.back || '';
+    }
 
     return blockData;
   }
@@ -134,7 +226,9 @@ class BlockEditorUI {
    * リサイズ処理
    */
   resize() {
-    if (this.standardBlockEditor) {
+    if (this.currentShapeType === 'custom' && this.customBlockEditor) {
+      this.customBlockEditor.resize();
+    } else if (this.standardBlockEditor) {
       this.standardBlockEditor.resize();
     }
   }
@@ -146,11 +240,22 @@ class BlockEditorUI {
     if (this.standardBlockEditor) {
       this.standardBlockEditor.dispose();
     }
-    // UIを削除
+    if (this.customBlockEditor) {
+      this.customBlockEditor.dispose();
+    }
+
     while (this.container.firstChild) {
       this.container.removeChild(this.container.firstChild);
     }
+
+    if (this.modalOverlay && this.modalOverlay.parentNode) {
+      this.modalOverlay.parentNode.removeChild(this.modalOverlay);
+    }
   }
+
+  // ========================================
+  // プライベートメソッド
+  // ========================================
 
   /**
    * UIを生成
@@ -158,16 +263,16 @@ class BlockEditorUI {
    */
   _createUI() {
     // エディタコンテナ
-    const editorContainer = document.createElement('div');
-    editorContainer.className = 'editor-container';
+    this.editorContainer = document.createElement('div');
+    this.editorContainer.className = 'editor-container';
 
     // プレビューコンテナ
     this.previewContainer = document.createElement('div');
     this.previewContainer.className = 'preview-container';
 
     // ツールバー
-    const toolbar = document.createElement('div');
-    toolbar.className = 'preview-toolbar';
+    this.toolbar = document.createElement('div');
+    this.toolbar.className = 'preview-toolbar';
 
     // ツールバー3カラム
     const leftGroup = document.createElement('div');
@@ -179,6 +284,25 @@ class BlockEditorUI {
     const rightGroup = document.createElement('div');
     rightGroup.className = 'right-group';
 
+    // モード切替ボタン（カスタムブロック用、初期非表示）
+    this.modeToggleBtn = document.createElement('button');
+    this.modeToggleBtn.className = 'mode-toggle-btn';
+    this.modeToggleBtn.textContent = 'look';
+    this.modeToggleBtn.style.display = 'none';
+    leftGroup.appendChild(this.modeToggleBtn);
+
+    // ブラシサイズボタン（カスタムブロック用、初期非表示）
+    [4, 2, 1].forEach(size => {
+      const btn = document.createElement('button');
+      btn.className = 'brush-size-btn';
+      btn.textContent = `${size}x`;
+      btn.dataset.size = size;
+      btn.style.display = 'none';
+      if (size === 1) btn.classList.add('active');
+      centerGroup.appendChild(btn);
+      this.brushSizeButtons.push(btn);
+    });
+
     // BGボタン
     const bgBtn = document.createElement('button');
     bgBtn.className = 'bg-btn';
@@ -189,24 +313,23 @@ class BlockEditorUI {
     this.bgIndicator = bgBtn.querySelector('.bg-color-indicator');
     rightGroup.appendChild(bgBtn);
 
-    toolbar.appendChild(leftGroup);
-    toolbar.appendChild(centerGroup);
-    toolbar.appendChild(rightGroup);
+    this.toolbar.appendChild(leftGroup);
+    this.toolbar.appendChild(centerGroup);
+    this.toolbar.appendChild(rightGroup);
 
     // 3Dプレビュー領域
     this.preview3d = document.createElement('div');
     this.preview3d.className = 'preview-3d';
 
     // コントロールパネル
-    const controlPanel = document.createElement('div');
-    controlPanel.className = 'control-panel';
+    this.controlPanel = document.createElement('div');
+    this.controlPanel.className = 'control-panel';
 
-    // スロットコンテナ
+    // スロットコンテナ（標準ブロック用）
     const slotsContainer = document.createElement('div');
-    slotsContainer.className = 'slots-container';
+    slotsContainer.className = 'slots-container normal-slots';
 
-    // テクスチャスロットを作成
-    this.slots.forEach(slot => {
+    this.normalSlots.forEach(slot => {
       const item = document.createElement('div');
       item.className = 'material-item';
       item.dataset.slot = slot;
@@ -218,14 +341,32 @@ class BlockEditorUI {
       slotsContainer.appendChild(item);
     });
 
-    controlPanel.appendChild(slotsContainer);
+    // マテリアルスロットコンテナ（カスタムブロック用）
+    const materialSlotsContainer = document.createElement('div');
+    materialSlotsContainer.className = 'slots-container custom-slots';
+    materialSlotsContainer.style.display = 'none';
+
+    this.customSlots.forEach(slot => {
+      const item = document.createElement('div');
+      item.className = 'material-item';
+      item.dataset.materialSlot = slot;
+      item.innerHTML = `
+        <div class="slot-image"></div>
+        <span>${slot}</span>
+      `;
+      this.materialSlotElements[slot] = item;
+      materialSlotsContainer.appendChild(item);
+    });
+
+    this.controlPanel.appendChild(slotsContainer);
+    this.controlPanel.appendChild(materialSlotsContainer);
 
     // 組み立て
-    this.previewContainer.appendChild(toolbar);
+    this.previewContainer.appendChild(this.toolbar);
     this.previewContainer.appendChild(this.preview3d);
-    this.previewContainer.appendChild(controlPanel);
-    editorContainer.appendChild(this.previewContainer);
-    this.container.appendChild(editorContainer);
+    this.previewContainer.appendChild(this.controlPanel);
+    this.editorContainer.appendChild(this.previewContainer);
+    this.container.appendChild(this.editorContainer);
   }
 
   /**
@@ -268,15 +409,80 @@ class BlockEditorUI {
   }
 
   /**
-   * エディタを初期化
+   * エディタを切り替え
    * @private
    */
-  _initEditor() {
-    this.standardBlockEditor = new StandardBlockEditor({
-      container: this.preview3d,
-      THREE: this.THREE
-    });
-    this.standardBlockEditor.init();
+  _switchEditor(shapeType) {
+    this.currentShapeType = shapeType;
+
+    // 既存エディタを破棄
+    if (this.standardBlockEditor) {
+      this.standardBlockEditor.dispose();
+      this.standardBlockEditor = null;
+    }
+    if (this.customBlockEditor) {
+      this.customBlockEditor.dispose();
+      this.customBlockEditor = null;
+    }
+
+    // 3Dプレビュー領域をクリア
+    while (this.preview3d.firstChild) {
+      this.preview3d.removeChild(this.preview3d.firstChild);
+    }
+
+    // UIを切り替え
+    this._updateUIForShapeType(shapeType);
+
+    // エディタを初期化
+    if (shapeType === 'custom') {
+      this.customBlockEditor = new CustomBlockEditor({
+        container: this.preview3d,
+        THREE: this.THREE,
+        onVoxelChange: () => {
+          if (this.onBlockChange) {
+            this.onBlockChange(this.getBlockData());
+          }
+        }
+      });
+      this.customBlockEditor.init();
+      this.currentEditor = this.customBlockEditor;
+    } else {
+      this.standardBlockEditor = new StandardBlockEditor({
+        container: this.preview3d,
+        THREE: this.THREE
+      });
+      this.standardBlockEditor.init();
+      this.currentEditor = this.standardBlockEditor;
+    }
+  }
+
+  /**
+   * shape_typeに応じてUIを更新
+   * @private
+   */
+  _updateUIForShapeType(shapeType) {
+    const normalSlots = this.controlPanel.querySelector('.normal-slots');
+    const customSlots = this.controlPanel.querySelector('.custom-slots');
+
+    if (shapeType === 'custom') {
+      // カスタムブロック用UI
+      normalSlots.style.display = 'none';
+      customSlots.style.display = 'flex';
+
+      this.modeToggleBtn.style.display = 'block';
+      this.brushSizeButtons.forEach(btn => {
+        btn.style.display = 'block';
+      });
+    } else {
+      // 標準ブロック用UI
+      normalSlots.style.display = 'flex';
+      customSlots.style.display = 'none';
+
+      this.modeToggleBtn.style.display = 'none';
+      this.brushSizeButtons.forEach(btn => {
+        btn.style.display = 'none';
+      });
+    }
   }
 
   /**
@@ -284,18 +490,51 @@ class BlockEditorUI {
    * @private
    */
   _attachEvents() {
-    // スロットクリック
-    this.slots.forEach(slot => {
+    // 標準ブロック用スロットクリック
+    this.normalSlots.forEach(slot => {
       this.slotElements[slot].addEventListener('click', () => {
-        this._openModal(slot);
+        this._openModal(slot, 'normal');
+      });
+    });
+
+    // カスタムブロック用マテリアルスロットクリック
+    this.customSlots.forEach(slot => {
+      this.materialSlotElements[slot].addEventListener('click', () => {
+        this._openModal(slot, 'custom');
+        // マテリアル選択も切り替え
+        this.setCurrentMaterial(slot);
       });
     });
 
     // BGボタンクリック
     const bgBtn = this.container.querySelector('.bg-btn');
     bgBtn.addEventListener('click', () => {
-      const color = this.standardBlockEditor.toggleBackgroundColor();
-      this.bgIndicator.style.background = color;
+      let color;
+      if (this.currentShapeType === 'custom' && this.customBlockEditor) {
+        color = this.customBlockEditor.toggleBackgroundColor();
+      } else if (this.standardBlockEditor) {
+        color = this.standardBlockEditor.toggleBackgroundColor();
+      }
+      if (color) {
+        this.bgIndicator.style.background = color;
+      }
+    });
+
+    // モード切替ボタン
+    this.modeToggleBtn.addEventListener('click', () => {
+      if (this.customBlockEditor) {
+        const currentMode = this.customBlockEditor.getEditMode();
+        const newMode = currentMode === 'look' ? 'collision' : 'look';
+        this.setEditMode(newMode);
+      }
+    });
+
+    // ブラシサイズボタン
+    this.brushSizeButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const size = parseInt(btn.dataset.size, 10);
+        this.setBrushSize(size);
+      });
     });
 
     // モーダル閉じる
@@ -319,17 +558,24 @@ class BlockEditorUI {
 
   /**
    * テクスチャ選択モーダルを開く
-   * @param {string} slot - スロット名
    * @private
    */
-  _openModal(slot) {
+  _openModal(slot, type) {
     this.currentSlot = slot;
+    this.currentSlotType = type;
+
     const grid = this.modalOverlay.querySelector('.texture-grid');
     grid.innerHTML = '';
 
-    // 現在のスロットのテクスチャ名を取得
-    const currentTextures = this.standardBlockEditor.getTextures();
-    const currentTextureName = currentTextures[slot];
+    // 現在のテクスチャ名を取得
+    let currentTextureName = '';
+    if (type === 'custom' && this.customBlockEditor) {
+      const materials = this.customBlockEditor.getMaterials();
+      currentTextureName = materials[`material_${slot}`] || '';
+    } else if (this.standardBlockEditor) {
+      const textures = this.standardBlockEditor.getTextures();
+      currentTextureName = textures[slot] || '';
+    }
 
     // 「なし」オプション
     const noneItem = document.createElement('div');
@@ -342,7 +588,11 @@ class BlockEditorUI {
       <span class="texture-item-name">なし</span>
     `;
     noneItem.addEventListener('click', () => {
-      this.setTexture(slot, null);
+      if (type === 'custom') {
+        this.setMaterial(slot, null);
+      } else {
+        this.setTexture(slot, null);
+      }
       this._closeModal();
     });
     grid.appendChild(noneItem);
@@ -367,7 +617,11 @@ class BlockEditorUI {
       item.appendChild(img);
       item.appendChild(name);
       item.addEventListener('click', () => {
-        this.setTexture(slot, tex.file_name);
+        if (type === 'custom') {
+          this.setMaterial(slot, tex.file_name);
+        } else {
+          this.setTexture(slot, tex.file_name);
+        }
         this._closeModal();
       });
       grid.appendChild(item);
@@ -398,16 +652,19 @@ class BlockEditorUI {
   _closeModal() {
     this.modalOverlay.style.display = 'none';
     this.currentSlot = null;
+    this.currentSlotType = null;
   }
 
   /**
-   * スロットUIを更新
+   * 標準ブロック用スロットUIを更新
    * @private
    */
   _updateSlotUI() {
+    if (!this.standardBlockEditor) return;
+
     const textures = this.standardBlockEditor.getTextures();
 
-    this.slots.forEach(slot => {
+    this.normalSlots.forEach(slot => {
       const slotEl = this.slotElements[slot];
       const slotImage = slotEl.querySelector('.slot-image');
       const textureName = textures[slot];
@@ -423,6 +680,81 @@ class BlockEditorUI {
         }
       } else {
         slotImage.style.backgroundImage = '';
+      }
+    });
+  }
+
+  /**
+   * カスタムブロック用マテリアルスロットUIを更新
+   * @private
+   */
+  _updateMaterialSlotUI() {
+    if (!this.customBlockEditor) return;
+
+    const materials = this.customBlockEditor.getMaterials();
+
+    this.customSlots.forEach(slot => {
+      const slotEl = this.materialSlotElements[slot];
+      const slotImage = slotEl.querySelector('.slot-image');
+      const textureName = materials[`material_${slot}`];
+
+      if (textureName) {
+        const tex = this.textures.find(t => t.file_name === textureName);
+        if (tex && tex.image_base64) {
+          slotImage.style.backgroundImage = `url(${tex.image_base64})`;
+          slotImage.style.backgroundSize = 'cover';
+          slotImage.style.backgroundPosition = 'center';
+        } else {
+          slotImage.style.backgroundImage = '';
+          slotImage.style.backgroundColor = '#808080';
+        }
+      } else {
+        slotImage.style.backgroundImage = '';
+        slotImage.style.backgroundColor = '#808080';
+      }
+    });
+
+    this._updateMaterialSlotSelection();
+  }
+
+  /**
+   * マテリアルスロット選択状態を更新
+   * @private
+   */
+  _updateMaterialSlotSelection() {
+    this.customSlots.forEach(slot => {
+      const slotEl = this.materialSlotElements[slot];
+      if (slot === this.currentMaterialSlot) {
+        slotEl.classList.add('selected');
+      } else {
+        slotEl.classList.remove('selected');
+      }
+    });
+  }
+
+  /**
+   * モード切替ボタンを更新
+   * @private
+   */
+  _updateModeToggleButton() {
+    if (!this.customBlockEditor) return;
+    this.modeToggleBtn.textContent = this.customBlockEditor.getEditMode();
+  }
+
+  /**
+   * ブラシサイズボタンを更新
+   * @private
+   */
+  _updateBrushSizeButtons() {
+    if (!this.customBlockEditor) return;
+
+    const currentSize = this.customBlockEditor.getBrushSize();
+    this.brushSizeButtons.forEach(btn => {
+      const size = parseInt(btn.dataset.size, 10);
+      if (size === currentSize) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
       }
     });
   }

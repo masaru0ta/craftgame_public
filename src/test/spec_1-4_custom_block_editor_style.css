@@ -1,0 +1,424 @@
+/* テストページ用スタイル */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #1a1a2e;
+  color: #eee;
+  min-height: 100vh;
+}
+
+.page-container {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  padding: 20px;
+  gap: 20px;
+  overflow: hidden;
+}
+
+/* 左カラム (4) */
+.left-column {
+  flex: 4;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  background: #16213e;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 右カラム (6) */
+.right-column {
+  flex: 6;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* フォーム要素 */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group label {
+  font-size: 12px;
+  color: #888;
+}
+
+.form-group select,
+.form-group input {
+  padding: 8px 12px;
+  background: #0f0f1f;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #eee;
+  font-size: 14px;
+}
+
+.form-group select:focus,
+.form-group input:focus {
+  outline: none;
+  border-color: #00bcd4;
+}
+
+.info-text {
+  font-size: 14px;
+  color: #ccc;
+  padding: 8px 12px;
+  background: #0f0f1f;
+  border-radius: 4px;
+}
+
+/* ボタン */
+.btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-primary {
+  background: #00bcd4;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #26c6da;
+}
+
+.btn-primary:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+/* ステータスメッセージ */
+.status-message {
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  display: none;
+}
+
+.status-message.success {
+  display: block;
+  background: rgba(76, 175, 80, 0.2);
+  color: #81c784;
+}
+
+.status-message.error {
+  display: block;
+  background: rgba(244, 67, 54, 0.2);
+  color: #e57373;
+}
+
+.status-message.loading {
+  display: block;
+  background: rgba(33, 150, 243, 0.2);
+  color: #64b5f6;
+}
+
+/* BlockEditorUI 用スタイル */
+.editor-container {
+  width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  aspect-ratio: 3 / 4;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  background: #1a1a2e;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.preview-toolbar {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.preview-3d {
+  flex: 6;
+  min-height: 0;
+  position: relative;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #444;
+  font-size: 14px;
+}
+
+.control-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* BGボタン */
+.bg-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  padding: 2px;
+  background: none;
+  border: none;
+}
+
+.bg-color-indicator {
+  width: clamp(24px, 5vw, 48px);
+  height: clamp(24px, 5vw, 48px);
+  border: 2px solid #444;
+  border-radius: 2px;
+  background: #000;
+}
+
+.bg-btn:hover .bg-color-indicator {
+  border-color: #666;
+}
+
+.bg-btn span.bg-label {
+  font-size: clamp(8px, 1vw, 12px);
+  color: #888;
+}
+
+/* 左中右グループ */
+.left-group {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 8px;
+  flex: 1;
+}
+
+.center-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.right-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 1;
+}
+
+/* モード切替ボタン */
+.mode-toggle-btn {
+  padding: 4px 12px;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #eee;
+  font-size: clamp(10px, 1.5vw, 14px);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-toggle-btn:hover {
+  background: #444;
+  border-color: #555;
+}
+
+/* ブラシサイズボタン */
+.brush-size-btn {
+  padding: 4px 8px;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #888;
+  font-size: clamp(10px, 1.5vw, 14px);
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: clamp(28px, 4vw, 40px);
+}
+
+.brush-size-btn:hover {
+  background: #444;
+  border-color: #555;
+}
+
+.brush-size-btn.active {
+  background: #00bcd4;
+  border-color: #00bcd4;
+  color: #fff;
+}
+
+/* スロット */
+.slots-container {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.material-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.slot-image {
+  width: clamp(24px, 5vw, 48px);
+  height: clamp(24px, 5vw, 48px);
+  background: #000;
+  border: 2px solid #444;
+  border-radius: 2px;
+  background-size: cover;
+  background-position: center;
+}
+
+.material-item:hover .slot-image {
+  border-color: #666;
+}
+
+.material-item.active .slot-image,
+.material-item.selected .slot-image {
+  border-color: #00bcd4;
+}
+
+.material-item span {
+  font-size: clamp(8px, 1vw, 12px);
+  color: #888;
+}
+
+/* テクスチャ選択モーダル */
+.texture-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.texture-modal {
+  background: #1a1a2e;
+  border-radius: 8px;
+  width: 400px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #333;
+}
+
+.texture-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+}
+
+.texture-modal-title {
+  font-size: 14px;
+  color: #eee;
+}
+
+.texture-modal-close {
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.texture-modal-close:hover {
+  color: #fff;
+}
+
+.texture-modal-body {
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.texture-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.texture-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 2px;
+  border: 2px solid transparent;
+}
+
+.texture-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #444;
+}
+
+.texture-item.selected {
+  background: rgba(0, 188, 212, 0.1);
+  border-color: #00bcd4;
+}
+
+.texture-item-image {
+  width: 32px;
+  height: 32px;
+  background: #000;
+  border: 1px solid #444;
+  border-radius: 2px;
+}
+
+.texture-item-name {
+  font-size: 9px;
+  color: #888;
+  text-align: center;
+  word-break: break-all;
+  max-width: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

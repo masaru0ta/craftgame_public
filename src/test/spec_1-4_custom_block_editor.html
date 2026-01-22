@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1-4 カスタムブロックエディタ テスト</title>
+  <link rel="stylesheet" href="spec_1-4_custom_block_editor_style.css">
+</head>
+<body>
+  <div class="page-container">
+    <!-- 左カラム (4) -->
+    <div class="left-column">
+      <h2 style="margin-bottom: 8px; color: #00bcd4;">カスタムブロックエディタ</h2>
+
+      <div class="form-group">
+        <label for="block-select">ブロック選択</label>
+        <select id="block-select">
+          <option value="">ブロックを選択</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>block_str_id</label>
+        <div id="block-str-id" class="info-text">-</div>
+      </div>
+
+      <div class="form-group">
+        <label>name</label>
+        <div id="block-name" class="info-text">-</div>
+      </div>
+
+      <div style="flex: 1;"></div>
+
+      <div id="status-message" class="status-message"></div>
+
+      <button id="save-btn" class="btn btn-primary">保存</button>
+    </div>
+
+    <!-- 右カラム (6) -->
+    <div class="right-column">
+      <div id="editor-container" style="width: 100%; height: 100%;"></div>
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- ゲームライブラリ -->
+  <script src="../game/gas_api.js?v=3"></script>
+  <script src="../game/voxel_data.js?v=1"></script>
+  <script src="../game/custom_block_mesh_builder.js?v=1"></script>
+  <script src="../game/custom_block_editor.js?v=1"></script>
+  <script src="../game/standard_block_mesh_builder.js?v=2"></script>
+  <script src="../game/standard_block_editor.js?v=2"></script>
+  <script src="../game/block_editor_ui.js?v=3"></script>
+
+  <!-- テストページスクリプト -->
+  <script src="spec_1-4_custom_block_editor_main.js?v=1"></script>
+</body>
+</html>
