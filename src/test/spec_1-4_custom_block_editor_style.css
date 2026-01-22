@@ -239,8 +239,8 @@ body {
 
 /* モード切替ボタン（ツールバー枠と同じ上下幅の正方形） */
 .mode-toggle-btn {
+  height: 100%;
   aspect-ratio: 1 / 1;
-  align-self: stretch;
   display: flex;
   align-items: center;
   justify-content: center;
