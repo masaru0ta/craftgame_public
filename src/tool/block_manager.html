@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ブロック管理ツール</title>
+  <link rel="stylesheet" href="block_manager_style.css">
+</head>
+<body>
+  <!-- ローディング -->
+  <div class="loading">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <!-- タブバー -->
+  <div class="tabs">
+    <div class="tab active">ブロック一覧</div>
+    <div class="tab">テクスチャ一覧</div>
+  </div>
+
+  <!-- ブロック一覧 -->
+  <div class="main active" id="blockList">
+    <div class="column col-left">
+      <div class="grid" id="blockGrid"></div>
+    </div>
+    <div class="column col-mid">
+      <h3 style="margin-bottom:16px;">基本情報</h3>
+      <div class="form-group">
+        <label>ブロックID<span class="required">*</span></label>
+        <input type="text" id="blockStrId">
+        <div class="error-message" id="blockStrIdError"></div>
+      </div>
+      <div class="form-group">
+        <label>表示名<span class="required">*</span></label>
+        <input type="text" id="blockName">
+        <div class="error-message" id="blockNameError"></div>
+      </div>
+      <div class="form-group">
+        <label>ブロックタイプ</label>
+        <select id="shapeType">
+          <option value="normal">通常ブロック</option>
+          <option value="custom">カスタムブロック</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>ドロップアイテム</label>
+        <input type="text" id="dropItem">
+      </div>
+      <div class="form-group">
+        <label>発光レベル (0-15)</label>
+        <input type="number" id="lightLevel" min="0" max="15" value="0">
+      </div>
+      <div class="form-group">
+        <label>オプション</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item"><input type="checkbox" id="isTransparent">透過ブロック</label>
+        </div>
+      </div>
+      <div class="success-message" id="successMessage"></div>
+      <div class="btn-row">
+        <button class="btn-danger" id="deleteBlockBtn">削除</button>
+        <button class="btn-primary" id="saveBlockBtn">保存</button>
+      </div>
+    </div>
+    <div class="column col-right">
+      <!-- 3Dプレビュー枠 -->
+      <div class="preview-container">
+        <!-- ツールバー -->
+        <div class="preview-toolbar">
+          <!-- カスタムブロック用：モード切替ボタン -->
+          <button class="toolbar-btn" id="modeToggleBtn" style="display:none;" title="見た目/当たり判定切り替え">M</button>
+          <!-- カスタムブロック用：ブラシサイズ -->
+          <button class="toolbar-btn brush-btn" data-size="4" style="display:none;">4x</button>
+          <button class="toolbar-btn brush-btn" data-size="2" style="display:none;">2x</button>
+          <button class="toolbar-btn brush-btn active" data-size="1" style="display:none;">1x</button>
+          <div style="flex:1;"></div>
+          <!-- 共通：背景色切り替え -->
+          <button class="toolbar-btn" id="bgBtn" title="背景色切り替え">BG</button>
+        </div>
+        <!-- 3Dプレビュー領域 -->
+        <div class="preview-3d" id="previewCanvas"></div>
+        <!-- コントロール枠 -->
+        <div class="preview-control">
+          <!-- 通常ブロック用：テクスチャスロット -->
+          <div id="normalControls">
+            <div class="material-item"><div class="preview" id="tex_default"></div><div class="tex-name">default</div></div>
+            <div class="material-item"><div class="preview" id="tex_top"></div><div class="tex-name">top</div></div>
+            <div class="material-item"><div class="preview" id="tex_bottom"></div><div class="tex-name">bottom</div></div>
+            <div class="material-item"><div class="preview" id="tex_front"></div><div class="tex-name">front</div></div>
+            <div class="material-item"><div class="preview" id="tex_back"></div><div class="tex-name">back</div></div>
+            <div class="material-item"><div class="preview" id="tex_left"></div><div class="tex-name">left</div></div>
+            <div class="material-item"><div class="preview" id="tex_right"></div><div class="tex-name">right</div></div>
+          </div>
+          <!-- カスタムブロック用：マテリアルスロット -->
+          <div id="customControls" style="display:none;">
+            <div class="material-item"><div class="preview" id="mat_1"></div><div class="tex-name">1</div></div>
+            <div class="material-item"><div class="preview" id="mat_2"></div><div class="tex-name">2</div></div>
+            <div class="material-item"><div class="preview" id="mat_3"></div><div class="tex-name">3</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ一覧 -->
+  <div class="main" id="textureList">
+    <div class="column col-7">
+      <h3 style="margin-bottom:16px;">テクスチャ一覧</h3>
+      <div class="grid" id="textureGrid"></div>
+    </div>
+    <div class="column col-3">
+      <h3 style="margin-bottom:16px;">テクスチャ詳細</h3>
+      <div class="preview-large" id="texturePreview"></div>
+      <div class="form-group">
+        <label>テクスチャID</label>
+        <input type="number" id="textureId" readonly>
+      </div>
+      <div class="form-group">
+        <label>ファイル名</label>
+        <input type="text" id="texFileName" readonly>
+      </div>
+      <div class="form-group">
+        <label>代表色（マップ表示用）</label>
+        <div class="color-row">
+          <input type="color" id="colorHex" value="#808080">
+          <input type="text" id="colorHexText" value="#808080">
+        </div>
+      </div>
+      <div class="btn-row btn-row-between">
+        <button class="btn-danger" id="deleteTextureBtn">削除</button>
+        <button class="btn-primary" id="saveTextureBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ選択ポップアップ -->
+  <div class="picker-overlay" id="pickerOverlay">
+    <div class="picker">
+      <div class="picker-header">
+        <h4>テクスチャを選択</h4>
+        <button class="picker-close">&times;</button>
+      </div>
+      <div class="picker-grid" id="pickerGrid"></div>
+    </div>
+  </div>
+
+  <!-- 確認モーダル -->
+  <div class="confirm-modal">
+    <div class="confirm-modal-content">
+      <p id="confirmMessage"></p>
+      <div class="btn-row">
+        <button class="btn-secondary btn-cancel" id="confirmCancelBtn">キャンセル</button>
+        <button class="btn-danger btn-ok" id="confirmOkBtn">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新規作成モーダル -->
+  <div class="create-modal">
+    <div class="create-modal-content">
+      <h3>新規ブロック作成</h3>
+      <div class="form-group">
+        <label>ブロックID<span class="required">*</span></label>
+        <input type="text" id="newBlockStrId" placeholder="英数字とアンダースコアのみ">
+        <div class="error-message" id="createBlockStrIdError"></div>
+      </div>
+      <div class="form-group">
+        <label>表示名<span class="required">*</span></label>
+        <input type="text" id="newBlockName">
+        <div class="error-message" id="createBlockNameError"></div>
+      </div>
+      <div class="form-group">
+        <label>ブロックタイプ</label>
+        <div class="radio-group">
+          <label class="radio-item"><input type="radio" name="newShapeType" value="normal" id="newShapeNormal" checked>標準</label>
+          <label class="radio-item"><input type="radio" name="newShapeType" value="custom">カスタム</label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary btn-cancel" id="cancelCreateBtn">キャンセル</button>
+        <button class="btn-primary btn-ok" id="createBlockBtn">作成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- ゲームライブラリ -->
+  <script src="../game/gas_api.js"></script>
+  <script src="../game/voxel_data.js"></script>
+  <script src="../game/custom_collision.js"></script>
+  <script src="../game/standard_block_mesh_builder.js"></script>
+  <script src="../game/custom_block_mesh_builder.js"></script>
+  <script src="../game/standard_block_editor.js"></script>
+  <script src="../game/custom_block_editor.js"></script>
+  <!-- メインスクリプト -->
+  <script src="block_manager_main.js"></script>
+</body>
+</html>

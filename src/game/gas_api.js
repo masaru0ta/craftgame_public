@@ -61,6 +61,15 @@ class GasApi {
   }
 
   /**
+   * ブロックを新規作成
+   * @param {Object} blockData - ブロックデータ（block_str_id, name, shape_type）
+   * @returns {Promise<Object>} 結果（block_id を含む）
+   */
+  async createBlock(blockData) {
+    return this.get('createBlock', blockData);
+  }
+
+  /**
    * ブロックを保存
    * @param {Object} blockData - ブロックデータ
    * @returns {Promise<Object>} 結果

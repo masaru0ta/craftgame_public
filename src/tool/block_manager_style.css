@@ -1,0 +1,135 @@
+/**
+ * ブロック管理ツール スタイル
+ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; background: #f0f0f0; height: 100vh; display: flex; flex-direction: column; }
+
+/* タブ */
+.tabs { display: flex; background: #333; }
+.tab { padding: 12px 24px; color: #aaa; cursor: pointer; border-bottom: 3px solid transparent; }
+.tab:hover { color: #fff; background: #444; }
+.tab.active { color: #fff; border-bottom-color: #4285f4; background: #444; }
+
+/* レイアウト */
+.main { flex: 1; display: none; overflow: hidden; }
+.main.active { display: flex; }
+.column { background: #fff; overflow-y: auto; padding: 16px; }
+.col-left { flex: 3; border-right: 1px solid #ddd; }
+.col-mid { flex: 2; border-right: 1px solid #ddd; }
+.col-right { flex: 5; background: #fafafa; }
+.col-7 { flex: 7; border-right: 1px solid #ddd; }
+.col-3 { flex: 3; }
+
+/* タイル・グリッド共通 */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; }
+.tile { padding: 8px; border: 2px solid transparent; border-radius: 6px; cursor: pointer; text-align: center; transition: all 0.15s; }
+.tile:hover { background: #f5f5f5; border-color: #ddd; }
+.tile.selected { background: #e3f2fd; border-color: #4285f4; }
+.tile.add-new { border: 2px dashed #aaa; }
+.tile.add-new:hover { border-color: #4285f4; background: #e8f0fe; }
+.tile-img { width: 48px; height: 48px; margin: 0 auto 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; background-size: cover; background-position: center; }
+.tile-name { font-size: 11px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-id { font-size: 10px; color: #888; }
+
+/* セクション */
+.section { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.section h3 { font-size: 14px; color: #333; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+
+/* フォーム */
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+.form-group .required { color: #d93025; }
+input, textarea, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+input:focus, textarea:focus, select:focus { outline: none; border-color: #4285f4; box-shadow: 0 0 0 2px rgba(66,133,244,0.2); }
+input[readonly] { background: #f5f5f5; color: #666; cursor: not-allowed; }
+textarea { resize: vertical; min-height: 60px; }
+.checkbox-group { display: flex; flex-direction: column; gap: 6px; }
+.checkbox-item { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.checkbox-item input { width: auto; }
+.color-row { display: flex; gap: 8px; align-items: center; }
+.color-row input[type="color"] { width: 40px; height: 34px; padding: 2px; cursor: pointer; }
+.color-row input[type="text"] { flex: 1; }
+
+/* ボタン */
+.btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; padding-top: 16px; border-top: 1px solid #ddd; }
+.btn-row-between { justify-content: space-between; }
+button { padding: 8px 20px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; }
+.btn-primary { background: #4285f4; color: #fff; }
+.btn-primary:hover { background: #3367d6; }
+.btn-secondary { background: #fff; color: #666; border: 1px solid #ddd; }
+.btn-danger { background: #fff; color: #d93025; border: 1px solid #d93025; }
+.btn-danger:hover { background: #fce8e6; }
+
+/* メッセージ */
+.error-message { color: #d93025; font-size: 12px; margin-top: 4px; display: none; }
+.error-message.show { display: block; }
+.success-message { color: #1e8e3e; font-size: 12px; margin-top: 8px; display: none; }
+.success-message.show { display: block; }
+
+/* 3Dプレビュー枠 */
+.preview-container { width: 100%; aspect-ratio: 3 / 4; background: #000; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+.preview-toolbar { height: 12.5%; background: #1a1a1a; display: flex; align-items: center; padding: 0 8px; gap: 8px; }
+.preview-3d { flex: 1; display: flex; align-items: center; justify-content: center; color: #666; position: relative; }
+.preview-3d canvas { width: 100% !important; height: 100% !important; }
+.preview-control { height: 12.5%; background: #1a1a1a; display: flex; align-items: center; justify-content: center; padding: 0 8px; gap: 8px; }
+.toolbar-btn { width: 32px; height: 32px; background: #333; border: 1px solid #555; border-radius: 4px; color: #fff; cursor: pointer; font-size: 11px; }
+.toolbar-btn:hover { background: #444; }
+.toolbar-btn.active { background: #4285f4; border-color: #4285f4; }
+
+/* マテリアルアイテム */
+.material-item { display: inline-block; text-align: center; margin: 0 4px; }
+.material-item .preview { width: 32px; height: 32px; border: 1px solid #444; border-radius: 4px; cursor: pointer; background-size: cover; background-position: center; }
+.material-item .preview:hover { border-color: #4285f4; }
+.material-item .tex-name { font-size: 9px; color: #888; }
+
+/* テクスチャ選択ポップアップ */
+.picker-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; align-items: center; justify-content: center; z-index: 1000; }
+.picker-overlay.show { display: flex; }
+.picker { background: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); max-width: 360px; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; }
+.picker-header { padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+.picker-header h4 { margin: 0; font-size: 14px; }
+.picker-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #999; padding: 0; }
+.picker-grid { padding: 12px; display: grid; grid-template-columns: repeat(4, 64px); gap: 8px; overflow-y: auto; }
+.picker-item { padding: 6px; border: 2px solid #ddd; border-radius: 4px; cursor: pointer; text-align: center; }
+.picker-item:hover { border-color: #999; }
+.picker-item .tex-preview { width: 36px; height: 36px; margin: 0 auto 4px; border-radius: 2px; background-size: cover; background-position: center; }
+.picker-item .tex-label { font-size: 10px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 確認モーダル */
+.confirm-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; align-items: center; justify-content: center; z-index: 1001; }
+.confirm-modal.show { display: flex; }
+.confirm-modal-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+.confirm-modal-content p { margin-bottom: 16px; }
+.confirm-modal-content .btn-row { margin-top: 0; padding-top: 0; border-top: none; }
+
+/* 新規作成モーダル */
+.create-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; align-items: center; justify-content: center; z-index: 1001; }
+.create-modal.show { display: flex; }
+.create-modal-content { background: #fff; border-radius: 8px; padding: 24px; max-width: 400px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+.create-modal-content h3 { margin-bottom: 16px; }
+.create-modal-content .radio-group { display: flex; gap: 16px; margin-bottom: 12px; }
+.create-modal-content .radio-item { display: flex; align-items: center; gap: 6px; }
+.create-modal-content .radio-item input { width: auto; }
+
+/* プレビュー */
+.preview-large { width: 100px; height: 100px; margin: 0 auto 16px; border-radius: 8px; background-size: cover; background-position: center; }
+
+/* ローディング */
+.loading { position: fixed; inset: 0; background: rgba(255,255,255,0.8); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.loading.hide { display: none; }
+.loading-spinner { width: 40px; height: 40px; border: 4px solid #ddd; border-top-color: #4285f4; border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* レスポンシブ */
+@media (max-width: 1200px) {
+  .grid { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
+}
+@media (max-width: 900px) {
+  .grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 600px) {
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .main { flex-direction: column; }
+  .column { flex: none !important; }
+}

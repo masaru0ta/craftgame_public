@@ -273,110 +273,110 @@ src/
 
 ### 全体構成
 
-- [ ] Github にパブリッシュした画面が正常に表示される
-- [ ] 画面上部にタブバー（「ブロック一覧」「テクスチャ一覧」）が表示される
-- [ ] タブクリックでメインコンテンツが切り替わる
-- [ ] ページ読み込み後、ブロック一覧に `.tile` が1つ以上表示される
-- [ ] テクスチャ一覧タブに切り替え後、`.tile` が1つ以上表示される
+- [x] Github にパブリッシュした画面が正常に表示される
+- [x] 画面上部にタブバー（「ブロック一覧」「テクスチャ一覧」）が表示される
+- [x] タブクリックでメインコンテンツが切り替わる
+- [x] ページ読み込み後、ブロック一覧に `.tile` が1つ以上表示される
+- [x] テクスチャ一覧タブに切り替え後、`.tile` が1つ以上表示される
 
 ### ブロック状態一覧画面 - レイアウト
 
-- [ ] `.col-left`、`.col-mid`、`.col-right` の3カラムが表示される
-- [ ] 中央カラムに見出し「基本情報」が表示される
-- [ ] 右カラムに `.preview-container` が表示される
+- [x] `.col-left`、`.col-mid`、`.col-right` の3カラムが表示される
+- [x] 中央カラムに見出し「基本情報」が表示される
+- [x] 右カラムに `.preview-container` が表示される
 
 ### ブロック状態一覧画面 - 左カラム
 
-- [ ] `.grid` 内に `.tile` がグリッド表示される
-- [ ] 各タイルに `.tile-img` と `.tile-name` が表示される
-- [ ] ページ読み込み時、先頭のタイルに `.selected` クラスが付与される
-- [ ] タイルクリックで `.selected` クラスが付与される
-- [ ] タイル選択時、中央カラムのフォームに選択ブロックの値が表示される
-- [ ] フォーム値を変更後、別タイルを選択すると `.confirm-modal` が表示される
-- [ ] `.confirm-modal .btn-ok` クリックで選択が切り替わる
-- [ ] `.confirm-modal .btn-cancel` クリックで `.confirm-modal` が閉じ選択が維持される
-- [ ] 最後に `.tile.add-new` が表示される
+- [x] `.grid` 内に `.tile` がグリッド表示される
+- [x] 各タイルに `.tile-img` と `.tile-name` が表示される
+- [x] ページ読み込み時、先頭のタイルに `.selected` クラスが付与される
+- [x] タイルクリックで `.selected` クラスが付与される
+- [x] タイル選択時、中央カラムのフォームに選択ブロックの値が表示される
+- [x] フォーム値を変更後、別タイルを選択すると `.confirm-modal` が表示される
+- [x] `.confirm-modal .btn-ok` クリックで選択が切り替わる
+- [x] `.confirm-modal .btn-cancel` クリックで `.confirm-modal` が閉じ選択が維持される
+- [x] 最後に `.tile.add-new` が表示される
 
 ### ブロック状態一覧画面 - 中央カラム
 
-- [ ] block_str_id 入力欄（input[type="text"]）が表示される
-- [ ] name 入力欄（input[type="text"]）が表示される
-- [ ] shape_type プルダウン（select）が表示される
-- [ ] shape_type プルダウン変更時に `.confirm-modal` が表示される
-- [ ] `.confirm-modal .btn-ok` クリックでプルダウンの値が変更される
-- [ ] `.confirm-modal .btn-cancel` クリックでプルダウンの値が元に戻る
-- [ ] drop_item 入力欄が表示される
-- [ ] light_level 数値入力（input[type="number"], min=0, max=15）が表示される
-- [ ] is_transparent チェックボックスが表示される
-- [ ] `.btn-danger`（削除）と `.btn-primary`（保存）ボタンが表示される
+- [x] block_str_id 入力欄（input[type="text"]）が表示される
+- [x] name 入力欄（input[type="text"]）が表示される
+- [x] shape_type プルダウン（select）が表示される
+- [x] shape_type プルダウン変更時に `.confirm-modal` が表示される
+- [x] `.confirm-modal .btn-ok` クリックでプルダウンの値が変更される
+- [x] `.confirm-modal .btn-cancel` クリックでプルダウンの値が元に戻る
+- [x] drop_item 入力欄が表示される
+- [x] light_level 数値入力（input[type="number"], min=0, max=15）が表示される
+- [x] is_transparent チェックボックスが表示される
+- [x] `.btn-danger`（削除）と `.btn-primary`（保存）ボタンが表示される
 
 ### ブロック状態一覧画面 - 右カラム（3Dプレビュー枠）
 
-- [ ] `.preview-container` が表示される
-- [ ] `.preview-container` 内に canvas 要素が存在する
+- [x] `.preview-container` が表示される
+- [x] `.preview-container` 内に canvas 要素が存在する
 
 ### 新規ブロック作成
 
-- [ ] `.tile.add-new` クリックで `.create-modal` が表示される
-- [ ] モーダルに block_str_id 入力欄が表示される
-- [ ] モーダルに name 入力欄が表示される
-- [ ] モーダルに shape_type 選択（ラジオボタン）が表示される
-- [ ] `.create-modal .btn-ok` と `.create-modal .btn-cancel` が表示される
-- [ ] block_str_id が空で `.btn-ok` クリック時、`.error-message` が表示される
-- [ ] block_str_id に先頭ブロックと同じ値を入力して `.btn-ok` クリック時、`.error-message` が表示される
-- [ ] block_str_id に記号を入力して `.btn-ok` クリック時、`.error-message` が表示される
-- [ ] name が空で `.btn-ok` クリック時、`.error-message` が表示される
-- [ ] 正常に入力して `.btn-ok` クリックで `.create-modal` が閉じる
-- [ ] 作成成功後、`.grid` 内の `.tile` 数が増加する
-- [ ] 作成成功後、新規ブロックのタイルに `.selected` が付与される
-- [ ] `.create-modal .btn-cancel` クリックで `.create-modal` が閉じる
+- [x] `.tile.add-new` クリックで `.create-modal` が表示される
+- [x] モーダルに block_str_id 入力欄が表示される
+- [x] モーダルに name 入力欄が表示される
+- [x] モーダルに shape_type 選択（ラジオボタン）が表示される
+- [x] `.create-modal .btn-ok` と `.create-modal .btn-cancel` が表示される
+- [x] block_str_id が空で `.btn-ok` クリック時、`.error-message` が表示される
+- [x] block_str_id に先頭ブロックと同じ値を入力して `.btn-ok` クリック時、`.error-message` が表示される
+- [x] block_str_id に記号を入力して `.btn-ok` クリック時、`.error-message` が表示される
+- [x] name が空で `.btn-ok` クリック時、`.error-message` が表示される
+- [x] 正常に入力して `.btn-ok` クリックで `.create-modal` が閉じる
+- [x] 作成成功後、`.grid` 内の `.tile` 数が増加する
+- [x] 作成成功後、新規ブロックのタイルに `.selected` が付与される
+- [x] `.create-modal .btn-cancel` クリックで `.create-modal` が閉じる
 
 ### ブロック保存
 
-- [ ] block_str_id を空にして `.btn-primary` クリック時、`.error-message` が表示される
-- [ ] block_str_id に記号を入力して `.btn-primary` クリック時、`.error-message` が表示される
-- [ ] block_str_id を別ブロックと同じ値にして `.btn-primary` クリック時、`.error-message` が表示される
-- [ ] name を空にして `.btn-primary` クリック時、`.error-message` が表示される
-- [ ] 正常な値で `.btn-primary` クリック時、`.success-message` が表示される
+- [x] block_str_id を空にして `.btn-primary` クリック時、`.error-message` が表示される
+- [x] block_str_id に記号を入力して `.btn-primary` クリック時、`.error-message` が表示される
+- [x] block_str_id を別ブロックと同じ値にして `.btn-primary` クリック時、`.error-message` が表示される
+- [x] name を空にして `.btn-primary` クリック時、`.error-message` が表示される
+- [x] 正常な値で `.btn-primary` クリック時、`.success-message` が表示される
 
 ### ブロック削除
 
-- [ ] `.btn-danger` クリックで `.confirm-modal` が表示される
-- [ ] 確認モーダルに削除対象の block_str_id が含まれるメッセージが表示される
-- [ ] `.confirm-modal .btn-ok` と `.confirm-modal .btn-cancel` が表示される
-- [ ] `.confirm-modal .btn-ok` クリックで `.confirm-modal` が閉じる
-- [ ] 削除成功後、`.grid` 内の `.tile` 数が減少する
-- [ ] `.confirm-modal .btn-cancel` クリックで `.confirm-modal` が閉じる
+- [x] `.btn-danger` クリックで `.confirm-modal` が表示される
+- [x] 確認モーダルに削除対象の block_str_id が含まれるメッセージが表示される
+- [x] `.confirm-modal .btn-ok` と `.confirm-modal .btn-cancel` が表示される
+- [x] `.confirm-modal .btn-ok` クリックで `.confirm-modal` が閉じる
+- [x] 削除成功後、`.grid` 内の `.tile` 数が減少する
+- [x] `.confirm-modal .btn-cancel` クリックで `.confirm-modal` が閉じる
 
 ### テクスチャ一覧画面 - レイアウト
 
-- [ ] `.col-7` と `.col-3` の2カラムが表示される
-- [ ] 左カラムに見出し「テクスチャ一覧」が表示される
-- [ ] 右カラムに見出し「テクスチャ詳細」が表示される
+- [x] `.col-7` と `.col-3` の2カラムが表示される
+- [x] 左カラムに見出し「テクスチャ一覧」が表示される
+- [x] 右カラムに見出し「テクスチャ詳細」が表示される
 
 ### テクスチャ一覧画面 - 左カラム
 
-- [ ] `.grid` 内に `.tile` がグリッド表示される
-- [ ] 各タイルに `.tile-img`、`.tile-id`、`.tile-name` が表示される
-- [ ] タイルクリックで `.selected` クラスが付与される
+- [x] `.grid` 内に `.tile` がグリッド表示される
+- [x] 各タイルに `.tile-img`、`.tile-id`、`.tile-name` が表示される
+- [x] タイルクリックで `.selected` クラスが付与される
 
 ### テクスチャ一覧画面 - 右カラム
 
-- [ ] プレビュー画像が表示される
-- [ ] texture_id 入力欄（readonly）が表示される
-- [ ] file_name 入力欄（readonly）が表示される
-- [ ] color_hex 入力欄（input[type="color"] と input[type="text"]）が表示される
-- [ ] `.btn-danger`（削除）と `.btn-primary`（保存）ボタンが表示される
+- [x] プレビュー画像が表示される
+- [x] texture_id 入力欄（readonly）が表示される
+- [x] file_name 入力欄（readonly）が表示される
+- [x] color_hex 入力欄（input[type="color"] と input[type="text"]）が表示される
+- [x] `.btn-danger`（削除）と `.btn-primary`（保存）ボタンが表示される
 
 ### テクスチャ保存
 
-- [ ] color_hex を変更して `.btn-primary` クリックで `.success-message` が表示される
+- [x] color_hex を変更して `.btn-primary` クリックで `.success-message` が表示される
 
 ### テクスチャ削除
 
-- [ ] `.btn-danger` クリックで `.confirm-modal` が表示される
-- [ ] 確認モーダルに削除対象の file_name が含まれるメッセージが表示される
-- [ ] `.confirm-modal .btn-ok` と `.confirm-modal .btn-cancel` が表示される
-- [ ] `.confirm-modal .btn-ok` クリックで `.confirm-modal` が閉じる
-- [ ] 削除成功後、`.grid` 内の `.tile` 数が減少する
-- [ ] `.confirm-modal .btn-cancel` クリックで `.confirm-modal` が閉じる
+- [x] `.btn-danger` クリックで `.confirm-modal` が表示される
+- [x] 確認モーダルに削除対象の file_name が含まれるメッセージが表示される
+- [x] `.confirm-modal .btn-ok` と `.confirm-modal .btn-cancel` が表示される
+- [x] `.confirm-modal .btn-ok` クリックで `.confirm-modal` が閉じる
+- [x] 削除成功後、`.grid` 内の `.tile` 数が減少する
+- [x] `.confirm-modal .btn-cancel` クリックで `.confirm-modal` が閉じる
