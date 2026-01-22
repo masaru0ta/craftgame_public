@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "playwright test --config=tests/playwright.config.js",
+    "test:quiet": "playwright test --config=tests/playwright.config.js --reporter=dot",
     "test:ui": "playwright test --config=tests/playwright.config.js --ui",
     "test:headed": "playwright test --config=tests/playwright.config.js --headed"
   },
