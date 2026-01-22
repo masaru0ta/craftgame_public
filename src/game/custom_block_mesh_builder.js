@@ -141,22 +141,22 @@ class CustomBlockMeshBuilder {
       const baseV = face.v * cellSize;
 
       // 4頂点のUV座標（BoxGeometryの頂点順序に合わせる）
-      // 頂点順序: [左下, 右下, 左上, 右上]
+      // Three.js BoxGeometryの頂点順序: [左上, 右上, 左下, 右下]
       let uvCoords;
       if (face.flipU) {
         // U座標を反転（左右反転）
         uvCoords = [
-          [baseU + cellSize, baseV],
-          [baseU, baseV],
-          [baseU + cellSize, baseV + cellSize],
-          [baseU, baseV + cellSize]
+          [baseU + cellSize, baseV + cellSize], // 右上 → 左上位置
+          [baseU, baseV + cellSize],            // 左上 → 右上位置
+          [baseU + cellSize, baseV],            // 右下 → 左下位置
+          [baseU, baseV]                        // 左下 → 右下位置
         ];
       } else {
         uvCoords = [
-          [baseU, baseV],
-          [baseU + cellSize, baseV],
-          [baseU, baseV + cellSize],
-          [baseU + cellSize, baseV + cellSize]
+          [baseU, baseV + cellSize],            // 左上
+          [baseU + cellSize, baseV + cellSize], // 右上
+          [baseU, baseV],                       // 左下
+          [baseU + cellSize, baseV]             // 右下
         ];
       }
 
