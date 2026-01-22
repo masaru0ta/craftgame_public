@@ -142,12 +142,23 @@ class CustomBlockMeshBuilder {
 
       // 4頂点のUV座標（BoxGeometryの頂点順序に合わせる）
       // 頂点順序: [左下, 右下, 左上, 右上]
-      const uvCoords = [
-        [baseU, baseV],
-        [baseU + cellSize, baseV],
-        [baseU, baseV + cellSize],
-        [baseU + cellSize, baseV + cellSize]
-      ];
+      let uvCoords;
+      if (face.flipU) {
+        // U座標を反転（左右反転）
+        uvCoords = [
+          [baseU + cellSize, baseV],
+          [baseU, baseV],
+          [baseU + cellSize, baseV + cellSize],
+          [baseU, baseV + cellSize]
+        ];
+      } else {
+        uvCoords = [
+          [baseU, baseV],
+          [baseU + cellSize, baseV],
+          [baseU, baseV + cellSize],
+          [baseU + cellSize, baseV + cellSize]
+        ];
+      }
 
       for (let i = 0; i < 4; i++) {
         const idx = (face.start + i) * 2;
