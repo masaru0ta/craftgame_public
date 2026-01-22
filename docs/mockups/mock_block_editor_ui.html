@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BlockEditorUI モック</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #1a1a2e;
+      color: #eee;
+      padding: 20px;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      color: #e94560;
+    }
+
+    h2 {
+      margin: 30px 0 15px 0;
+      color: #aaa;
+      font-size: 16px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 5px;
+    }
+
+    .mock-container {
+      display: flex;
+      gap: 40px;
+      flex-wrap: wrap;
+    }
+
+    .mock-section {
+      background: #16213e;
+      padding: 20px;
+      border-radius: 8px;
+      min-width: 300px;
+    }
+
+    /* ========================================
+       1. エディタコンテナ
+       ======================================== */
+    .editor-container {
+      width: 300px;
+      aspect-ratio: 3 / 4;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ========================================
+       2. プレビューコンテナ
+       ======================================== */
+    .preview-container {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      flex: 1;
+      background: #1a1a2e;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    /* ========================================
+       3. ツールバー (flex: 1 = 高さ1/8)
+       ======================================== */
+    .preview-toolbar {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: stretch;
+      justify-content: space-between;
+      padding: 0 12px;
+      background: rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    /* ========================================
+       4. 3Dプレビュー領域 (flex: 6 = 高さ6/8)
+       ======================================== */
+    .preview-3d {
+      flex: 6;
+      position: relative;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #444;
+      font-size: 14px;
+    }
+
+    /* ========================================
+       5. コントロールパネル (flex: 1 = 高さ1/8)
+       ======================================== */
+    .control-panel {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      background: rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+    }
+
+    /* ========================================
+       6. BGボタン (背景色切り替え)
+       スロットと同じスタイル
+       ======================================== */
+    .bg-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      cursor: pointer;
+      padding: 2px;
+      background: none;
+      border: none;
+    }
+
+    /* 背景色インジケーター */
+    .bg-color-indicator {
+      width: 32px;
+      height: 32px;
+      border: 2px solid #444;
+      border-radius: 2px;
+      background: #000;
+    }
+
+    .bg-btn:hover .bg-color-indicator {
+      border-color: #666;
+    }
+
+    .bg-btn span.bg-label {
+      font-size: 9px;
+      color: #888;
+    }
+
+    /* ========================================
+       7. モード切替ボタン (見た目/当たり判定)
+       ツールバー高さいっぱいに表示
+       ======================================== */
+    .mode-toggle-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      background: none;
+      border: none;
+      align-self: stretch;
+    }
+
+    .mode-preview {
+      height: 100%;
+      aspect-ratio: 1;
+      background: #222;
+      border: 2px solid #444;
+      border-radius: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      color: #666;
+    }
+
+    .mode-toggle-btn:hover .mode-preview {
+      border-color: #666;
+    }
+
+    /* ========================================
+       8. ブラシサイズボタン [4][2][1] + ラベル
+       スロットと同じスタイルに統一
+       ======================================== */
+    .brush-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      align-self: center;
+    }
+
+    .brush-buttons {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+    }
+
+    .brush-size-btn {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      background: #000;
+      border: 2px solid #444;
+      border-radius: 2px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .brush-size-btn:hover {
+      border-color: #666;
+    }
+
+    .brush-size-btn.active {
+      border-color: #e91e63;
+    }
+
+    .brush-size-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .brush-label {
+      font-size: 9px;
+      color: #888;
+    }
+
+    /* ========================================
+       9. スロット共通 (テクスチャ/マテリアル)
+       ======================================== */
+    .slots-container {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .material-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      cursor: pointer;
+      padding: 2px;
+    }
+
+    .slot-image {
+      width: 32px;
+      height: 32px;
+      background: #000;
+      border: 2px solid #444;
+      border-radius: 2px;
+      background-size: cover;
+      background-position: center;
+    }
+
+    .material-item:hover .slot-image {
+      border-color: #666;
+    }
+
+    .material-item.active .slot-image {
+      border-color: #e91e63;
+    }
+
+    .material-item span {
+      font-size: 9px;
+      color: #888;
+    }
+
+    /* ========================================
+       11. 自動作成ボタン
+       ======================================== */
+    .auto-create-btn {
+      padding: 8px 16px;
+      background: #2196f3;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .auto-create-btn:hover {
+      background: #42a5f5;
+    }
+
+    /* ========================================
+       12. 衝突テストボタン (簡易チェック)
+       ======================================== */
+    .check-btn {
+      padding: 8px 16px;
+      background: #4caf50;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .check-btn:hover {
+      background: #66bb6a;
+    }
+
+    .check-btn.active {
+      background: #f44336;
+    }
+
+    .check-btn.active:hover {
+      background: #ef5350;
+    }
+
+    /* ========================================
+       左中右グループ（3カラムレイアウト）
+       ======================================== */
+    .left-group {
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .center-group {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+    }
+
+    .right-group {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex: 1;
+    }
+
+    /* ========================================
+       UIパーツ単体表示用
+       ======================================== */
+    .parts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 20px;
+    }
+
+    .part-box {
+      background: #0f0f1f;
+      padding: 15px;
+      border-radius: 8px;
+    }
+
+    .part-box h3 {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 10px;
+    }
+
+    .part-demo {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    /* ========================================
+       13. テクスチャ選択モーダル
+       ======================================== */
+    .texture-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .texture-modal {
+      background: #1a1a2e;
+      border-radius: 8px;
+      width: 400px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #333;
+    }
+
+    .texture-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #333;
+    }
+
+    .texture-modal-title {
+      font-size: 14px;
+      color: #eee;
+    }
+
+    .texture-modal-close {
+      width: 24px;
+      height: 24px;
+      background: none;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .texture-modal-close:hover {
+      color: #fff;
+    }
+
+    .texture-modal-body {
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .texture-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 4px;
+    }
+
+    .texture-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 4px;
+      cursor: pointer;
+      border-radius: 2px;
+      border: 2px solid transparent;
+    }
+
+    .texture-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: #444;
+    }
+
+    .texture-item.selected {
+      background: rgba(233, 30, 99, 0.1);
+      border-color: #e91e63;
+    }
+
+    .texture-item-image {
+      width: 32px;
+      height: 32px;
+      background: #000;
+      border: 1px solid #444;
+      border-radius: 2px;
+    }
+
+    .texture-item-name {
+      font-size: 9px;
+      color: #888;
+      text-align: center;
+      word-break: break-all;
+      max-width: 40px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>BlockEditorUI モック</h1>
+
+  <div class="mock-container">
+    <!-- 標準ブロックエディタ -->
+    <div class="mock-section">
+      <h2>標準ブロックエディタ (shape_type="normal")</h2>
+      <div class="editor-container">
+        <div class="preview-container">
+          <!-- ツールバー (1/8) -->
+          <div class="preview-toolbar">
+            <div class="left-group">
+              <!-- 標準ブロックはモード切替・ブラシなし -->
+            </div>
+            <div class="center-group">
+              <!-- 標準ブロックは中央要素なし -->
+            </div>
+            <div class="right-group">
+              <button class="bg-btn">
+                <span class="bg-color-indicator" style="background: #000;"></span>
+                <span class="bg-label">BG</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3Dプレビュー領域 (6/8) -->
+          <div class="preview-3d">
+            [Three.js Canvas]
+          </div>
+
+          <!-- コントロールパネル (1/8) -->
+          <div class="control-panel">
+            <div class="slots-container">
+              <div class="material-item">
+                <div class="slot-image"></div>
+                <span>default</span>
+              </div>
+              <div class="material-item">
+                <div class="slot-image"></div>
+                <span>front</span>
+              </div>
+              <div class="material-item">
+                <div class="slot-image"></div>
+                <span>top</span>
+              </div>
+              <div class="material-item">
+                <div class="slot-image"></div>
+                <span>bottom</span>
+              </div>
+              <div class="material-item">
+                <div class="slot-image"></div>
+                <span>left</span>
+              </div>
+              <div class="material-item">
+                <div class="slot-image"></div>
+                <span>right</span>
+              </div>
+              <div class="material-item">
+                <div class="slot-image"></div>
+                <span>back</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- カスタムブロックエディタ (見た目モード) -->
+    <div class="mock-section">
+      <h2>カスタムブロック - 見た目モード</h2>
+      <div class="editor-container">
+        <div class="preview-container">
+          <!-- ツールバー (1/8) -->
+          <div class="preview-toolbar">
+            <div class="left-group">
+              <button class="mode-toggle-btn" title="当たり判定編集に切替">
+                <div class="mode-preview">当判</div>
+              </button>
+            </div>
+            <div class="center-group">
+              <div class="brush-group">
+                <div class="brush-buttons">
+                  <button class="brush-size-btn">4</button>
+                  <button class="brush-size-btn">2</button>
+                  <button class="brush-size-btn active">1</button>
+                </div>
+                <span class="brush-label">ブラシサイズ</span>
+              </div>
+            </div>
+            <div class="right-group">
+              <button class="bg-btn">
+                <span class="bg-color-indicator" style="background: #000;"></span>
+                <span class="bg-label">BG</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3Dプレビュー領域 (6/8) -->
+          <div class="preview-3d">
+            [Three.js Canvas]
+          </div>
+
+          <!-- コントロールパネル (1/8) -->
+          <div class="control-panel">
+            <div class="slots-container">
+              <div class="material-item active">
+                <div class="slot-image"></div>
+                <span>1</span>
+              </div>
+              <div class="material-item">
+                <div class="slot-image"></div>
+                <span>2</span>
+              </div>
+              <div class="material-item">
+                <div class="slot-image"></div>
+                <span>3</span>
+              </div>
+            </div>
+            <button class="check-btn">衝突テスト</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- カスタムブロックエディタ (当たり判定モード) -->
+    <div class="mock-section">
+      <h2>カスタムブロック - 当たり判定モード</h2>
+      <div class="editor-container">
+        <div class="preview-container">
+          <!-- ツールバー (1/8) -->
+          <div class="preview-toolbar">
+            <div class="left-group">
+              <button class="mode-toggle-btn" title="見た目編集に切替">
+                <div class="mode-preview">見目</div>
+              </button>
+            </div>
+            <div class="center-group">
+              <div class="brush-group">
+                <div class="brush-buttons">
+                  <button class="brush-size-btn" disabled>4</button>
+                  <button class="brush-size-btn active">2</button>
+                  <button class="brush-size-btn" disabled>1</button>
+                </div>
+                <span class="brush-label">ブラシサイズ</span>
+              </div>
+            </div>
+            <div class="right-group">
+              <button class="bg-btn">
+                <span class="bg-color-indicator" style="background: #000;"></span>
+                <span class="bg-label">BG</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3Dプレビュー領域 (6/8) -->
+          <div class="preview-3d">
+            [Three.js Canvas]
+          </div>
+
+          <!-- コントロールパネル (1/8) -->
+          <div class="control-panel">
+            <div class="slots-container">
+              <button class="auto-create-btn">自動作成</button>
+            </div>
+            <button class="check-btn">衝突テスト</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>UIパーツ一覧</h2>
+  <div class="parts-grid">
+    <!-- BGボタン -->
+    <div class="part-box">
+      <h3>BGボタン .bg-btn</h3>
+      <div class="part-demo">
+        <button class="bg-btn">
+          <span class="bg-color-indicator" style="background: #000;"></span>
+          <span class="bg-label">BG</span>
+        </button>
+        <button class="bg-btn">
+          <span class="bg-color-indicator" style="background: #1a237e;"></span>
+          <span class="bg-label">BG</span>
+        </button>
+        <button class="bg-btn">
+          <span class="bg-color-indicator" style="background: #1b5e20;"></span>
+          <span class="bg-label">BG</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- モード切替ボタン -->
+    <div class="part-box">
+      <h3>モード切替ボタン .mode-toggle-btn + .mode-preview</h3>
+      <div class="part-demo">
+        <button class="mode-toggle-btn" title="当たり判定編集に切替">
+          <div class="mode-preview">当判</div>
+        </button>
+        <span style="color: #666; font-size: 12px;">←見た目モード時</span>
+        <button class="mode-toggle-btn" title="見た目編集に切替">
+          <div class="mode-preview">見目</div>
+        </button>
+        <span style="color: #666; font-size: 12px;">←当たり判定モード時</span>
+      </div>
+    </div>
+
+    <!-- ブラシサイズボタン -->
+    <div class="part-box">
+      <h3>ブラシサイズ .brush-group</h3>
+      <div class="part-demo">
+        <div class="brush-group">
+          <div class="brush-buttons">
+            <button class="brush-size-btn">4</button>
+            <button class="brush-size-btn active">2</button>
+            <button class="brush-size-btn">1</button>
+          </div>
+          <span class="brush-label">ブラシサイズ</span>
+        </div>
+        <button class="brush-size-btn" disabled>disabled</button>
+      </div>
+    </div>
+
+    <!-- スロット（共通） -->
+    <div class="part-box">
+      <h3>スロット .material-item + .slot-image</h3>
+      <div class="part-demo">
+        <div class="material-item">
+          <div class="slot-image"></div>
+          <span>default</span>
+        </div>
+        <div class="material-item">
+          <div class="slot-image"></div>
+          <span>front</span>
+        </div>
+        <div class="material-item active">
+          <div class="slot-image"></div>
+          <span>1</span>
+        </div>
+        <div class="material-item">
+          <div class="slot-image"></div>
+          <span>2</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 自動作成ボタン -->
+    <div class="part-box">
+      <h3>自動作成ボタン .auto-create-btn</h3>
+      <div class="part-demo">
+        <button class="auto-create-btn">自動作成</button>
+      </div>
+    </div>
+
+    <!-- 衝突テストボタン -->
+    <div class="part-box">
+      <h3>衝突テストボタン .check-btn</h3>
+      <div class="part-demo">
+        <button class="check-btn">衝突テスト</button>
+        <button class="check-btn active">テスト停止</button>
+      </div>
+    </div>
+
+    <!-- 背景色パターン -->
+    <div class="part-box">
+      <h3>背景色パターン (黒→青→緑→黒)</h3>
+      <div class="part-demo">
+        <span class="bg-color-indicator" style="background: #000000; width: 32px; height: 32px;"></span>
+        <span style="color: #666;">→</span>
+        <span class="bg-color-indicator" style="background: #1a237e; width: 32px; height: 32px;"></span>
+        <span style="color: #666;">→</span>
+        <span class="bg-color-indicator" style="background: #1b5e20; width: 32px; height: 32px;"></span>
+        <span style="color: #666;">→</span>
+        <span class="bg-color-indicator" style="background: #000000; width: 32px; height: 32px;"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ選択モーダル（実寸表示） -->
+  <h2>テクスチャ選択モーダル</h2>
+  <div style="position: relative; background: rgba(0,0,0,0.7); padding: 40px; border-radius: 8px;">
+    <div class="texture-modal" style="position: relative;">
+      <div class="texture-modal-header">
+        <span class="texture-modal-title">テクスチャを選択</span>
+        <button class="texture-modal-close">×</button>
+      </div>
+      <div class="texture-modal-body">
+        <div class="texture-grid">
+          <div class="texture-item">
+            <div class="texture-item-image" style="display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px;">−</div>
+            <span class="texture-item-name">なし</span>
+          </div>
+          <div class="texture-item selected">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">grass_top</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">grass_side</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">dirt</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">stone</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">cobblestone</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">sand</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">gravel</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">oak_log</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">oak_planks</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">brick</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">glass</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">iron_block</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">gold_block</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">diamond_bl...</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">wool_white</span>
+          </div>
+          <div class="texture-item">
+            <div class="texture-item-image"></div>
+            <span class="texture-item-name">wool_red</span>
+          </div>
+          <div class="texture-item add-new">
+            <div class="texture-item-image" style="display: flex; align-items: center; justify-content: center; color: #666; font-size: 14px; border-style: dashed;">＋</div>
+            <span class="texture-item-name">追加</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>サイズ・色仕様</h2>
+  <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+    <thead>
+      <tr style="background: #0f3460;">
+        <th style="padding: 10px; text-align: left; border: 1px solid #333;">パーツ</th>
+        <th style="padding: 10px; text-align: left; border: 1px solid #333;">サイズ</th>
+        <th style="padding: 10px; text-align: left; border: 1px solid #333;">背景色</th>
+        <th style="padding: 10px; text-align: left; border: 1px solid #333;">枠線</th>
+        <th style="padding: 10px; text-align: left; border: 1px solid #333;">角丸</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">エディタコンテナ</td>
+        <td style="padding: 8px; border: 1px solid #333;">aspect-ratio: 3/4</td>
+        <td style="padding: 8px; border: 1px solid #333;">#1a1a2e</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">8px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">ツールバー</td>
+        <td style="padding: 8px; border: 1px solid #333;">flex: 1 (高さ1/8), padding: 0 12px, align-items: stretch</td>
+        <td style="padding: 8px; border: 1px solid #333;">rgba(0,0,0,0.3)</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">3Dプレビュー領域</td>
+        <td style="padding: 8px; border: 1px solid #333;">flex: 6 (高さ6/8)</td>
+        <td style="padding: 8px; border: 1px solid #333;">#000 (初期)</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">コントロールパネル</td>
+        <td style="padding: 8px; border: 1px solid #333;">flex: 1 (高さ1/8), padding: 0 12px</td>
+        <td style="padding: 8px; border: 1px solid #333;">rgba(0,0,0,0.5)</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">BGボタン .bg-btn</td>
+        <td style="padding: 8px; border: 1px solid #333;">padding: 2px（スロットと同じ）</td>
+        <td style="padding: 8px; border: 1px solid #333;">none</td>
+        <td style="padding: 8px; border: 1px solid #333;">none</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">背景色インジケーター .bg-color-indicator</td>
+        <td style="padding: 8px; border: 1px solid #333;">32px x 32px</td>
+        <td style="padding: 8px; border: 1px solid #333;">(動的)</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px solid #444</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">モード切替ボタン .mode-toggle-btn</td>
+        <td style="padding: 8px; border: 1px solid #333;">align-self: stretch（ツールバー高さいっぱい）</td>
+        <td style="padding: 8px; border: 1px solid #333;">none</td>
+        <td style="padding: 8px; border: 1px solid #333;">none</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">モードプレビュー .mode-preview</td>
+        <td style="padding: 8px; border: 1px solid #333;">height: 100%, aspect-ratio: 1</td>
+        <td style="padding: 8px; border: 1px solid #333;">#222</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px solid #444</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">ブラシサイズボタン .brush-size-btn</td>
+        <td style="padding: 8px; border: 1px solid #333;">32px x 32px</td>
+        <td style="padding: 8px; border: 1px solid #333;">#000</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px solid #444 / #e91e63 (active)</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">ブラシサイズラベル .brush-label</td>
+        <td style="padding: 8px; border: 1px solid #333;">font-size: 9px</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">color: #888</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">スロット画像 .slot-image</td>
+        <td style="padding: 8px; border: 1px solid #333;">32px x 32px</td>
+        <td style="padding: 8px; border: 1px solid #333;">#000</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px solid #444 / #e91e63 (active)</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">スロット枠 .material-item</td>
+        <td style="padding: 8px; border: 1px solid #333;">padding: 2px</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">自動作成ボタン</td>
+        <td style="padding: 8px; border: 1px solid #333;">padding: 8px 16px</td>
+        <td style="padding: 8px; border: 1px solid #333;">#2196f3</td>
+        <td style="padding: 8px; border: 1px solid #333;">none</td>
+        <td style="padding: 8px; border: 1px solid #333;">4px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">衝突テストボタン</td>
+        <td style="padding: 8px; border: 1px solid #333;">padding: 8px 16px</td>
+        <td style="padding: 8px; border: 1px solid #333;">#4caf50 / #f44336 (active)</td>
+        <td style="padding: 8px; border: 1px solid #333;">none</td>
+        <td style="padding: 8px; border: 1px solid #333;">4px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">スロットラベル</td>
+        <td style="padding: 8px; border: 1px solid #333;">font-size: 9px</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">color: #888</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;" colspan="5"><strong>テクスチャ選択モーダル</strong></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">モーダルオーバーレイ .texture-modal-overlay</td>
+        <td style="padding: 8px; border: 1px solid #333;">全画面</td>
+        <td style="padding: 8px; border: 1px solid #333;">rgba(0,0,0,0.7)</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">モーダル本体 .texture-modal</td>
+        <td style="padding: 8px; border: 1px solid #333;">width: 400px, max-height: 80vh</td>
+        <td style="padding: 8px; border: 1px solid #333;">#1a1a2e</td>
+        <td style="padding: 8px; border: 1px solid #333;">1px solid #333</td>
+        <td style="padding: 8px; border: 1px solid #333;">8px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">モーダルヘッダー .texture-modal-header</td>
+        <td style="padding: 8px; border: 1px solid #333;">padding: 12px 16px</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">border-bottom: 1px solid #333</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">モーダルタイトル .texture-modal-title</td>
+        <td style="padding: 8px; border: 1px solid #333;">font-size: 14px</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">color: #eee</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">閉じるボタン .texture-modal-close</td>
+        <td style="padding: 8px; border: 1px solid #333;">24px x 24px, font-size: 18px</td>
+        <td style="padding: 8px; border: 1px solid #333;">none</td>
+        <td style="padding: 8px; border: 1px solid #333;">color: #888 / #fff (hover)</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">テクスチャグリッド .texture-grid</td>
+        <td style="padding: 8px; border: 1px solid #333;">6列, gap: 4px</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">テクスチャアイテム .texture-item</td>
+        <td style="padding: 8px; border: 1px solid #333;">padding: 4px</td>
+        <td style="padding: 8px; border: 1px solid #333;">transparent / rgba(255,255,255,0.05) (hover)</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px solid transparent / #444 (hover) / #e91e63 (selected)</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">テクスチャ画像 .texture-item-image</td>
+        <td style="padding: 8px; border: 1px solid #333;">32px x 32px</td>
+        <td style="padding: 8px; border: 1px solid #333;">#000</td>
+        <td style="padding: 8px; border: 1px solid #333;">1px solid #444</td>
+        <td style="padding: 8px; border: 1px solid #333;">2px</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">テクスチャ名 .texture-item-name</td>
+        <td style="padding: 8px; border: 1px solid #333;">font-size: 9px, max-width: 40px, 省略表示</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+        <td style="padding: 8px; border: 1px solid #333;">color: #888</td>
+        <td style="padding: 8px; border: 1px solid #333;">-</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>色定義</h2>
+  <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+    <thead>
+      <tr style="background: #0f3460;">
+        <th style="padding: 10px; text-align: left; border: 1px solid #333;">用途</th>
+        <th style="padding: 10px; text-align: left; border: 1px solid #333;">色コード</th>
+        <th style="padding: 10px; text-align: left; border: 1px solid #333;">サンプル</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">ボタン背景 (通常)</td>
+        <td style="padding: 8px; border: 1px solid #333;">#2a2a4a</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #2a2a4a; border-radius: 2px;"></span></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">ボタン枠線</td>
+        <td style="padding: 8px; border: 1px solid #333;">#444</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #444; border-radius: 2px;"></span></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">アクセントカラー (選択・アクティブ)</td>
+        <td style="padding: 8px; border: 1px solid #333;">#e91e63</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #e91e63; border-radius: 2px;"></span></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">自動作成ボタン</td>
+        <td style="padding: 8px; border: 1px solid #333;">#2196f3</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #2196f3; border-radius: 2px;"></span></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">衝突テストボタン (開始)</td>
+        <td style="padding: 8px; border: 1px solid #333;">#4caf50</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #4caf50; border-radius: 2px;"></span></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">衝突テストボタン (停止)</td>
+        <td style="padding: 8px; border: 1px solid #333;">#f44336</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #f44336; border-radius: 2px;"></span></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">ラベルテキスト</td>
+        <td style="padding: 8px; border: 1px solid #333;">#888</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #888; border-radius: 2px;"></span></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">背景色1 (黒)</td>
+        <td style="padding: 8px; border: 1px solid #333;">#000000</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #000000; border: 1px solid #444; border-radius: 2px;"></span></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">背景色2 (青)</td>
+        <td style="padding: 8px; border: 1px solid #333;">#1a237e</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #1a237e; border-radius: 2px;"></span></td>
+      </tr>
+      <tr>
+        <td style="padding: 8px; border: 1px solid #333;">背景色3 (緑)</td>
+        <td style="padding: 8px; border: 1px solid #333;">#1b5e20</td>
+        <td style="padding: 8px; border: 1px solid #333;"><span style="display: inline-block; width: 60px; height: 20px; background: #1b5e20; border-radius: 2px;"></span></td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>

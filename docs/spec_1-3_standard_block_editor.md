@@ -23,6 +23,7 @@ src/test/ 及び src/game/ のディレクトリは公開用の Github リポジ
 - spec_1-4_custom_block_editor.md: カスタムブロック機能を追加
 - spec_1-5_collision_editor.md: 衝突テスト機能を追加
 - spec_1-6_block_shape_manager.md: block_manager統合ツール
+- **mockups/mock_block_editor_ui.html**: BlockEditorUIのビジュアルモック（UIパーツ・サイズ・色仕様）
 
 ## 3. アーキテクチャ
 
@@ -42,6 +43,51 @@ BlockEditorUI (この仕様で作成、1-4/1-5で拡張)
 | StandardBlockEditor | Three.jsシーン管理、カメラ操作、テクスチャ切替 |
 | StandardBlockMeshBuilder | ブロックメッシュの生成 |
 
+### 3.3 処理シーケンス
+
+#### 初期化
+
+```
+外部（テストページ/block_manager）
+    │
+    │ new BlockEditorUI({ container, THREE, onTextureAdd, onBlockChange })
+    │ editorUI.init()
+    │ editorUI.setTextures(textures)   ← テクスチャ一覧を渡す
+    │ editorUI.loadBlock(blockData)
+    ▼
+BlockEditorUI
+    │
+    │ new StandardBlockEditor({ container, THREE })
+    │ standardBlockEditor.init()
+    │ standardBlockEditor.loadBlock(blockData)
+    ▼
+StandardBlockEditor
+    │
+    │ 3Dプレビュー表示
+```
+
+#### テクスチャ変更
+
+```
+ユーザー操作
+    │
+    │ スロットクリック
+    ▼
+BlockEditorUI
+    │
+    │ モーダル表示
+    │ ユーザーがテクスチャ選択
+    │ standardBlockEditor.setTexture(slot, url)
+    ▼
+StandardBlockEditor
+    │
+    │ 3Dプレビュー更新
+    ▼
+BlockEditorUI
+    │
+    │ onBlockChange(blockData) で外部に通知
+```
+
 ## 4. BlockEditorUI クラス
 
 ### 4.1 概要
@@ -55,7 +101,7 @@ BlockEditorUIはDOM要素を受け取り、その中に3Dプレビュー用のUI
 constructor(options) {
   // options.container: UIをマウントするDOM要素
   // options.THREE: Three.jsライブラリ（外部から注入）
-  // options.onTextureSelect: テクスチャ選択要求時コールバック (optional)
+  // options.onTextureAdd: 「追加」選択時コールバック (optional)
   // options.onBlockChange: ブロックデータ変更時コールバック (optional)
 }
 ```
@@ -75,15 +121,73 @@ constructor(options) {
 ### 4.4 UI構造（標準ブロック用）
 
 ```
-.editor-container (aspect-ratio: 3/4)
-└── .preview-container (flex column)
-    ├── .preview-toolbar (flex: 1, 高さ1/8)
-    │   └── BGボタン
-    ├── .preview-3d (flex: 6, 高さ6/8)
-    │   └── Three.js canvas
-    └── .control-panel (flex: 1, 高さ1/8)
-        └── テクスチャスロット x7 (default, front, top, bottom, left, right, back)
+.editor-container
+├── .preview-container
+│   ├── .preview-toolbar (3カラムレイアウト)
+│   │   ├── .left-group
+│   │   │   └── (標準ブロックは空)
+│   │   ├── .center-group
+│   │   │   └── (標準ブロックは空)
+│   │   └── .right-group
+│   │       └── .bg-btn
+│   │           ├── .bg-color-indicator
+│   │           └── .bg-label
+│   ├── .preview-3d
+│   │   └── Three.js canvas
+│   └── .control-panel
+│       └── .slots-container
+│           └── .material-item x7 (default, front, top, bottom, left, right, back)
+│               ├── .slot-image
+│               └── span (ラベル)
+└── .texture-modal-overlay (非表示、スロットクリックで表示)
+    └── .texture-modal
+        ├── .texture-modal-header
+        │   ├── .texture-modal-title
+        │   └── .texture-modal-close
+        └── .texture-grid
+            ├── .texture-item (「なし」)
+            ├── .texture-item x N (テクスチャ一覧)
+            └── .texture-item (「追加」)
 ```
+
+### 4.5 UIパーツ仕様
+
+サイズ・色・枠線などの詳細仕様は `mockups/mock_block_editor_ui.html` を参照。
+
+### 4.6 UI操作
+
+#### 4.6.1 テクスチャスロットクリック
+
+テクスチャスロット（`.material-item`）をクリックすると:
+
+1. BlockEditorUIがテクスチャ選択モーダルを表示
+2. ユーザーがテクスチャを選択
+3. BlockEditorUIが内部のStandardBlockEditor.setTexture()を呼び出し
+4. 3Dプレビューが更新される
+5. `onBlockChange` コールバックで外部に通知
+
+**テクスチャ選択モーダルでの選択:**
+
+| 選択項目 | 動作 |
+|----------|------|
+| テクスチャ | 選択したテクスチャをスロットに設定、3Dプレビュー更新 |
+| 「なし」 | スロットのテクスチャを解除（default スロットの場合は紫色のデフォルトテクスチャを使用） |
+| 「追加」 | `onTextureAdd` コールバックで外部に通知（アップロード処理は外部で実装） |
+
+**モーダルを閉じる操作:**
+- ×ボタンクリック
+- オーバーレイ（モーダル外の暗い部分）クリック
+- テクスチャ選択後は自動で閉じる
+
+テクスチャ選択モーダルのUI仕様は `mockups/mock_block_editor_ui.html` を参照。
+
+#### 4.6.2 BGボタンクリック
+
+BGボタン（`.bg-btn`）をクリックすると:
+
+1. 3Dプレビューの背景色が順番に切り替わる
+2. 切り替え順序: 黒（#000000）→ 青（#1a237e）→ 緑（#1b5e20）→ 黒（#000000）
+3. BGボタン内のインジケーター（`.bg-color-indicator`）が現在の背景色を表示
 
 ## 5. StandardBlockEditor クラス
 
@@ -147,30 +251,79 @@ src/
     gas_api.js                                # API通信
 ```
 
-## 7. テスト用CSSセレクタ定義
+## 7. テストページ仕様
 
-BlockEditorUIが生成するUI要素:
+### 7.1 画面構成
 
-| 要素 | セレクタ | 検証内容 |
-|:-----|:---------|:---------|
-| エディタコンテナ | `.editor-container` | アスペクト比 3:4 |
-| プレビューコンテナ | `.preview-container` | 縦方向flex |
-| ツールバー | `.preview-toolbar` | flex: 1（高さ1/8） |
-| 3Dプレビュー領域 | `.preview-3d` | flex: 6（高さ6/8） |
-| コントロールパネル | `.control-panel` | flex: 1（高さ1/8） |
-| テクスチャスロット | `.texture-slot` | 7つ存在 |
-| BGボタン | `.bg-btn` | 背景色切り替え |
+2カラム構成（比率 4:6）
 
-## 8. テスト項目
+**左カラム:**
+- ブロック選択プルダウン（block_id で選択）
+- block_str_id 表示
+- name 表示
+- 保存ボタン
+
+**右カラム:**
+- BlockEditorUI（3Dプレビュー + コントロールパネル）
+
+### 7.2 データフロー
+
+1. 起動時にGAS APIからブロック一覧・テクスチャ一覧を取得
+2. ブロック選択プルダウンで選択
+3. 選択したブロックを BlockEditorUI にロード
+4. テクスチャ変更・編集
+5. 保存ボタンでGAS APIにデータを送信
+
+## 8. テスト用CSSセレクタ定義
+
+BlockEditorUIが生成するUI要素。サイズ・色の詳細は `mockups/mock_block_editor_ui.html` を参照。
+
+| 要素 | セレクタ |
+|:-----|:---------|
+| エディタコンテナ | `.editor-container` |
+| プレビューコンテナ | `.preview-container` |
+| ツールバー | `.preview-toolbar` |
+| ツールバー左グループ | `.left-group` |
+| ツールバー中央グループ | `.center-group` |
+| ツールバー右グループ | `.right-group` |
+| 3Dプレビュー領域 | `.preview-3d` |
+| コントロールパネル | `.control-panel` |
+| スロットコンテナ | `.slots-container` |
+| スロット枠 | `.material-item` |
+| スロット画像 | `.slot-image` |
+| BGボタン | `.bg-btn` |
+| 背景色インジケーター | `.bg-color-indicator` |
+| ラベル | `.bg-label`, `span` |
+| モーダルオーバーレイ | `.texture-modal-overlay` |
+| モーダル本体 | `.texture-modal` |
+| モーダルヘッダー | `.texture-modal-header` |
+| モーダル閉じるボタン | `.texture-modal-close` |
+| テクスチャグリッド | `.texture-grid` |
+| テクスチャアイテム | `.texture-item` |
+
+## 9. テスト項目
 
 ### BlockEditorUI クラス
 
 - [ ] `init()` でUIが生成される
 - [ ] `loadBlock()` でブロックが3Dプレビューに表示される
+- [ ] `setTextures()` でテクスチャ一覧がモーダルに反映される
 - [ ] `setTexture()` でテクスチャが反映される
 - [ ] `getBlockData()` で現在のブロックデータが取得できる
-- [ ] テクスチャスロットクリックで `onTextureSelect` コールバックが呼ばれる
 - [ ] BGボタンクリックで背景色が変化する
+
+### テクスチャ選択モーダル
+
+- [ ] テクスチャスロットクリックでモーダルが表示される
+- [ ] モーダルにテクスチャ一覧が表示される
+- [ ] 「なし」が先頭に表示される
+- [ ] 「追加」が最後尾に表示される
+- [ ] テクスチャ選択で3Dプレビューが更新される
+- [ ] テクスチャ選択後にモーダルが閉じる
+- [ ] 「なし」選択でテクスチャが解除される
+- [ ] 「追加」選択で `onTextureAdd` コールバックが呼ばれる
+- [ ] ×ボタンクリックでモーダルが閉じる
+- [ ] オーバーレイクリックでモーダルが閉じる
 
 ### StandardBlockEditor クラス
 
@@ -201,17 +354,27 @@ BlockEditorUIが生成するUI要素:
 
 ### UI表示
 
-- [ ] エディタコンテナのアスペクト比が3:4である
-- [ ] ツールバー/プレビュー/コントロールパネルの比率が1:6:1である
-- [ ] テクスチャスロットが7つ表示される（default, front, top, bottom, left, right, back）
-- [ ] BGボタンが表示される
+※ サイズ・色の詳細仕様は `mockups/mock_block_editor_ui.html` を参照
+
+- [ ] UIがモックHTMLと同じ見た目で表示される
+- [ ] ツールバーが3カラム構成（left-group, center-group, right-group）である
+- [ ] テクスチャスロット（.material-item）が7つ表示される（default, front, top, bottom, left, right, back）
+- [ ] BGボタンが右グループに表示される
 
 ### テストページ（spec_1-3_standard_block_editor.html）
 
 - [ ] Github にパブリッシュしたエディタ画面が正常に表示される
 - [ ] 2カラムの幅比率が 4:6 である
+- [ ] 左カラムにブロック選択プルダウンが表示される
+- [ ] 左カラムにblock_str_id、nameが表示される
+- [ ] 左カラムに保存ボタンが表示される
 - [ ] 右カラムにBlockEditorUIが表示される
+- [ ] 起動時にGAS APIからブロック一覧を取得できる
+- [ ] 起動時にGAS APIからテクスチャ一覧を取得できる
+- [ ] ブロック選択時にblock_str_id、nameが更新される
+- [ ] ブロック選択時に3Dプレビューが更新される
 - [ ] 背景色切り換えボタンクリックで背景色が変化する
 - [ ] テクスチャ枠クリックで選択モーダルが表示される
-- [ ] テクスチャ変更時に3Dプレビューが更新される
+- [ ] モーダルでテクスチャを選択すると3Dプレビューが更新される
+- [ ] 「追加」選択時にアラート等で通知される（テスト用の仮実装）
 - [ ] 保存ボタンでGAS APIにデータを送信できる
