@@ -86,6 +86,7 @@ class BlockEditorUI {
       this.customBlockEditor.setTextureImages(textureImages);
       this.customBlockEditor.loadBlock(blockData);
       this._updateMaterialSlotUI();
+      this._updateBrushSizeButtons();
     } else {
       this.standardBlockEditor.setTextureImages(textureImages);
       this.standardBlockEditor.loadBlock(blockData);
