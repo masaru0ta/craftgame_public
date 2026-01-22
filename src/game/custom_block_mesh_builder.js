@@ -142,23 +142,13 @@ class CustomBlockMeshBuilder {
 
       // 4頂点のUV座標（BoxGeometryの頂点順序に合わせる）
       // Three.js BoxGeometryの頂点順序: [左上, 右上, 左下, 右下]
-      let uvCoords;
-      if (face.flipU) {
-        // U座標を反転（左右反転）
-        uvCoords = [
-          [baseU + cellSize, baseV + cellSize], // 右上 → 左上位置
-          [baseU, baseV + cellSize],            // 左上 → 右上位置
-          [baseU + cellSize, baseV],            // 右下 → 左下位置
-          [baseU, baseV]                        // 左下 → 右下位置
-        ];
-      } else {
-        uvCoords = [
-          [baseU, baseV + cellSize],            // 左上
-          [baseU + cellSize, baseV + cellSize], // 右上
-          [baseU, baseV],                       // 左下
-          [baseU + cellSize, baseV]             // 右下
-        ];
-      }
+      // flipU: true は仕様書の定義で、反転しない状態が正
+      const uvCoords = [
+        [baseU, baseV + cellSize],            // 左上
+        [baseU + cellSize, baseV + cellSize], // 右上
+        [baseU, baseV],                       // 左下
+        [baseU + cellSize, baseV]             // 右下
+      ];
 
       for (let i = 0; i < 4; i++) {
         const idx = (face.start + i) * 2;
