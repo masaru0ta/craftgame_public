@@ -3,10 +3,7 @@
 ## 1. 概要
 
 ブロック形状一覧を表示し、標準ブロック・カスタムブロックの編集ができる統合管理ツールを作る。
-1-3（標準ブロックエディタ）、1-4/1-5（カスタムブロックエディタ）の機能を1つの画面から利用できるようにする。
-
-**重要**: このツールでは BlockEditorUI クラスを新規作成し、UI生成・イベントハンドリング・エディタ切替を一括管理する。
-これにより、1-3, 1-4, 1-5 で作成したコアクラスを再利用し、コードの重複を避ける。
+1-3〜1-5 で作成した BlockEditorUI（およびコアクラス群）をそのまま利用する。
 
 主な機能:
 - ブロック形状一覧のグリッド表示（サムネイル付き）
@@ -21,9 +18,9 @@ src/test/ 及び src/game/ のディレクトリは公開用の Github リポジ
 
 - spec_1-1_block_data_sheet.md: データ構造
 - spec_1-2_gas_api.md: API仕様
-- spec_1-3_standard_block_editor.md: StandardBlockEditor クラス
-- spec_1-4_custom_block_editor.md: CustomBlockEditor クラス
-- spec_1-5_collision_editor.md: CollisionChecker クラス
+- spec_1-3_standard_block_editor.md: BlockEditorUI基盤、StandardBlockEditor
+- spec_1-4_custom_block_editor.md: CustomBlockEditor、BlockEditorUIのカスタムブロック拡張
+- spec_1-5_collision_editor.md: CollisionChecker、BlockEditorUIの衝突テスト拡張
 
 ## 3. アーキテクチャ
 
@@ -31,56 +28,42 @@ src/test/ 及び src/game/ のディレクトリは公開用の Github リポジ
 
 ```
 block_manager_main.js
-    └── BlockEditorUI (新規作成)
-        ├── StandardBlockEditor (1-3)
+    └── BlockEditorUI (1-3で作成、1-4/1-5で拡張済み)
+        ├── StandardBlockEditor (1-3で作成)
         │   └── StandardBlockMeshBuilder
-        └── CustomBlockEditor (1-4)
+        └── CustomBlockEditor (1-4で作成、1-5で拡張)
             ├── CustomBlockMeshBuilder
-            └── CollisionChecker (1-5)
+            ├── CustomCollision (1-5で作成)
+            └── CollisionChecker (1-5で作成)
 ```
 
-### 3.2 BlockEditorUI クラス
+### 3.2 責務分離
 
-BlockEditorUI は以下の責務を持つ:
+| クラス | 責務 | 定義場所 |
+|--------|------|----------|
+| block_manager_main.js | 画面制御、データ管理、BlockEditorUIの利用 | この仕様 |
+| BlockEditorUI | UI生成、イベントハンドリング、エディタ切替 | 1-3〜1-5 |
+| StandardBlockEditor | 標準ブロックの3D表示、テクスチャ管理 | 1-3 |
+| CustomBlockEditor | カスタムブロックの3D表示、ボクセル編集 | 1-4/1-5 |
+| CollisionChecker | 衝突テストのボール物理演算 | 1-5 |
+| BlockThumbnail | サムネイル生成 | この仕様 |
 
-| 責務 | 説明 |
-|------|------|
-| UI生成 | 3Dプレビュー枠、ツールバー、コントロールパネルを自動生成 |
-| イベントハンドリング | 背景色切替、ブラシサイズ、マテリアル選択などのイベント処理 |
-| エディタ切替 | ブロックタイプに応じてStandardBlockEditorまたはCustomBlockEditorを使用 |
-| モード管理 | カスタムブロックの見た目/当たり判定モード切替 |
-| 衝突テスト | CollisionCheckerの開始/停止制御 |
+### 3.3 BlockEditorUI の利用
 
-#### コンストラクタ
+BlockEditorUI は 1-3〜1-5 で完成済みのクラスを使用する。
+block_manager ではコンテナ要素を渡して初期化し、ブロックデータをロードするだけで利用できる。
 
 ```javascript
-constructor(options) {
-  // options.container: UIをマウントするDOM要素
-  // options.THREE: Three.jsライブラリ
-  // options.onBlockChange: ブロックデータ変更時コールバック (optional)
-  // options.onTextureSelect: テクスチャ選択要求時コールバック (optional)
-}
+// 利用例
+const editorUI = new BlockEditorUI({
+  container: document.getElementById('editor-container'),
+  THREE: THREE,
+  onTextureSelect: (slot) => openTextureModal(slot),
+  onBlockChange: (blockData) => markAsModified(blockData)
+});
+editorUI.init();
+editorUI.loadBlock(blockData, textures);
 ```
-
-#### 公開メソッド
-
-| メソッド | 説明 |
-|----------|------|
-| `init()` | UIを生成し、エディタを初期化 |
-| `loadBlock(blockData, textures)` | ブロックデータをロードして表示 |
-| `getBlockData()` | 現在のブロックデータを取得 |
-| `setBackgroundColor(color)` | 背景色を設定 |
-| `resize()` | リサイズ処理 |
-| `dispose()` | リソース解放 |
-
-### 3.3 責務分離
-
-| クラス | 責務 |
-|--------|------|
-| BlockEditorUI | UI生成、イベントハンドリング、エディタ切替 |
-| StandardBlockEditor | 標準ブロックの3D表示、テクスチャ管理 |
-| CustomBlockEditor | カスタムブロックの3D表示、ボクセル編集 |
-| CollisionChecker | 衝突テストのボール物理演算 |
 
 ## 4. 機能詳細
 
@@ -120,9 +103,9 @@ constructor(options) {
 - 通常ブロック時: StandardBlockEditor を使用
 - カスタムブロック時: CustomBlockEditor を使用
 
-### 4.2 BlockEditorUI が生成するUI
+### 4.2 BlockEditorUI が提供するUI
 
-BlockEditorUI は以下のUI要素を自動生成する:
+BlockEditorUI（1-3〜1-5で作成済み）が以下のUI要素を自動生成する:
 
 #### 4.2.1 3Dプレビュー枠レイアウト
 
@@ -152,26 +135,11 @@ BlockEditorUI は以下のUI要素を自動生成する:
 
 | モード | 表示内容 |
 |--------|----------|
-| 標準ブロック | テクスチャスロット7つ（default, top, bottom, front, back, left, right） |
+| 標準ブロック | テクスチャスロット7つ（default, front, top, bottom, left, right, back） |
 | カスタム・見た目 | マテリアルスロット3つ + 衝突テストボタン |
 | カスタム・当たり判定 | 自動作成ボタン + 衝突テストボタン |
 
-### 4.3 イベントハンドリング
-
-BlockEditorUI が処理するイベント:
-
-| イベント | 処理 |
-|----------|------|
-| 背景色ボタンクリック | 背景色を切替 |
-| ブラシサイズボタンクリック | ブラシサイズを変更 |
-| モード切替ボタンクリック | 見た目/当たり判定モードを切替 |
-| テクスチャスロットクリック | onTextureSelectコールバックを呼び出し |
-| マテリアルスロットクリック | マテリアル選択を変更 |
-| マテリアルスロットダブルクリック | onTextureSelectコールバックを呼び出し |
-| 自動作成ボタンクリック | CustomBlockEditor.autoCreateCollision()を呼び出し |
-| 衝突テストボタンクリック | CollisionCheckerを開始/停止 |
-
-### 4.4 テクスチャ一覧画面
+### 4.3 テクスチャ一覧画面
 
 2カラム構成（比率 7:3）
 
@@ -190,9 +158,9 @@ BlockEditorUI が処理するイベント:
   - 代表色（color_hex）: カラーピッカー + テキスト入力
 - ボタン行: 「削除」ボタン（赤）、「保存」ボタン（青）
 
-### 4.5 新規ブロック作成
+### 4.4 新規ブロック作成
 
-#### 4.5.1 新規作成モーダル
+#### 4.4.1 新規作成モーダル
 
 「新規作成」ボタンクリックで表示されるモーダル:
 - block_str_id 入力欄（必須、英数字とアンダースコアのみ）
@@ -201,7 +169,7 @@ BlockEditorUI が処理するイベント:
 - 「作成」ボタン
 - 「キャンセル」ボタン
 
-#### 4.5.2 新規作成処理
+#### 4.4.2 新規作成処理
 
 1. 入力バリデーション
    - block_str_id が空でないこと
@@ -211,9 +179,9 @@ BlockEditorUI が処理するイベント:
 2. GAS API で新規ブロックを作成
 3. 作成成功後、一覧が更新され新規ブロックが選択状態になる
 
-### 4.6 ブロック編集
+### 4.5 ブロック編集
 
-#### 4.6.1 ブロック選択
+#### 4.5.1 ブロック選択
 
 ページ読み込み時、ブロック一覧の先頭（block_id が最小）を自動選択する。
 
@@ -227,7 +195,7 @@ BlockEditorUI が処理するイベント:
 - 「OK」で変更を破棄して選択を切り替え
 - 「キャンセル」で選択を維持
 
-#### 4.6.2 ブロックタイプ変更
+#### 4.5.2 ブロックタイプ変更
 
 ブロックタイプ（通常ブロック ↔ カスタムブロック）を変更した場合:
 - 「ブロックタイプを変更すると関連データがクリアされます。よろしいですか？」確認ダイアログを表示
@@ -243,16 +211,16 @@ src/
     block_manager_style.css       # 共通スタイル
     block_manager_main.js         # 一覧画面スクリプト
   game/
-    block_editor_ui.js            # BlockEditorUI クラス（新規作成）
+    block_editor_ui.js            # BlockEditorUI クラス（1-3〜1-5で作成済み）
     standard_block_editor.js      # 標準ブロックエディタ（1-3）
-    custom_block_editor.js        # カスタムブロックエディタ（1-4）
+    custom_block_editor.js        # カスタムブロックエディタ（1-4/1-5）
     custom_collision_checker.js   # 衝突テストチェッカー（1-5）
     standard_block_mesh_builder.js
     custom_block_mesh_builder.js
     voxel_data.js
     custom_collision.js
     gas_api.js
-    block_thumbnail.js            # サムネイル生成ライブラリ
+    block_thumbnail.js            # サムネイル生成ライブラリ（この仕様で作成）
 ```
 
 ## 6. 補足仕様
@@ -291,69 +259,62 @@ src/
 | タイル | `.tile` | 各ブロック/テクスチャのタイル |
 | 選択中タイル | `.tile.selected` | 選択状態 |
 | 3Dプレビュー枠 | `.preview-container` | BlockEditorUIのコンテナ |
-| ツールバー | `.preview-toolbar` | ツールボタン枠 |
+| ツールバー | `.toolbar` | ツールボタン枠 |
 | コントロールパネル | `.control-panel` | テクスチャ/マテリアル設定枠 |
-| モード切替ボタン | `.mode-toggle-btn` | 見た目/当たり判定切り替え |
-| ブラシサイズボタン | `.brush-size-btn` | ブラシサイズ切り替え |
-| 背景色ボタン | `.bg-btn` | 背景色切り替え |
-| マテリアルスロット | `.material-item` | マテリアル選択 |
-| テクスチャスロット | `.material-item` | テクスチャ選択 |
-| 自動作成ボタン | `.auto-create-btn` | 当たり判定自動生成 |
-| 衝突テストボタン | `.check-btn` | 衝突テスト開始/停止 |
 
 ## 8. テスト項目
 
 ### 全体構成
 
-- [x] Github にパブリッシュした画面が正常に表示される
-- [x] 画面上部にタブバー（「ブロック一覧」「テクスチャ一覧」）が表示される
-- [x] タブクリックでメインコンテンツが切り替わる
-- [x] ページ読み込み後、ブロック一覧に `.tile` が1つ以上表示される
+- [ ] Github にパブリッシュした画面が正常に表示される
+- [ ] 画面上部にタブバー（「ブロック一覧」「テクスチャ一覧」）が表示される
+- [ ] タブクリックでメインコンテンツが切り替わる
+- [ ] ページ読み込み後、ブロック一覧に `.tile` が1つ以上表示される
 
 ### ブロック状態一覧画面 - レイアウト
 
-- [x] `.col-left`、`.col-mid`、`.col-right` の3カラムが表示される
-- [x] 右カラムに `.preview-container` が表示される
-- [x] `.preview-container` 内に canvas 要素が存在する
+- [ ] `.col-left`、`.col-mid`、`.col-right` の3カラムが表示される
+- [ ] 右カラムに `.preview-container` が表示される
+- [ ] `.preview-container` 内に canvas 要素が存在する
 
 ### BlockEditorUI - 標準ブロック
 
-- [x] 標準ブロック選択時、テクスチャスロット7つが表示される
-- [x] テクスチャスロットクリックでテクスチャ選択モーダルが表示される
-- [x] テクスチャ変更が3Dプレビューに反映される
-- [x] 背景色ボタンクリックで背景色が変化する
+- [ ] 標準ブロック選択時、テクスチャスロット7つが表示される
+- [ ] テクスチャスロットクリックでテクスチャ選択モーダルが表示される
+- [ ] テクスチャ変更が3Dプレビューに反映される
+- [ ] 背景色ボタンクリックで背景色が変化する
 
 ### BlockEditorUI - カスタムブロック
 
-- [x] カスタムブロック選択時、マテリアルスロット3つが表示される
-- [x] モード切替ボタンが表示される
-- [x] ブラシサイズボタン [4x][2x][1x] が表示される
-- [x] マテリアルスロットクリックでマテリアルが選択される
-- [x] マテリアルスロットダブルクリックでテクスチャ選択モーダルが表示される
-- [x] ボクセル配置・削除が動作する
+- [ ] カスタムブロック選択時、マテリアルスロット3つが表示される
+- [ ] モード切替ボタンが表示される
+- [ ] ブラシサイズボタン [4x][2x][1x] が表示される
+- [ ] マテリアルスロットクリックでマテリアルが選択される
+- [ ] マテリアルスロットダブルクリックでテクスチャ選択モーダルが表示される
+- [ ] ボクセル配置・削除が動作する
 
 ### BlockEditorUI - 当たり判定編集
 
-- [x] モード切替ボタンクリックで当たり判定モードに切り替わる
-- [x] 当たり判定モード時、ブラシサイズが [2x] 固定になる
-- [x] 当たり判定モード時、自動作成ボタンが表示される
-- [x] 自動作成ボタンクリックで当たり判定が自動生成される
-- [x] 衝突テストボタンクリックでボールが落下する
+- [ ] モード切替ボタンクリックで当たり判定モードに切り替わる
+- [ ] 当たり判定モード時、ブラシサイズが [2x] 固定になる
+- [ ] 当たり判定モード時、自動作成ボタンが表示される
+- [ ] 自動作成ボタンクリックで当たり判定が自動生成される
+- [ ] 衝突テストボタンクリックでボールが落下する
 
 ### 新規ブロック作成
 
-- [x] `.tile.add-new` クリックで `.create-modal` が表示される
-- [x] 正常に入力して作成ボタンクリックで新規ブロックが作成される
+- [ ] `.tile.add-new` クリックで `.create-modal` が表示される
+- [ ] 正常に入力して作成ボタンクリックで新規ブロックが作成される
 
 ### ブロック保存・削除
 
-- [x] 保存ボタンクリックでデータが保存される
-- [x] 削除ボタンクリックで確認モーダルが表示される
-- [x] 確認後、ブロックが削除される
+- [ ] 保存ボタンクリックでデータが保存される
+- [ ] 削除ボタンクリックで確認モーダルが表示される
+- [ ] 確認後、ブロックが削除される
 
 ### テクスチャ一覧画面
 
-- [x] テクスチャ一覧が表示される
-- [x] テクスチャ選択時、詳細が表示される
-- [x] 代表色を変更して保存できる
-- [x] テクスチャを削除できる
+- [ ] テクスチャ一覧が表示される
+- [ ] テクスチャ選択時、詳細が表示される
+- [ ] 代表色を変更して保存できる
+- [ ] テクスチャを削除できる

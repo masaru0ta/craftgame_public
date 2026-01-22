@@ -2,14 +2,16 @@
 
 ## 1. 概要
 
-カスタムブロック（shape_type="custom"）を編集するための3Dエディタコアクラスを作る。
-8x8x8のボクセルデータを3D表示し、マウス操作でボクセルの配置・削除・マテリアル変更ができる。
-このクラスはUIを生成せず、Three.jsシーン・メッシュ・ボクセル編集操作のみを担当する。
-実際のUIは 1-6 BlockEditorUI から利用される。
+カスタムブロック（shape_type="custom"）を編集するための3Dエディタを作る。
+この仕様では以下を作成する:
 
-ここで作る重要な部品は、
-- カスタムブロックのメッシュ生成ライブラリ（ゲーム本体で利用）
-- カスタムブロックの3Dエディタコアクラス（BlockEditorUI で利用）
+1. **CustomBlockEditor** - 8x8x8ボクセル編集のコアクラス
+2. **CustomBlockMeshBuilder** - カスタムブロック用メッシュ生成ライブラリ
+3. **VoxelData** - ボクセルデータのエンコード/デコード
+4. **BlockEditorUIへのカスタムブロック機能追加** - 1-3で作成した基盤を拡張
+
+BlockEditorUIは1-3で作成された基盤に、この仕様でカスタムブロック用のUI機能を追加する。
+テストページはBlockEditorUIを使用することで、UIの調整が1-6に持ち越されない。
 
 src/test/ 及び src/game/ のディレクトリは公開用の Github リポジトリにプッシュする
 公開用リポジトリ: https://github.com/masaru0ta/craftgame_public
@@ -18,37 +20,74 @@ src/test/ 及び src/game/ のディレクトリは公開用の Github リポジ
 
 - spec_1-1_block_data_sheet.md: データ構造
 - spec_1-2_gas_api.md: API仕様
-- spec_1-3_standard_block_editor.md: 標準ブロックエディタ（カメラ操作の参考）
-- spec_1-5_collision_editor.md: 当たり判定編集（このクラスの拡張）
-- spec_1-6_block_shape_manager.md: BlockEditorUI（このクラスを利用する）
+- spec_1-3_standard_block_editor.md: BlockEditorUI基盤、StandardBlockEditor
+- spec_1-5_collision_editor.md: 衝突テスト機能を追加
+- spec_1-6_block_shape_manager.md: block_manager統合ツール
 
 ## 3. アーキテクチャ
 
 ### 3.1 クラス構成
 
 ```
-BlockEditorUI (1-6で定義)
-    ├── StandardBlockEditor (1-3で定義)
+BlockEditorUI (1-3で作成、この仕様で拡張)
+    ├── StandardBlockEditor (1-3で作成)
     │   └── StandardBlockMeshBuilder
-    └── CustomBlockEditor (このクラス)
-        ├── CustomBlockMeshBuilder
-        └── CollisionChecker (1-5で定義、衝突テスト用)
+    └── CustomBlockEditor (この仕様で作成)
+        └── CustomBlockMeshBuilder
 ```
 
 ### 3.2 責務分離
 
 | クラス | 責務 |
 |--------|------|
-| CustomBlockEditor | Three.jsシーン管理、カメラ操作、ボクセル編集、当たり判定編集 |
-| CustomBlockMeshBuilder | ボクセルメッシュの生成 |
-| CollisionChecker | 衝突テストのボール物理演算 |
-| BlockEditorUI | UI生成、イベントハンドリング、エディタ切替 |
+| BlockEditorUI | UI生成、イベントハンドリング、エディタ切替（1-3で作成、ここで拡張） |
+| CustomBlockEditor | Three.jsシーン管理、カメラ操作、ボクセル編集 |
+| CustomBlockMeshBuilder | ボクセルメッシュの生成（ゲーム本体でも使用） |
+| VoxelData | ボクセルデータのエンコード/デコード |
 
-## 4. 機能詳細
+## 4. BlockEditorUI 拡張（カスタムブロック用）
 
-### 4.1 CustomBlockEditor クラス
+### 4.1 概要
 
-#### コンストラクタ
+1-3で作成したBlockEditorUIに、カスタムブロック編集用の機能を追加する:
+- shape_typeに応じてStandardBlockEditorまたはCustomBlockEditorを切り替え
+- カスタムブロック用のツールバー（モード切替、ブラシサイズ）
+- カスタムブロック用のコントロールパネル（マテリアルスロット）
+
+### 4.2 追加メソッド
+
+| メソッド | 説明 |
+|----------|------|
+| `setMaterial(slot, textureName)` | 指定マテリアルスロット(1-3)にテクスチャを設定 |
+| `setCurrentMaterial(num)` | 配置時に使用するマテリアル番号(1-3)を設定 |
+| `setBrushSize(size)` | ブラシサイズ(1,2,4)を設定 |
+| `setEditMode(mode)` | 編集モード('look' or 'collision')を設定 |
+
+### 4.3 UI構造（カスタムブロック用）
+
+```
+.editor-container (aspect-ratio: 3/4)
+└── .preview-container (flex column)
+    ├── .toolbar (flex: 1, 高さ1/8)
+    │   ├── モード切替ボタン（look/collision）
+    │   ├── ブラシサイズボタン [4x][2x][1x]
+    │   └── BGボタン
+    ├── .preview-3d (flex: 6, 高さ6/8)
+    │   └── Three.js canvas
+    └── .material-panel (flex: 1, 高さ1/8)
+        └── マテリアルスロット x3 (material_1, material_2, material_3)
+```
+
+### 4.4 shape_typeによるUI切替
+
+| shape_type | ツールバー | コントロールパネル |
+|------------|------------|-------------------|
+| normal | BGボタンのみ | テクスチャスロット x7 |
+| custom | モード切替 + ブラシサイズ + BGボタン | マテリアルスロット x3 |
+
+## 5. CustomBlockEditor クラス
+
+### 5.1 コンストラクタ
 
 ```javascript
 constructor(options) {
@@ -59,7 +98,7 @@ constructor(options) {
 }
 ```
 
-#### 公開メソッド
+### 5.2 公開メソッド
 
 | メソッド | 説明 |
 |----------|------|
@@ -77,12 +116,13 @@ constructor(options) {
 | `getVoxelCollisionData()` | 当たり判定ボクセルデータを取得（Base64） |
 | `autoCreateCollision()` | 見た目から当たり判定を自動生成 |
 | `setBackgroundColor(color)` | 背景色を設定 |
+| `toggleBackgroundColor()` | 背景色を切り替え |
 | `getScene()` | Three.jsシーンを取得 |
 | `getCamera()` | Three.jsカメラを取得 |
 | `resize()` | リサイズ処理 |
 | `dispose()` | リソース解放 |
 
-### 4.2 3Dプレビュー仕様
+### 5.3 3Dプレビュー仕様
 
 - Three.jsを使用して 3Dプレビューを表示
 - 8x8x8のボクセルグリッドを表示
@@ -90,13 +130,13 @@ constructor(options) {
 - 床面となる高さにグリッド線（8x8）を表示
 - グリッドの外側に FRONT, RIGHT, LEFT, BACK をテキスト表示
 
-### 4.3 カメラ操作
+### 5.4 カメラ操作
 
 - マウスドラッグで視点を回転させる。左右回転と上下の傾き変更が可能。
 - 上下の傾きは上側90度下側90度まで。マウスを右にドラッグすると、ブロックが右に回転する。
 - マウスのホイールスクロールで拡大縮小
 
-### 4.4 ボクセル編集（見た目モード）
+### 5.5 ボクセル編集（見た目モード）
 
 - カーソル位置でレイキャストし対象のボクセルを常に選択
 - 対象ボクセルのレイキャストした面を緑でハイライト、対象ボクセルの辺を赤で強調
@@ -108,13 +148,13 @@ constructor(options) {
   - [2x] 2x2x2 ボクセル、グリッド座標(0,2,4,6)にスナップ
   - [4x] 4x4x4 ボクセル、グリッド座標(0,4)にスナップ
 
-### 4.5 マテリアル
+### 5.6 マテリアル
 
 - 3つのマテリアルスロット（1, 2, 3）をサポート
 - 各スロットにテクスチャURLを設定可能
 - `setCurrentMaterial(num)` で配置時に使用するマテリアルを選択
 
-### 4.6 データ形式
+### 5.7 データ形式
 
 #### voxel_look形式（8x8x8、2bit）
 - 各ボクセルは2ビット（0-3）で表現
@@ -125,46 +165,47 @@ constructor(options) {
 - データはY→Z→X順で格納
 - Base64エンコードして保存
 
-## 5. ファイル構成
+## 6. ファイル構成
 
 ```
 src/
   test/
-    spec_1-4_custom_block_editor.html       # 単体テスト用HTML
-    spec_1-4_custom_block_editor_style.css  # 単体テスト用スタイル
-    spec_1-4_custom_block_editor_main.js    # 単体テスト用スクリプト
+    spec_1-4_custom_block_editor.html       # テスト用HTML
+    spec_1-4_custom_block_editor_style.css  # テスト用スタイル
+    spec_1-4_custom_block_editor_main.js    # テスト用スクリプト
   game/
-    custom_block_editor.js                  # カスタムブロックエディタコアクラス
+    block_editor_ui.js                      # BlockEditorUIクラス（1-3で作成、ここで拡張）
+    custom_block_editor.js                  # CustomBlockEditorコアクラス
     custom_block_mesh_builder.js            # カスタムブロック用メッシュ生成
     voxel_data.js                           # ボクセルデータのエンコード/デコード
 ```
 
-## 6. 補足仕様
+## 7. 補足仕様
 
-### 6.1 初期状態
+### 7.1 初期状態
 - 新規ブロック作成時、または `voxel_look` が空のブロックを選択した場合、ボクセルは全て空(0)で開始
 
-### 6.2 未設定マテリアルの表示
+### 7.2 未設定マテリアルの表示
 - material_1, 2, 3 のテクスチャが未設定の場合、テクスチャリストの最初から順に自動セット
 - テクスチャリストが空の場合はグレー単色で表示
 
-### 6.3 編集範囲の制限
+### 7.3 編集範囲の制限
 - 8x8x8の範囲外にボクセルを配置しようとした場合は無視する（何も起こらない）
 
-### 6.4 Undo/Redo機能
+### 7.4 Undo/Redo機能
 - 本仕様では実装しない
 
-### 6.5 空の状態での保存
+### 7.5 空の状態での保存
 - ボクセルが0個（全て空）の状態でも保存を許可する
 
-## 7. 実装詳細: UV座標マッピング
+## 8. 実装詳細: UV座標マッピング
 
-### 7.1 概要
+### 8.1 概要
 
 8x8x8のボクセルグリッドに1枚のテクスチャを貼る場合、各ボクセルはテクスチャの1/64（8x8分割の1つ）を表示する。
 Three.jsのBoxGeometryを使用する際、UV座標の設定には注意が必要。
 
-### 7.2 Three.js BoxGeometryの面順序
+### 8.2 Three.js BoxGeometryの面順序
 
 BoxGeometryの面は以下の順序で定義されている（各面4頂点）:
 - インデックス 0-3: +X (right)
@@ -174,7 +215,7 @@ BoxGeometryの面は以下の順序で定義されている（各面4頂点）:
 - インデックス 16-19: +Z (front)
 - インデックス 20-23: -Z (back)
 
-### 7.3 各面のUV座標計算
+### 8.3 各面のUV座標計算
 
 各面でどの座標軸をU/Vに使用するか:
 
@@ -187,22 +228,32 @@ BoxGeometryの面は以下の順序で定義されている（各面4頂点）:
 | +Z (front)    | x       | y       | true  | false  |
 | -Z (back)     | 7 - x   | y       | true  | false  |
 
-## 8. テスト用CSSセレクタ定義
+## 9. テスト用CSSセレクタ定義
 
-単体テスト用HTMLで使用するセレクタ:
+BlockEditorUIが生成するカスタムブロック用UI要素:
 
 | 要素 | セレクタ | 検証内容 |
-|------|----------|----------|
-| 右カラム | `.right-column` | 全幅の基準 |
-| 3Dプレビュー枠 | `.preview-container` | アスペクト比 3:4 |
-| ツールボタン枠 | `.toolbar` | 高さ 1/8 |
-| 3Dプレビュー領域 | `.preview-3d` | 高さ 6/8 |
-| マテリアル設定枠 | `.material-panel` | 高さ 1/8 |
+|:-----|:---------|:---------|
+| エディタコンテナ | `.editor-container` | アスペクト比 3:4 |
+| プレビューコンテナ | `.preview-container` | 縦方向flex |
+| ツールバー | `.toolbar` | flex: 1（高さ1/8） |
+| 3Dプレビュー領域 | `.preview-3d` | flex: 6（高さ6/8） |
+| マテリアルパネル | `.material-panel` | flex: 1（高さ1/8） |
 | マテリアルスロット | `.material-slot` | 3つ存在 |
-| 背景色表示 | `.bg-color-indicator` | 背景色の確認 |
+| モード切替ボタン | `.mode-toggle-btn` | look/collision切替 |
 | ブラシサイズボタン | `.brush-size-btn` | 3つ存在 |
+| BGボタン | `.bg-btn` | 背景色切り替え |
 
-## 9. テスト項目
+## 10. テスト項目
+
+### BlockEditorUI カスタムブロック拡張
+
+- [ ] shape_type="custom" のブロックでカスタムブロックUIが表示される
+- [ ] モード切替ボタンでlook/collisionモードが切り替わる
+- [ ] ブラシサイズボタンでブラシサイズが変更される
+- [ ] マテリアルスロットクリックで `onTextureSelect` コールバックが呼ばれる
+- [ ] `setMaterial()` でマテリアルが反映される
+- [ ] `setCurrentMaterial()` でマテリアル選択が変更される
 
 ### CustomBlockEditor クラス
 
@@ -249,12 +300,15 @@ BoxGeometryの面は以下の順序で定義されている（各面4頂点）:
 - [ ] `setCurrentMaterial(3)` でマテリアル3が選択される
 - [ ] 選択したマテリアルで新規ボクセルが配置される
 
-### 単体テスト用HTML（spec_1-4_custom_block_editor.html）
+### テストページ（spec_1-4_custom_block_editor.html）
 
 - [ ] Github にパブリッシュしたエディタ画面が正常に表示される
-- [ ] 4:6 の比率で2カラム表示されている
-- [ ] 右カラムに3Dプレビューが表示される
-- [ ] ツールボタン枠にブラシサイズ切り替えボタン [4x][2x][1x] が表示される
+- [ ] 2カラムの幅比率が 4:6 である
+- [ ] 右カラムにBlockEditorUIが表示される
+- [ ] ツールバー/プレビュー/マテリアルパネルの比率が1:6:1である
+- [ ] モード切替ボタンでlook/collisionモードが切り替わる
+- [ ] ブラシサイズボタン [4x][2x][1x] が表示される
 - [ ] マテリアルスロット（1, 2, 3）が表示される
-- [ ] マテリアルスロットクリックでマテリアルを切り替えられる
+- [ ] マテリアルスロットクリックでテクスチャ選択モーダルが開く
+- [ ] テクスチャ変更時に3Dプレビューが更新される
 - [ ] 保存ボタンでGAS APIにデータを送信できる

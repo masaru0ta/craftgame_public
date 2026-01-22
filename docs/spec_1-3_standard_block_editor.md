@@ -2,14 +2,16 @@
 
 ## 1. 概要
 
-標準ブロック（shape_type="normal"）を編集するための3Dエディタコアクラスを作る。
-このクラスはUIを生成せず、Three.jsシーン・メッシュ・カメラ操作のみを担当する。
-実際のUIは 1-6 BlockEditorUI から利用される。
+標準ブロック（shape_type="normal"）を編集するための3Dエディタを作る。
+この仕様では以下を作成する:
 
-ここで作る重要な部品は、
-- GAS API の読み書きライブラリ（ゲーム本体、管理ツールで利用）
-- 通常ブロックのメッシュ生成ライブラリ（ゲーム本体で利用）
-- 通常ブロックの3Dエディタコアクラス（BlockEditorUI で利用）
+1. **BlockEditorUI** - UI生成・イベントハンドリングを担当するクラス（基盤）
+2. **StandardBlockEditor** - Three.jsシーン・メッシュ・カメラ操作を担当するコアクラス
+3. **StandardBlockMeshBuilder** - ブロックメッシュ生成ライブラリ
+4. **GasApi** - GAS API通信ライブラリ
+
+BlockEditorUIは1-4, 1-5で拡張され、最終的にblock_manager（1-6）で使用される。
+テストページはBlockEditorUIを使用することで、UIの調整が1回で済む。
 
 src/test/ 及び src/game/ のディレクトリは公開用の Github リポジトリにプッシュする
 公開用リポジトリ: https://github.com/masaru0ta/craftgame_public
@@ -18,33 +20,74 @@ src/test/ 及び src/game/ のディレクトリは公開用の Github リポジ
 
 - spec_1-1_block_data_sheet.md: データ構造
 - spec_1-2_gas_api.md: API仕様
-- spec_1-6_block_shape_manager.md: BlockEditorUI（このクラスを利用する）
+- spec_1-4_custom_block_editor.md: カスタムブロック機能を追加
+- spec_1-5_collision_editor.md: 衝突テスト機能を追加
+- spec_1-6_block_shape_manager.md: block_manager統合ツール
 
 ## 3. アーキテクチャ
 
 ### 3.1 クラス構成
 
 ```
-BlockEditorUI (1-6で定義)
-    ├── StandardBlockEditor (このクラス)
-    │   └── StandardBlockMeshBuilder
-    └── CustomBlockEditor (1-4で定義)
-        └── CustomBlockMeshBuilder
+BlockEditorUI (この仕様で作成、1-4/1-5で拡張)
+    └── StandardBlockEditor (この仕様で作成)
+        └── StandardBlockMeshBuilder
 ```
 
 ### 3.2 責務分離
 
 | クラス | 責務 |
 |--------|------|
+| BlockEditorUI | UI生成、イベントハンドリング、レイアウト管理 |
 | StandardBlockEditor | Three.jsシーン管理、カメラ操作、テクスチャ切替 |
 | StandardBlockMeshBuilder | ブロックメッシュの生成 |
-| BlockEditorUI | UI生成、イベントハンドリング、エディタ切替 |
 
-## 4. 機能詳細
+## 4. BlockEditorUI クラス
 
-### 4.1 StandardBlockEditor クラス
+### 4.1 概要
 
-#### コンストラクタ
+BlockEditorUIはDOM要素を受け取り、その中に3Dプレビュー用のUIを生成する。
+この仕様では標準ブロック用のUIを実装し、1-4でカスタムブロック用UIを追加する。
+
+### 4.2 コンストラクタ
+
+```javascript
+constructor(options) {
+  // options.container: UIをマウントするDOM要素
+  // options.THREE: Three.jsライブラリ（外部から注入）
+  // options.onTextureSelect: テクスチャ選択要求時コールバック (optional)
+  // options.onBlockChange: ブロックデータ変更時コールバック (optional)
+}
+```
+
+### 4.3 公開メソッド
+
+| メソッド | 説明 |
+|----------|------|
+| `init()` | UIを生成し、エディタを初期化 |
+| `loadBlock(blockData, textures)` | ブロックデータをロードして表示 |
+| `setTextures(textures)` | テクスチャ一覧を設定 |
+| `setTexture(slot, textureName)` | 指定スロットにテクスチャを設定 |
+| `getBlockData()` | 現在のブロックデータを取得 |
+| `resize()` | リサイズ処理 |
+| `dispose()` | リソース解放 |
+
+### 4.4 UI構造（標準ブロック用）
+
+```
+.editor-container (aspect-ratio: 3/4)
+└── .preview-container (flex column)
+    ├── .preview-toolbar (flex: 1, 高さ1/8)
+    │   └── BGボタン
+    ├── .preview-3d (flex: 6, 高さ6/8)
+    │   └── Three.js canvas
+    └── .control-panel (flex: 1, 高さ1/8)
+        └── テクスチャスロット x7 (default, front, top, bottom, left, right, back)
+```
+
+## 5. StandardBlockEditor クラス
+
+### 5.1 コンストラクタ
 
 ```javascript
 constructor(options) {
@@ -53,7 +96,7 @@ constructor(options) {
 }
 ```
 
-#### 公開メソッド
+### 5.2 公開メソッド
 
 | メソッド | 説明 |
 |----------|------|
@@ -62,12 +105,13 @@ constructor(options) {
 | `setTexture(slot, textureUrl)` | 指定スロットにテクスチャを設定 |
 | `getTextures()` | 現在のテクスチャ設定を取得 |
 | `setBackgroundColor(color)` | 背景色を設定 |
+| `toggleBackgroundColor()` | 背景色を切り替え |
 | `getScene()` | Three.jsシーンを取得 |
 | `getCamera()` | Three.jsカメラを取得 |
 | `resize()` | リサイズ処理 |
 | `dispose()` | リソース解放 |
 
-### 4.2 3Dプレビュー仕様
+### 5.3 3Dプレビュー仕様
 
 - Three.jsを使用して 3Dプレビューを表示
 - 3Dプレビュー枠の中央に立方体のブロックを表示
@@ -75,48 +119,58 @@ constructor(options) {
 - 床面となる高さにブロックと同じ大きさの白い枠線と、その枠線の外側に FRONT, RIGHT, LEFT, BACK をテキスト表示
 - テクスチャ未設定の面は default の指定があれば default のテクスチャを使用する
 
-### 4.3 カメラ操作
+### 5.4 カメラ操作
 
 - マウスドラッグで視点を回転させる。左右回転と上下の傾き変更が可能。
 - 上下の傾きは上側90度下側90度まで。マウスを右にドラッグすると、ブロックが右に回転する。
 - マウスのホイールスクロールで拡大縮小
 
-### 4.4 テクスチャスロット
+### 5.5 テクスチャスロット
 
 7つのテクスチャスロットをサポート:
 - default, front, top, bottom, left, right, back
 - 各スロットにテクスチャURLを設定可能
 - 未設定の面は default を使用
 
-## 5. ファイル構成
+## 6. ファイル構成
 
 ```
 src/
   test/
-    spec_1-3_standard_block_editor.html       # 単体テスト用HTML
-    spec_1-3_standard_block_editor_style.css  # 単体テスト用スタイル
-    spec_1-3_standard_block_editor_main.js    # 単体テスト用スクリプト
+    spec_1-3_standard_block_editor.html       # テスト用HTML
+    spec_1-3_standard_block_editor_style.css  # テスト用スタイル
+    spec_1-3_standard_block_editor_main.js    # テスト用スクリプト
   game/
-    standard_block_editor.js                  # 標準ブロックエディタコアクラス
-    gas_api.js                                # API通信
+    block_editor_ui.js                        # BlockEditorUIクラス
+    standard_block_editor.js                  # StandardBlockEditorコアクラス
     standard_block_mesh_builder.js            # 標準ブロック用メッシュ生成
+    gas_api.js                                # API通信
 ```
 
-## 6. テスト用CSSセレクタ定義
+## 7. テスト用CSSセレクタ定義
 
-単体テスト用HTMLで使用するセレクタ:
+BlockEditorUIが生成するUI要素:
 
 | 要素 | セレクタ | 検証内容 |
 |:-----|:---------|:---------|
-| 右カラム | `.right-column` | 全幅の基準 |
-| 3Dプレビュー枠 | `.preview-container` | アスペクト比 3:4 |
-| ツールボタン枠 | `.toolbar` | 高さ 1/8 |
-| 3Dプレビュー領域 | `.preview-3d` | 高さ 6/8 |
-| テクスチャ設定枠 | `.texture-panel` | 高さ 1/8 |
-| 背景色表示 | `.bg-color-indicator` | 背景色の確認 |
-| テクスチャスロット | `.texture-slot` | 7つ存在、ラベル順序 |
+| エディタコンテナ | `.editor-container` | アスペクト比 3:4 |
+| プレビューコンテナ | `.preview-container` | 縦方向flex |
+| ツールバー | `.preview-toolbar` | flex: 1（高さ1/8） |
+| 3Dプレビュー領域 | `.preview-3d` | flex: 6（高さ6/8） |
+| コントロールパネル | `.control-panel` | flex: 1（高さ1/8） |
+| テクスチャスロット | `.texture-slot` | 7つ存在 |
+| BGボタン | `.bg-btn` | 背景色切り替え |
 
-## 7. テスト項目
+## 8. テスト項目
+
+### BlockEditorUI クラス
+
+- [ ] `init()` でUIが生成される
+- [ ] `loadBlock()` でブロックが3Dプレビューに表示される
+- [ ] `setTexture()` でテクスチャが反映される
+- [ ] `getBlockData()` で現在のブロックデータが取得できる
+- [ ] テクスチャスロットクリックで `onTextureSelect` コールバックが呼ばれる
+- [ ] BGボタンクリックで背景色が変化する
 
 ### StandardBlockEditor クラス
 
@@ -125,8 +179,6 @@ src/
 - [ ] `setTexture(slot, url)` でテクスチャが反映される
 - [ ] `getTextures()` で現在のテクスチャ設定が取得できる
 - [ ] `setBackgroundColor(color)` で背景色が変更される
-- [ ] `getScene()` でThree.jsシーンが取得できる
-- [ ] `getCamera()` でThree.jsカメラが取得できる
 - [ ] `resize()` でリサイズが正しく処理される
 - [ ] `dispose()` でリソースが解放される
 
@@ -147,12 +199,19 @@ src/
 - [ ] 上下の傾きが上側90度、下側90度までに制限される
 - [ ] マウスホイールで拡大縮小できる
 
-### 単体テスト用HTML（spec_1-3_standard_block_editor.html）
+### UI表示
+
+- [ ] エディタコンテナのアスペクト比が3:4である
+- [ ] ツールバー/プレビュー/コントロールパネルの比率が1:6:1である
+- [ ] テクスチャスロットが7つ表示される（default, front, top, bottom, left, right, back）
+- [ ] BGボタンが表示される
+
+### テストページ（spec_1-3_standard_block_editor.html）
 
 - [ ] Github にパブリッシュしたエディタ画面が正常に表示される
 - [ ] 2カラムの幅比率が 4:6 である
-- [ ] 右カラムに3Dプレビューが表示される
+- [ ] 右カラムにBlockEditorUIが表示される
 - [ ] 背景色切り換えボタンクリックで背景色が変化する
-- [ ] テクスチャ枠クリックで選択画面が表示される
+- [ ] テクスチャ枠クリックで選択モーダルが表示される
 - [ ] テクスチャ変更時に3Dプレビューが更新される
 - [ ] 保存ボタンでGAS APIにデータを送信できる

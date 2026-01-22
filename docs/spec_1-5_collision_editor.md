@@ -3,13 +3,15 @@
 ## 1. 概要
 
 1-4 で作った CustomBlockEditor に、当たり判定を編集する機能と当たり判定チェック機能を追加する。
+この仕様では以下を作成する:
+
+1. **CustomCollision** - 当たり判定データのエンコード/デコード
+2. **CollisionChecker** - 衝突テストのボール物理演算
+3. **CustomBlockEditorへの当たり判定編集機能追加** - 1-4で作成した機能を拡張
+4. **BlockEditorUIへの衝突テスト機能追加** - 1-4で拡張したBlockEditorUIにさらに追加
+
 当たり判定データは 4x4x4 のグリッドで編集する。
 当たり判定チェック機能では、上部から多量のボールが落ちてくる。
-
-ここで作る重要な部品は、
-- カスタムブロックの当たり判定ライブラリ（ゲーム本体で利用）
-- CollisionChecker クラス（BlockEditorUI で利用）
-- CustomBlockEditor への当たり判定編集機能追加
 
 src/test/ 及び src/game/ のディレクトリは公開用の Github リポジトリにプッシュする
 公開用リポジトリ: https://github.com/masaru0ta/craftgame_public
@@ -17,35 +19,69 @@ src/test/ 及び src/game/ のディレクトリは公開用の Github リポジ
 ## 2. 関連資料
 
 - spec_1-1_block_data_sheet.md: データ構造
-- spec_1-4_custom_block_editor.md: カスタムブロックエディタ（見た目編集）
-- spec_1-6_block_shape_manager.md: BlockEditorUI（このクラスを利用する）
+- spec_1-3_standard_block_editor.md: BlockEditorUI基盤
+- spec_1-4_custom_block_editor.md: CustomBlockEditor、BlockEditorUIのカスタムブロック拡張
+- spec_1-6_block_shape_manager.md: block_manager統合ツール
 
 ## 3. アーキテクチャ
 
 ### 3.1 クラス構成
 
 ```
-BlockEditorUI (1-6で定義)
-    └── CustomBlockEditor (1-4で定義)
+BlockEditorUI (1-3で作成、1-4で拡張、この仕様でさらに拡張)
+    ├── StandardBlockEditor (1-3で作成)
+    │   └── StandardBlockMeshBuilder
+    └── CustomBlockEditor (1-4で作成、この仕様で拡張)
         ├── CustomBlockMeshBuilder
-        ├── VoxelCollision (当たり判定データライブラリ)
-        └── CollisionChecker (このクラス、衝突テスト用)
+        ├── CustomCollision (この仕様で作成)
+        └── CollisionChecker (この仕様で作成)
 ```
 
 ### 3.2 責務分離
 
 | クラス | 責務 |
 |--------|------|
-| CustomBlockEditor | 当たり判定編集モード、当たり判定ボクセル表示 |
-| VoxelCollision | 当たり判定データのエンコード/デコード |
+| BlockEditorUI | UI生成、衝突テスト開始/停止の制御（1-4から拡張） |
+| CustomBlockEditor | 当たり判定編集モード、当たり判定ボクセル表示（1-4から拡張） |
+| CustomCollision | 当たり判定データのエンコード/デコード（ゲーム本体でも使用） |
 | CollisionChecker | 衝突テストのボール物理演算（独立クラス） |
-| BlockEditorUI | UI生成、衝突テスト開始/停止の制御 |
 
-## 4. 機能詳細
+## 4. BlockEditorUI 拡張（衝突テスト用）
 
-### 4.1 CustomBlockEditor 拡張メソッド
+### 4.1 概要
 
-1-4 で定義したメソッドに加え、以下を追加:
+1-4で拡張したBlockEditorUIに、衝突テスト機能を追加する:
+- 衝突テストボタン（簡易チェック）
+- 自動作成ボタン
+
+### 4.2 追加UI要素
+
+カスタムブロック用コントロールパネルに追加:
+
+```
+.material-panel (flex: 1, 高さ1/8)
+    ├── マテリアルスロット x3 (1-4で追加)
+    └── 簡易チェックボタン（衝突テスト開始/停止）
+```
+
+当たり判定モード時のコントロールパネル:
+
+```
+.collision-control-panel (flex: 1, 高さ1/8)
+    ├── 自動作成ボタン
+    └── 簡易チェックボタン（衝突テスト開始/停止）
+```
+
+### 4.3 追加メソッド
+
+| メソッド | 説明 |
+|----------|------|
+| `startCollisionTest()` | 衝突テストを開始 |
+| `stopCollisionTest()` | 衝突テストを停止 |
+
+## 5. CustomBlockEditor 拡張メソッド
+
+1-4 で定義したメソッドに加え、以下を実装:
 
 | メソッド | 説明 |
 |----------|------|
@@ -54,28 +90,7 @@ BlockEditorUI (1-6で定義)
 | `getVoxelCollisionData()` | 当たり判定ボクセルデータを取得（Base64） |
 | `autoCreateCollision()` | 見た目から当たり判定を自動生成 |
 
-### 4.2 CollisionChecker クラス
-
-#### コンストラクタ
-
-```javascript
-constructor(options) {
-  // options.THREE: Three.jsライブラリ
-  // options.scene: Three.jsシーン（ボールを追加する対象）
-  // options.camera: Three.jsカメラ（重力方向の計算用）
-}
-```
-
-#### 公開メソッド
-
-| メソッド | 説明 |
-|----------|------|
-| `setCollisionData(data)` | 4x4x4の当たり判定データを設定 |
-| `start()` | 衝突テストを開始（ボール生成、アニメーション開始） |
-| `stop()` | 衝突テストを停止（ボール削除） |
-| `dispose()` | リソース解放 |
-
-### 4.3 編集モード切替
+### 5.1 編集モード切替
 
 CustomBlockEditor は2つの編集モードをサポート:
 
@@ -88,21 +103,42 @@ CustomBlockEditor は2つの編集モードをサポート:
 - 見た目モード: ボクセルメッシュを表示、当たり判定メッシュを非表示
 - 当たり判定モード: ボクセルメッシュを非表示、当たり判定メッシュ（白いボクセル）を表示
 
-### 4.4 当たり判定編集
+### 5.2 当たり判定編集
 
 - 見た目編集と同様の操作で、当たり判定のボクセルを編集できる
 - ハイライトサイズは見た目の2x2x2ボクセルに相当（当たり判定1ボクセル分）
 - 右クリックで当たり判定ボクセルを配置
 - 左クリックで当たり判定ボクセルを削除
 
-### 4.5 自動作成機能
+### 5.3 自動作成機能
 
 `autoCreateCollision()` を呼び出すと:
 - 見た目の2x2x2ボクセル領域に1つでもボクセルがあれば、対応する当たり判定ボクセルを1（衝突あり）に設定
 - 見た目の2x2x2ボクセル領域が全て空の場合、対応する当たり判定ボクセルを0（通過可）に設定
 - 既存の当たり判定データは上書きされる
 
-### 4.6 衝突テスト
+## 6. CollisionChecker クラス
+
+### 6.1 コンストラクタ
+
+```javascript
+constructor(options) {
+  // options.THREE: Three.jsライブラリ
+  // options.scene: Three.jsシーン（ボールを追加する対象）
+  // options.camera: Three.jsカメラ（重力方向の計算用）
+}
+```
+
+### 6.2 公開メソッド
+
+| メソッド | 説明 |
+|----------|------|
+| `setCollisionData(data)` | 4x4x4の当たり判定データを設定 |
+| `start()` | 衝突テストを開始（ボール生成、アニメーション開始） |
+| `stop()` | 衝突テストを停止（ボール削除） |
+| `dispose()` | リソース解放 |
+
+### 6.3 衝突テスト仕様
 
 CollisionChecker の動作仕様:
 
@@ -114,9 +150,9 @@ CollisionChecker の動作仕様:
 - 重力方向は常に画面の下方向（カメラの向きに追従）
 - 物理演算は60fps固定タイムステップで実行
 
-### 4.7 データ形式
+## 7. データ形式
 
-#### voxel_collision形式（4x4x4、1bit）
+### voxel_collision形式（4x4x4、1bit）
 - 各ボクセルは1ビット（0-1）で表現
   - 0: 通過可（空気）
   - 1: 衝突あり（ソリッド）
@@ -124,38 +160,40 @@ CollisionChecker の動作仕様:
 - Base64エンコードして保存
 - 総データサイズ: 4x4x4 = 64ボクセル * 1bit = 64bit = 8bytes
 
-## 5. ファイル構成
+## 8. ファイル構成
 
 ```
 src/
+  test/
+    （1-4のテストページを使用、衝突テスト機能が追加される）
   game/
-    custom_collision_checker.js  # 衝突テストチェッカー
-    custom_collision.js          # カスタムブロック当たり判定データライブラリ
+    block_editor_ui.js          # BlockEditorUIクラス（1-4で拡張済み、ここでさらに拡張）
+    custom_block_editor.js      # CustomBlockEditorクラス（1-4で作成済み、ここで拡張）
+    custom_collision_checker.js # 衝突テストチェッカー（新規作成）
+    custom_collision.js         # 当たり判定データライブラリ（新規作成）
 ```
 
-※ custom_block_editor.js は 1-4 で作成済み、当たり判定編集機能を追加
+## 9. 補足仕様
 
-## 6. 補足仕様
-
-### 6.1 初期状態
+### 9.1 初期状態
 - 新規ブロック作成時、または `voxel_collision` が空のブロックを選択した場合、当たり判定は全て0（通過可）で開始
 
-### 6.2 見た目との対応
+### 9.2 見た目との対応
 - 当たり判定の1ボクセル = 見た目の2x2x2ボクセルに対応
 - 当たり判定座標(x,y,z) は 見た目座標(x*2, y*2, z*2)〜(x*2+1, y*2+1, z*2+1) に対応
 
-### 6.3 編集範囲の制限
+### 9.3 編集範囲の制限
 - 4x4x4の範囲外にボクセルを配置しようとした場合は無視する
 
-### 6.4 空の状態での保存
+### 9.4 空の状態での保存
 - 当たり判定が0個（全て通過可）の状態でも保存を許可する
 
-### 6.5 保存の動作
+### 9.5 保存の動作
 - 保存時は見た目（voxel_look）と当たり判定（voxel_collision）を同時に保存する
 
-## 7. 実装詳細: ボクセル表示
+## 10. 実装詳細: ボクセル表示
 
-### 7.1 面ごとの明るさ
+### 10.1 面ごとの明るさ
 
 ボクセルの視認性向上のため、面ごとに異なる明るさを適用する。
 
@@ -169,15 +207,15 @@ src/
 - `MeshBasicMaterial` と頂点カラーを使用（ライティングの影響を受けない）
 - 見た目ボクセル、当たり判定ボクセルの両方に適用
 
-### 7.2 当たり判定ボクセル表示仕様
+### 10.2 当たり判定ボクセル表示仕様
 
 - 色: 白色（#FFFFFF）× 面ごとの明るさ
 - サイズ: ブロック全体を1として各当たり判定は1/4
 - 当たり判定モード時は見た目メッシュを非表示にし、当たり判定ボクセルのみ表示
 
-## 8. 実装上の注意点
+## 11. 実装上の注意点
 
-### 8.1 座標系の違いに注意
+### 11.1 座標系の違いに注意
 
 見た目編集モードと当たり判定編集モードでは座標系が異なる：
 
@@ -186,22 +224,39 @@ src/
 | 見た目編集 | 8x8x8 | 1/8 |
 | 当たり判定編集 | 4x4x4 | 1/4 |
 
-### 8.2 highlightedVoxel/highlightedFace の座標系
+### 11.2 highlightedVoxel/highlightedFace の座標系
 
 `showVoxelHighlight()` および `showFloorHighlight()` では、**モードに応じた座標系**で `highlightedVoxel` および `highlightedFace` を設定する。
 
 - 見た目モード: 8x8x8 座標系（0-7）
 - 当たり判定モード: 4x4x4 座標系（0-3）
 
-### 8.3 配置・削除処理での座標変換は不要
+### 11.3 配置・削除処理での座標変換は不要
 
 **重要**: `placeCollisionVoxel()` および `deleteCollisionVoxel()` では、`highlightedVoxel` と `highlightedFace` が**既に4x4座標系で設定されている**ため、座標変換を行ってはならない。
 
-### 8.4 レイキャスト対象の切り替え
+### 11.4 レイキャスト対象の切り替え
 
 `updateHighlight()` では、モードに応じてレイキャスト対象を切り替える。
 
-## 9. テスト項目
+## 12. テスト用CSSセレクタ定義
+
+BlockEditorUIが生成する衝突テスト用UI要素:
+
+| 要素 | セレクタ | 検証内容 |
+|:-----|:---------|:---------|
+| 自動作成ボタン | `.auto-create-btn` | 当たり判定モード時に表示 |
+| 簡易チェックボタン | `.check-btn` | 衝突テスト開始/停止 |
+| 当たり判定コントロールパネル | `.collision-control-panel` | 当たり判定モード時に表示 |
+
+## 13. テスト項目
+
+### BlockEditorUI 衝突テスト拡張
+
+- [ ] 簡易チェックボタンクリックで衝突テストが開始される
+- [ ] 衝突テスト中に簡易チェックボタンクリックで停止する
+- [ ] 当たり判定モード時に自動作成ボタンが表示される
+- [ ] 自動作成ボタンクリックで `autoCreateCollision()` が呼ばれる
 
 ### CustomBlockEditor 当たり判定編集
 
@@ -238,3 +293,10 @@ src/
 
 - [ ] `getVoxelCollisionData()` でBase64エンコードされたデータが取得できる
 - [ ] 当たり判定が0個（全て通過可）の状態でも取得できる
+
+### テストページ（spec_1-4_custom_block_editor.html で確認）
+
+- [ ] 簡易チェックボタンが表示される
+- [ ] モード切替で当たり判定モードに切り替わる
+- [ ] 当たり判定モード時に自動作成ボタンが表示される
+- [ ] 衝突テストでボールが落下・反射する
