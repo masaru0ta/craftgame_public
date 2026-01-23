@@ -3,212 +3,141 @@
 ## 1. 概要
 
 標準ブロック（shape_type="normal"）を編集するための3Dエディタを作る。
-この仕様では以下を作成する:
 
-1. **BlockEditorUI** - UI生成・イベントハンドリングを担当するクラス（基盤）
-2. **StandardBlockEditor** - Three.jsシーン・メッシュ・カメラ操作を担当するコアクラス
-3. **StandardBlockMeshBuilder** - ブロックメッシュ生成ライブラリ
-4. **GasApi** - GAS API通信ライブラリ
+### 作成するクラス
+
+| クラス | 責務 |
+|-------|------|
+| BlockEditorUI | UI生成、イベントハンドリング、レイアウト管理 |
+| StandardBlockEditor | Three.jsシーン管理、カメラ操作、テクスチャ切替 |
+| StandardBlockMeshBuilder | ブロックメッシュの生成 |
+| GasApi | GAS API通信 |
 
 BlockEditorUIは1-4, 1-5で拡張され、最終的にblock_manager（1-6）で使用される。
-テストページはBlockEditorUIを使用することで、UIの調整が1回で済む。
-
-src/test/ 及び src/game/ のディレクトリは公開用の Github リポジトリにプッシュする
-公開用リポジトリ: https://github.com/masaru0ta/craftgame_public
 
 ## 2. 関連資料
 
 - spec_1-1_block_data_sheet.md: データ構造
 - spec_1-2_gas_api.md: API仕様
-- spec_1-4_custom_block_editor.md: カスタムブロック機能を追加
-- spec_1-5_collision_editor.md: 衝突テスト機能を追加
-- spec_1-6_block_shape_manager.md: block_manager統合ツール
-- **mockups/mock_block_editor_ui.html**: BlockEditorUIのビジュアルモック（UIパーツ・サイズ・色仕様）
+- **mockups/mock_block_editor_ui.html**: UIのビジュアルモック（サイズ・色仕様）
 
-## 3. アーキテクチャ
-
-### 3.1 クラス構成
+## 3. ファイル構成
 
 ```
-BlockEditorUI (この仕様で作成、1-4/1-5で拡張)
-    └── StandardBlockEditor (この仕様で作成)
-        └── StandardBlockMeshBuilder
+src/
+  test/
+    spec_1-3_standard_block_editor.html       # テスト用HTML
+    spec_1-3_standard_block_editor_style.css  # テスト用スタイル
+    spec_1-3_standard_block_editor_main.js    # テスト用スクリプト
+  game/
+    block_editor_ui.js                        # BlockEditorUIクラス
+    standard_block_editor.js                  # StandardBlockEditorクラス
+    standard_block_mesh_builder.js            # メッシュ生成
+    gas_api.js                                # API通信
 ```
 
-### 3.2 責務分離
+src/test/ 及び src/game/ は公開用リポジトリにプッシュする。
+公開用リポジトリ: https://github.com/masaru0ta/craftgame_public
 
-| クラス                   | 責務                                    |
-|-------------------------|-----------------------------------------|
-| BlockEditorUI           | UI生成、イベントハンドリング、レイアウト管理      |
-| StandardBlockEditor     | Three.jsシーン管理、カメラ操作、テクスチャ切替    |
-| StandardBlockMeshBuilder| ブロックメッシュの生成                        |
+## 4. UI仕様
 
-### 3.3 処理シーケンス
+### 4.1 レイアウト
 
-#### 初期化
+- `.editor-container` の比率は横3：縦4（aspect-ratio: 3/4）
+- 3Dプレビュー領域はレスポンシブで、コンテナ幅に合わせてサイズ変更
+- ツールバー・コントロールパネルは各1/8、3Dプレビューは6/8の高さ
+- テクスチャスロット・BGボタンのサイズはウィンドウ幅に応じて自動調整（24px〜48px）
 
-```
-外部（テストページ/block_manager）
-    │
-    │ new BlockEditorUI({ container, THREE, onTextureAdd, onBlockChange })
-    │ editorUI.init()
-    │ editorUI.setTextures(textures)   ← テクスチャ一覧を渡す
-    │ editorUI.loadBlock(blockData)
-    ▼
-BlockEditorUI
-    │
-    │ new StandardBlockEditor({ container, THREE })
-    │ standardBlockEditor.init()
-    │ standardBlockEditor.loadBlock(blockData)
-    ▼
-StandardBlockEditor
-    │
-    │ 3Dプレビュー表示
-```
+### 4.2 UI構造とセレクタ
 
-#### テクスチャ変更
+| 要素 | セレクタ | 説明 |
+|------|----------|------|
+| エディタコンテナ | `.editor-container` | 全体を囲む、aspect-ratio: 3/4 |
+| プレビューコンテナ | `.preview-container` | 縦方向flexレイアウト |
+| ツールバー | `.preview-toolbar` | 3カラムレイアウト（left/center/right-group） |
+| ツールバー左 | `.left-group` | 標準ブロックは空 |
+| ツールバー中央 | `.center-group` | 標準ブロックは空 |
+| ツールバー右 | `.right-group` | BGボタン配置 |
+| 3Dプレビュー領域 | `.preview-3d` | Three.js canvas |
+| コントロールパネル | `.control-panel` | スロット配置エリア |
+| スロットコンテナ | `.slots-container` | センター寄せ |
+| 標準ブロック用スロット | `.normal-slots` | 7スロット格納 |
+| テクスチャスロット | `.material-item[data-slot="スロット名"]` | default/front/top/bottom/left/right/back |
+| スロット画像 | `.slot-image` | テクスチャサムネイル |
+| BGボタン | `.bg-btn` | 背景色切り替え |
+| 背景色インジケーター | `.bg-color-indicator` | 現在の背景色表示 |
+| モーダルオーバーレイ | `.texture-modal-overlay` | モーダル背景（非表示） |
+| モーダル本体 | `.texture-modal` | テクスチャ選択UI |
+| モーダル閉じる | `.texture-modal-close` | ×ボタン |
+| テクスチャグリッド | `.texture-grid` | テクスチャ一覧 |
+| テクスチャアイテム | `.texture-item` | 各テクスチャ |
+| テクスチャ名 | `.texture-item-name` | テクスチャ名表示 |
+| 追加ボタン | `.texture-item.add-new` | 新規追加 |
 
-```
-ユーザー操作
-    │
-    │ スロットクリック
-    ▼
-BlockEditorUI
-    │
-    │ モーダル表示
-    │ ユーザーがテクスチャ選択
-    │ standardBlockEditor.setTexture(slot, url)
-    ▼
-StandardBlockEditor
-    │
-    │ 3Dプレビュー更新
-    ▼
-BlockEditorUI
-    │
-    │ onBlockChange(blockData) で外部に通知
-```
+### 4.3 操作仕様
 
-## 4. BlockEditorUI クラス
+#### テクスチャスロットクリック
 
-### 4.1 概要
-
-BlockEditorUIはDOM要素を受け取り、その中に3Dプレビュー用のUIを生成する。
-この仕様では標準ブロック用のUIを実装し、1-4でカスタムブロック用UIを追加する。
-
-### 4.2 コンストラクタ
-
-```javascript
-constructor(options) {
-  // options.container: UIをマウントするDOM要素
-  // options.THREE: Three.jsライブラリ（外部から注入）
-  // options.onTextureAdd: 「追加」選択時コールバック (optional)
-  // options.onBlockChange: ブロックデータ変更時コールバック (optional)
-}
-```
-
-### 4.3 公開メソッド
-
-| メソッド                      | 説明                                 |
-|------------------------------|--------------------------------------|
-| `init()`                     | UIを生成し、エディタを初期化         |
-| `loadBlock(blockData, textures)` | ブロックデータをロードして表示    |
-| `setTextures(textures)`      | テクスチャ一覧を設定                  |
-| `setTexture(slot, textureName)` | 指定スロットにテクスチャを設定    |
-| `getBlockData()`             | 現在のブロックデータを取得            |
-| `resize()`                   | リサイズ処理                         |
-| `dispose()`                  | リソース解放                         |
-
-### 4.4 UI構造（標準ブロック用）
-
-```
-.editor-container
-├── .preview-container
-│   ├── .preview-toolbar (3カラムレイアウト)
-│   │   ├── .left-group
-│   │   │   └── (標準ブロックは空)
-│   │   ├── .center-group
-│   │   │   └── (標準ブロックは空)
-│   │   └── .right-group
-│   │       └── .bg-btn
-│   │           ├── .bg-color-indicator
-│   │           └── .bg-label
-│   ├── .preview-3d
-│   │   └── Three.js canvas
-│   └── .control-panel
-│       └── .slots-container
-│           └── .material-item x7 (default, front, top, bottom, left, right, back)
-│               ├── .slot-image
-│               └── span (ラベル)
-└── .texture-modal-overlay (非表示、スロットクリックで表示)
-    └── .texture-modal
-        ├── .texture-modal-header
-        │   ├── .texture-modal-title
-        │   └── .texture-modal-close
-        └── .texture-grid
-            ├── .texture-item (「なし」)
-            ├── .texture-item x N (テクスチャ一覧)
-            └── .texture-item (「追加」)
-```
-
-### 4.5 UIパーツ仕様
-
-サイズ・色・枠線などの詳細仕様は `mockups/mock_block_editor_ui.html` を参照。
-
-特記事項
-- .editor-containerの比率は横3：縦4（aspect-ratio: 3 / 4）とする。
-- 3Dプレビュー領域はレスポンシブで、右カラム幅に合わせてサイズを変更する。
-- 3Dプレビュー領域の上部 1/8 はツール枠
-- 3Dプレビュー領域の下部 1/8 はテクスチャ枠
-- テクスチャ選択スロットはセンター寄せにする。
-- テクスチャスロット・BGボタンのサイズはウィンドウ幅に応じて自動調整する（24px〜48px）。
-
-### 4.6 UI操作
-
-#### 4.6.1 テクスチャスロットクリック
-
-テクスチャスロット（`.material-item`）をクリックすると:
-
-1. BlockEditorUIがテクスチャ選択モーダルを表示
+1. テクスチャ選択モーダルを表示
 2. ユーザーがテクスチャを選択
-3. BlockEditorUIが内部のStandardBlockEditor.setTexture()を呼び出し
-4. 3Dプレビューが更新される
-5. `onBlockChange` コールバックで外部に通知
+3. 3Dプレビューが更新される
+4. `onBlockChange` コールバックで外部に通知
 
-**テクスチャ選択モーダルでの選択:**
+| 選択項目 | 動作 |
+|----------|------|
+| テクスチャ | スロットに設定、プレビュー更新 |
+| 「なし」 | テクスチャ解除（defaultは紫色のデフォルトテクスチャ） |
+| 「追加」 | `onTextureAdd` コールバック実行 |
 
-| 選択項目    | 動作                                                                             |
-|------------|----------------------------------------------------------------------------------|
-| テクスチャ  | 選択したテクスチャをスロットに設定、3Dプレビュー更新                            |
-| 「なし」    | スロットのテクスチャを解除（defaultスロットの場合は紫色のデフォルトテクスチャを使用） |
-| 「追加」    | `onTextureAdd`コールバックで外部に通知（アップロード処理は外部で実装）           |
+**モーダルを閉じる操作:** ×ボタン / オーバーレイクリック / テクスチャ選択
 
-**モーダルを閉じる操作:**
-- ×ボタンクリック
-- オーバーレイ（モーダル外の暗い部分）クリック
-- テクスチャ選択後は自動で閉じる
+#### BGボタンクリック
 
-テクスチャ選択モーダルのUI仕様は `mockups/mock_block_editor_ui.html` を参照。
+背景色を順番に切り替え: 黒(#000000) → 青(#1a237e) → 緑(#1b5e20) → 黒
 
-#### 4.6.2 BGボタンクリック
+## 5. 3Dプレビュー仕様
 
-BGボタン（`.bg-btn`）をクリックすると:
+### 5.1 表示
 
-1. 3Dプレビューの背景色が順番に切り替わる
-2. 切り替え順序: 黒（#000000）→ 青（#1a237e）→ 緑（#1b5e20）→ 黒（#000000）
-3. BGボタン内のインジケーター（`.bg-color-indicator`）が現在の背景色を表示
+- 3Dプレビュー枠の中央に立方体のブロックを表示
+- 初期表示: FRONTが正面、垂直角度20度（少し上から見下ろす）、カメラ距離3
+- 床面に白い枠線（ブロックと同サイズ）、外側にFRONT/RIGHT/LEFT/BACKのテキスト
+- テクスチャ未設定の面はdefaultのテクスチャを使用
 
-## 5. StandardBlockEditor クラス
+### 5.2 カメラ操作
 
-### 5.1 コンストラクタ
+- マウスドラッグで視点回転（左右回転 + 上下傾き）
+- 上下の傾きは±90度まで
+- マウスを右にドラッグ → ブロックが右に回転
+- ホイールスクロールで拡大縮小
+
+### 5.3 テクスチャスロット
+
+7つのスロット: default, front, top, bottom, left, right, back
+
+## 6. 公開API
+
+### BlockEditorUI
 
 ```javascript
-constructor(options) {
-  // options.container: Three.jsをマウントするDOM要素
-  // options.THREE: Three.jsライブラリ（外部から注入）
-}
+constructor({ container, THREE, onTextureAdd, onBlockChange })
 ```
 
-### 5.2 公開メソッド
+| メソッド | 説明 |
+|----------|------|
+| `init()` | UIを生成し、エディタを初期化 |
+| `loadBlock(blockData, textures)` | ブロックデータをロードして表示 |
+| `setTextures(textures)` | テクスチャ一覧を設定 |
+| `setTexture(slot, textureName)` | 指定スロットにテクスチャを設定 |
+| `getBlockData()` | 現在のブロックデータを取得 |
+| `resize()` | リサイズ処理 |
+| `dispose()` | リソース解放 |
+
+### StandardBlockEditor
+
+```javascript
+constructor({ container, THREE })
+```
 
 | メソッド | 説明 |
 |----------|------|
@@ -223,45 +152,9 @@ constructor(options) {
 | `resize()` | リサイズ処理 |
 | `dispose()` | リソース解放 |
 
-### 5.3 3Dプレビュー仕様
-
-- Three.jsを使用して 3Dプレビューを表示
-- 3Dプレビュー枠の中央に立方体のブロックを表示
-- 初期表示はFRONTが正面、垂直角度20度（少し上から見下ろす）、カメラ距離3（ブロックサイズの3倍）
-- 床面となる高さにブロックと同じ大きさの白い枠線と、その枠線の外側に FRONT, RIGHT, LEFT, BACK をテキスト表示
-- テクスチャ未設定の面は default の指定があれば default のテクスチャを使用する
-
-### 5.4 カメラ操作
-
-- マウスドラッグで視点を回転させる。左右回転と上下の傾き変更が可能。
-- 上下の傾きは上側90度下側90度まで。マウスを右にドラッグすると、ブロックが右に回転する。
-- マウスのホイールスクロールで拡大縮小
-
-### 5.5 テクスチャスロット
-
-7つのテクスチャスロットをサポート:
-- default, front, top, bottom, left, right, back
-- 各スロットにテクスチャURLを設定可能
-- 未設定の面は default を使用
-
-## 6. ファイル構成
-
-```
-src/
-  test/
-    spec_1-3_standard_block_editor.html       # テスト用HTML
-    spec_1-3_standard_block_editor_style.css  # テスト用スタイル
-    spec_1-3_standard_block_editor_main.js    # テスト用スクリプト
-  game/
-    block_editor_ui.js                        # BlockEditorUIクラス
-    standard_block_editor.js                  # StandardBlockEditorコアクラス
-    standard_block_mesh_builder.js            # 標準ブロック用メッシュ生成
-    gas_api.js                                # API通信
-```
-
 ## 7. テストページ仕様
 
-### 7.1 画面構成
+### 画面構成
 
 2カラム構成（比率 4:6）
 
@@ -274,7 +167,7 @@ src/
 **右カラム:**
 - BlockEditorUI（3Dプレビュー + コントロールパネル）
 
-### 7.2 データフロー
+### データフロー
 
 1. 起動時にGAS APIからブロック一覧・テクスチャ一覧を取得
 2. ブロック選択プルダウンで選択
@@ -282,53 +175,9 @@ src/
 4. テクスチャ変更・編集
 5. 保存ボタンでGAS APIにデータを送信
 
-## 8. テスト用CSSセレクタ定義
+## 8. テスト観点
 
-BlockEditorUIが生成するUI要素。サイズ・色の詳細は `mockups/mock_block_editor_ui.html` を参照。
-
-| 要素 | セレクタ |
-|:-----|:---------|
-| エディタコンテナ | `.editor-container` |
-| プレビューコンテナ | `.preview-container` |
-| ツールバー | `.preview-toolbar` |
-| ツールバー左グループ | `.left-group` |
-| ツールバー中央グループ | `.center-group` |
-| ツールバー右グループ | `.right-group` |
-| 3Dプレビュー領域 | `.preview-3d` |
-| コントロールパネル | `.control-panel` |
-| スロットコンテナ | `.slots-container` |
-| 標準ブロック用スロットコンテナ | `.normal-slots` |
-| スロット枠 | `.material-item` |
-| スロット識別属性 | `data-slot="スロット名"` |
-| スロット画像 | `.slot-image` |
-| BGボタン | `.bg-btn` |
-| 背景色インジケーター | `.bg-color-indicator` |
-| ラベル | `.bg-label`, `span` |
-| モーダルオーバーレイ | `.texture-modal-overlay` |
-| モーダル本体 | `.texture-modal` |
-| モーダルヘッダー | `.texture-modal-header` |
-| モーダル閉じるボタン | `.texture-modal-close` |
-| テクスチャグリッド | `.texture-grid` |
-| テクスチャアイテム | `.texture-item` |
-| テクスチャアイテム名 | `.texture-item-name` |
-| 追加ボタン | `.texture-item.add-new` |
-
-## 9. テスト観点
-
-テストコードは `tests/spec_1-3_block_editor_ui.spec.js` に実装。
-
-```bash
-# テスト項目一覧
-npx playwright test --config=tests/playwright.config.js --list
-
-# テスト実行
-npm test
-
-# UIモードでテスト確認
-npm run test:ui
-```
-
-### 観点一覧
+テストコード: `tests/spec_1-3_block_editor_ui.spec.js`
 
 | 観点 | 内容 |
 |------|------|
