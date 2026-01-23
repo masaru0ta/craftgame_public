@@ -20,7 +20,7 @@ module.exports = defineConfig({
 
   // 並列実行設定
   fullyParallel: true,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 1 : 8,
 
   // ブラウザ設定
   use: {
