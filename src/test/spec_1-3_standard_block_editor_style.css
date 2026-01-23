@@ -379,3 +379,34 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* レスポンシブ対応: スマホ（768px未満）で1カラム */
+@media (max-width: 767px) {
+  .page-container {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
+  /* スマホではエディタを上、コントロールを下に */
+  .right-column {
+    order: -1;
+    flex: none;
+    width: 100%;
+  }
+
+  .left-column {
+    flex: none;
+    width: 100%;
+  }
+
+  .editor-container {
+    max-height: none;
+  }
+
+  .texture-modal {
+    width: 90%;
+    max-width: 400px;
+  }
+}

@@ -30,6 +30,12 @@ class StandardBlockEditor {
     this.lastMouseX = 0;
     this.lastMouseY = 0;
 
+    // タッチ制御
+    this.lastTouchX = 0;
+    this.lastTouchY = 0;
+    this.initialPinchDistance = 0;
+    this.isPinching = false;
+
     // 背景色
     this.backgroundColors = ['#000000', '#1a237e', '#1b5e20'];
     this.currentBgIndex = 0;
@@ -39,6 +45,9 @@ class StandardBlockEditor {
     this._onMouseMove = this._onMouseMove.bind(this);
     this._onMouseUp = this._onMouseUp.bind(this);
     this._onWheel = this._onWheel.bind(this);
+    this._onTouchStart = this._onTouchStart.bind(this);
+    this._onTouchMove = this._onTouchMove.bind(this);
+    this._onTouchEnd = this._onTouchEnd.bind(this);
     this._animate = this._animate.bind(this);
   }
 
@@ -78,6 +87,11 @@ class StandardBlockEditor {
     this.container.addEventListener('wheel', this._onWheel);
     document.addEventListener('mousemove', this._onMouseMove);
     document.addEventListener('mouseup', this._onMouseUp);
+
+    // タッチイベントリスナー
+    this.container.addEventListener('touchstart', this._onTouchStart, { passive: false });
+    this.container.addEventListener('touchmove', this._onTouchMove, { passive: false });
+    this.container.addEventListener('touchend', this._onTouchEnd);
 
     // アニメーションループ開始
     this._animate();
@@ -224,6 +238,11 @@ class StandardBlockEditor {
     this.container.removeEventListener('wheel', this._onWheel);
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mouseup', this._onMouseUp);
+
+    // タッチイベントリスナーを削除
+    this.container.removeEventListener('touchstart', this._onTouchStart);
+    this.container.removeEventListener('touchmove', this._onTouchMove);
+    this.container.removeEventListener('touchend', this._onTouchEnd);
 
     // メッシュを破棄
     if (this.blockMesh) {
@@ -372,6 +391,87 @@ class StandardBlockEditor {
     this.cameraDistance += e.deltaY * 0.01;
     this.cameraDistance = Math.max(1.5, Math.min(10, this.cameraDistance));
     this._updateCameraPosition();
+  }
+
+  /**
+   * タッチ開始イベント
+   * @private
+   */
+  _onTouchStart(e) {
+    e.preventDefault();
+
+    if (e.touches.length === 1) {
+      // 1本指: 回転用
+      this.isDragging = true;
+      this.isPinching = false;
+      this.lastTouchX = e.touches[0].clientX;
+      this.lastTouchY = e.touches[0].clientY;
+    } else if (e.touches.length === 2) {
+      // 2本指: ピンチズーム用
+      this.isDragging = false;
+      this.isPinching = true;
+      this.initialPinchDistance = this._getPinchDistance(e.touches);
+    }
+  }
+
+  /**
+   * タッチ移動イベント
+   * @private
+   */
+  _onTouchMove(e) {
+    e.preventDefault();
+
+    if (e.touches.length === 1 && this.isDragging) {
+      // 1本指スワイプ: 視点回転
+      const deltaX = e.touches[0].clientX - this.lastTouchX;
+      const deltaY = e.touches[0].clientY - this.lastTouchY;
+
+      this.horizontalAngle -= deltaX * 0.5;
+      this.verticalAngle += deltaY * 0.5;
+      this.verticalAngle = Math.max(-90, Math.min(90, this.verticalAngle));
+
+      this._updateCameraPosition();
+
+      this.lastTouchX = e.touches[0].clientX;
+      this.lastTouchY = e.touches[0].clientY;
+    } else if (e.touches.length === 2 && this.isPinching) {
+      // 2本指ピンチ: ズーム
+      const currentDistance = this._getPinchDistance(e.touches);
+      const scale = this.initialPinchDistance / currentDistance;
+
+      // ピンチイン（指を近づける）でズームアウト、ピンチアウトでズームイン
+      this.cameraDistance = Math.max(1.5, Math.min(10, this.cameraDistance * scale));
+      this._updateCameraPosition();
+
+      this.initialPinchDistance = currentDistance;
+    }
+  }
+
+  /**
+   * タッチ終了イベント
+   * @private
+   */
+  _onTouchEnd(e) {
+    if (e.touches.length === 0) {
+      this.isDragging = false;
+      this.isPinching = false;
+    } else if (e.touches.length === 1) {
+      // 2本指から1本指に戻った場合
+      this.isPinching = false;
+      this.isDragging = true;
+      this.lastTouchX = e.touches[0].clientX;
+      this.lastTouchY = e.touches[0].clientY;
+    }
+  }
+
+  /**
+   * 2本指の距離を計算
+   * @private
+   */
+  _getPinchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   /**
