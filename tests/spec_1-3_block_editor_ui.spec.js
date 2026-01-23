@@ -544,6 +544,123 @@ test.describe('カメラ操作', () => {
     expect(newDistance).not.toBe(initialDistance);
   });
 
+  test('タッチスワイプで視点を回転できる', async ({ page }) => {
+    // 初期のカメラ位置を取得
+    const initialPos = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return { x: camera.position.x, z: camera.position.z };
+    });
+
+    const canvas = page.locator('.preview-3d canvas');
+    const box = await canvas.boundingBox();
+    const centerX = box.x + box.width / 2;
+    const centerY = box.y + box.height / 2;
+
+    // タッチスワイプをシミュレート
+    await page.evaluate(({ startX, startY, endX, endY }) => {
+      const canvas = document.querySelector('.preview-3d canvas');
+
+      // touchstart
+      const touchStart = new TouchEvent('touchstart', {
+        bubbles: true,
+        cancelable: true,
+        touches: [new Touch({
+          identifier: 0,
+          target: canvas,
+          clientX: startX,
+          clientY: startY
+        })]
+      });
+      canvas.dispatchEvent(touchStart);
+
+      // touchmove
+      const touchMove = new TouchEvent('touchmove', {
+        bubbles: true,
+        cancelable: true,
+        touches: [new Touch({
+          identifier: 0,
+          target: canvas,
+          clientX: endX,
+          clientY: endY
+        })]
+      });
+      canvas.dispatchEvent(touchMove);
+
+      // touchend
+      const touchEnd = new TouchEvent('touchend', {
+        bubbles: true,
+        cancelable: true,
+        touches: []
+      });
+      canvas.dispatchEvent(touchEnd);
+    }, { startX: centerX, startY: centerY, endX: centerX + 100, endY: centerY });
+
+    // カメラ位置が変化している
+    const newPos = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return { x: camera.position.x, z: camera.position.z };
+    });
+    expect(newPos.x !== initialPos.x || newPos.z !== initialPos.z).toBe(true);
+  });
+
+  test('ピンチ操作で拡大縮小できる', async ({ page }) => {
+    // 初期のカメラ距離を取得
+    const initialDistance = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return camera.position.length();
+    });
+
+    const canvas = page.locator('.preview-3d canvas');
+    const box = await canvas.boundingBox();
+    const centerX = box.x + box.width / 2;
+    const centerY = box.y + box.height / 2;
+
+    // ピンチイン（ズームアウト）をシミュレート
+    await page.evaluate(({ centerX, centerY }) => {
+      const canvas = document.querySelector('.preview-3d canvas');
+
+      // 2本指でタッチ開始（離れた位置）
+      const touchStart = new TouchEvent('touchstart', {
+        bubbles: true,
+        cancelable: true,
+        touches: [
+          new Touch({ identifier: 0, target: canvas, clientX: centerX - 50, clientY: centerY }),
+          new Touch({ identifier: 1, target: canvas, clientX: centerX + 50, clientY: centerY })
+        ]
+      });
+      canvas.dispatchEvent(touchStart);
+
+      // 2本指を近づける（ピンチイン）
+      const touchMove = new TouchEvent('touchmove', {
+        bubbles: true,
+        cancelable: true,
+        touches: [
+          new Touch({ identifier: 0, target: canvas, clientX: centerX - 20, clientY: centerY }),
+          new Touch({ identifier: 1, target: canvas, clientX: centerX + 20, clientY: centerY })
+        ]
+      });
+      canvas.dispatchEvent(touchMove);
+
+      // タッチ終了
+      const touchEnd = new TouchEvent('touchend', {
+        bubbles: true,
+        cancelable: true,
+        touches: []
+      });
+      canvas.dispatchEvent(touchEnd);
+    }, { centerX, centerY });
+
+    // 少し待機
+    await page.waitForTimeout(100);
+
+    // カメラ距離が変化している
+    const newDistance = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return camera.position.length();
+    });
+    expect(newDistance).not.toBe(initialDistance);
+  });
+
 });
 
 // ============================================
@@ -641,6 +758,64 @@ test.describe('テストページ', () => {
 
     // canvas が表示される
     await expect(page.locator('.preview-3d canvas')).toBeVisible();
+  });
+
+});
+
+// ============================================
+// レスポンシブ対応
+// ============================================
+test.describe('レスポンシブ対応', () => {
+
+  test('PC表示（768px以上）で2カラム構成になる', async ({ page }) => {
+    // PC幅に設定
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+
+    // 左カラムと右カラムが横並びになっている
+    const leftColumn = page.locator('.left-column');
+    const rightColumn = page.locator('.right-column');
+
+    const leftBox = await leftColumn.boundingBox();
+    const rightBox = await rightColumn.boundingBox();
+
+    // 右カラムが左カラムの右側にある（横並び）
+    expect(rightBox.x).toBeGreaterThan(leftBox.x);
+    // Y座標がほぼ同じ（同じ行にある）
+    expect(Math.abs(rightBox.y - leftBox.y)).toBeLessThan(50);
+  });
+
+  test('スマホ表示（768px未満）で1カラム構成になる', async ({ page }) => {
+    // スマホ幅に設定
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+
+    // エディタとコントロールが縦並びになっている
+    const editorContainer = page.locator('#editor-container');
+    const controlPanel = page.locator('.left-column');
+
+    const editorBox = await editorContainer.boundingBox();
+    const controlBox = await controlPanel.boundingBox();
+
+    // コントロールがエディタの下にある（縦並び）
+    expect(controlBox.y).toBeGreaterThan(editorBox.y);
+  });
+
+  test('スマホ表示でBlockEditorUIが上部に表示される', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+
+    const editorContainer = page.locator('#editor-container');
+    const leftColumn = page.locator('.left-column');
+
+    const editorBox = await editorContainer.boundingBox();
+    const leftBox = await leftColumn.boundingBox();
+
+    // エディタが上、コントロールが下
+    expect(editorBox.y).toBeLessThan(leftBox.y);
   });
 
 });
