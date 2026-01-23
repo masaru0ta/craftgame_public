@@ -321,10 +321,17 @@ BlockEditorUIが生成するカスタムブロック用UI要素:
 | 3Dプレビュー領域 | `.preview-3d` | flex: 6（高さ6/8） |
 | コントロールパネル | `.control-panel` | flex: 1（高さ1/8） |
 | スロットコンテナ | `.slots-container` | センター寄せ |
+| カスタムブロック用スロットコンテナ | `.custom-slots` | カスタムブロック用 |
 | マテリアルスロット | `.material-item` | 3つ存在 |
+| マテリアルスロット識別属性 | `data-material-slot="番号"` | 1, 2, 3 |
+| マテリアルスロット選択状態 | `.selected` | 選択中のスロット |
 | モード切替ボタン | `.mode-toggle-btn` | look/collision切替 |
 | ブラシサイズボタン | `.brush-size-btn` | 3つ存在 |
+| ブラシサイズ識別属性 | `data-size="サイズ"` | 1, 2, 4 |
+| ブラシサイズ選択状態 | `.active` | 選択中のサイズ |
 | BGボタン | `.bg-btn` | 背景色切り替え |
+| テクスチャアイテム名 | `.texture-item-name` | テクスチャ名表示 |
+| 追加ボタン | `.texture-item.add-new` | 新規テクスチャ追加 |
 
 ## 11. テスト観点
 
