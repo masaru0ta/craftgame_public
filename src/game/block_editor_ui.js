@@ -49,6 +49,12 @@ class BlockEditorUI {
     this.modeToggleBtn = null;
     this.brushSizeButtons = [];
     this.currentMaterialSlot = 1;
+
+    // 衝突テスト用
+    this.checkBtn = null;
+    this.autoCreateBtn = null;
+    this.collisionChecker = null;
+    this.isCollisionTestRunning = false;
   }
 
   /**
@@ -238,6 +244,13 @@ class BlockEditorUI {
    * リソース解放
    */
   dispose() {
+    this.stopCollisionTest();
+
+    if (this.collisionChecker) {
+      this.collisionChecker.dispose();
+      this.collisionChecker = null;
+    }
+
     if (this.standardBlockEditor) {
       this.standardBlockEditor.dispose();
     }
@@ -251,6 +264,54 @@ class BlockEditorUI {
 
     if (this.modalOverlay && this.modalOverlay.parentNode) {
       this.modalOverlay.parentNode.removeChild(this.modalOverlay);
+    }
+  }
+
+  /**
+   * 衝突テストを開始
+   */
+  startCollisionTest() {
+    if (this.currentShapeType !== 'custom' || !this.customBlockEditor) return;
+    if (this.isCollisionTestRunning) return;
+
+    this.isCollisionTestRunning = true;
+
+    // CollisionCheckerを初期化
+    if (!this.collisionChecker) {
+      this.collisionChecker = new CollisionChecker({
+        scene: this.customBlockEditor.getScene(),
+        THREE: this.THREE
+      });
+    }
+
+    // 当たり判定データを設定
+    const collisionData = this.customBlockEditor.voxelCollisionData;
+    this.collisionChecker.setCollisionData(collisionData);
+
+    // テスト開始
+    this.collisionChecker.start();
+
+    // ボタン状態を更新
+    if (this.checkBtn) {
+      this.checkBtn.classList.add('active');
+    }
+  }
+
+  /**
+   * 衝突テストを停止
+   */
+  stopCollisionTest() {
+    if (!this.isCollisionTestRunning) return;
+
+    this.isCollisionTestRunning = false;
+
+    if (this.collisionChecker) {
+      this.collisionChecker.stop();
+    }
+
+    // ボタン状態を更新
+    if (this.checkBtn) {
+      this.checkBtn.classList.remove('active');
     }
   }
 
@@ -359,8 +420,22 @@ class BlockEditorUI {
       materialSlotsContainer.appendChild(item);
     });
 
+    // 自動作成ボタン（カスタムブロック用、初期非表示）
+    this.autoCreateBtn = document.createElement('button');
+    this.autoCreateBtn.className = 'auto-create-btn';
+    this.autoCreateBtn.textContent = '自動作成';
+    this.autoCreateBtn.style.display = 'none';
+
+    // 衝突テストボタン（カスタムブロック用、初期非表示）
+    this.checkBtn = document.createElement('button');
+    this.checkBtn.className = 'check-btn';
+    this.checkBtn.textContent = '衝突テスト';
+    this.checkBtn.style.display = 'none';
+
     this.controlPanel.appendChild(slotsContainer);
     this.controlPanel.appendChild(materialSlotsContainer);
+    this.controlPanel.appendChild(this.autoCreateBtn);
+    this.controlPanel.appendChild(this.checkBtn);
 
     // 組み立て
     this.previewContainer.appendChild(this.toolbar);
@@ -447,6 +522,14 @@ class BlockEditorUI {
       });
       this.customBlockEditor.init();
       this.currentEditor = this.customBlockEditor;
+
+      // CollisionCheckerを初期化
+      if (!this.collisionChecker) {
+        this.collisionChecker = new CollisionChecker({
+          scene: this.customBlockEditor.getScene(),
+          THREE: this.THREE
+        });
+      }
     } else {
       this.standardBlockEditor = new StandardBlockEditor({
         container: this.preview3d,
@@ -474,6 +557,13 @@ class BlockEditorUI {
       this.brushSizeButtons.forEach(btn => {
         btn.style.display = 'block';
       });
+
+      // 衝突テストボタンを表示
+      this.checkBtn.style.display = 'block';
+      this.controlPanel.classList.add('has-check-btn');
+
+      // 自動作成ボタンはモードに応じて表示
+      this._updateAutoCreateButtonVisibility();
     } else {
       // 標準ブロック用UI
       normalSlots.style.display = 'flex';
@@ -483,6 +573,34 @@ class BlockEditorUI {
       this.brushSizeButtons.forEach(btn => {
         btn.style.display = 'none';
       });
+
+      // 衝突テストボタンを非表示
+      this.checkBtn.style.display = 'none';
+      this.controlPanel.classList.remove('has-check-btn');
+
+      // 自動作成ボタンを非表示
+      this.autoCreateBtn.style.display = 'none';
+    }
+  }
+
+  /**
+   * 自動作成ボタンの表示/非表示を更新
+   * @private
+   */
+  _updateAutoCreateButtonVisibility() {
+    if (!this.customBlockEditor) return;
+
+    const mode = this.customBlockEditor.getEditMode();
+    if (mode === 'collision') {
+      this.autoCreateBtn.style.display = 'block';
+      // 当たり判定モードではマテリアルスロットを非表示
+      const customSlots = this.controlPanel.querySelector('.custom-slots');
+      customSlots.style.display = 'none';
+    } else {
+      this.autoCreateBtn.style.display = 'none';
+      // 見た目モードではマテリアルスロットを表示
+      const customSlots = this.controlPanel.querySelector('.custom-slots');
+      customSlots.style.display = 'flex';
     }
   }
 
@@ -533,9 +651,26 @@ class BlockEditorUI {
     // ブラシサイズボタン
     this.brushSizeButtons.forEach(btn => {
       btn.addEventListener('click', () => {
+        if (btn.disabled) return;
         const size = parseInt(btn.dataset.size, 10);
         this.setBrushSize(size);
       });
+    });
+
+    // 衝突テストボタン
+    this.checkBtn.addEventListener('click', () => {
+      if (this.isCollisionTestRunning) {
+        this.stopCollisionTest();
+      } else {
+        this.startCollisionTest();
+      }
+    });
+
+    // 自動作成ボタン
+    this.autoCreateBtn.addEventListener('click', () => {
+      if (this.customBlockEditor) {
+        this.customBlockEditor.autoCreateCollision();
+      }
     });
 
     // モーダル閉じる
@@ -739,7 +874,15 @@ class BlockEditorUI {
    */
   _updateModeToggleButton() {
     if (!this.customBlockEditor) return;
-    this.modeToggleBtn.textContent = this.customBlockEditor.getEditMode();
+
+    const mode = this.customBlockEditor.getEditMode();
+    this.modeToggleBtn.textContent = mode;
+
+    // 自動作成ボタンの表示を更新
+    this._updateAutoCreateButtonVisibility();
+
+    // ブラシサイズボタンのdisabled状態を更新
+    this._updateBrushSizeButtons();
   }
 
   /**
@@ -750,12 +893,23 @@ class BlockEditorUI {
     if (!this.customBlockEditor) return;
 
     const currentSize = this.customBlockEditor.getBrushSize();
+    const mode = this.customBlockEditor.getEditMode();
+
     this.brushSizeButtons.forEach(btn => {
       const size = parseInt(btn.dataset.size, 10);
+
+      // アクティブ状態を更新
       if (size === currentSize) {
         btn.classList.add('active');
       } else {
         btn.classList.remove('active');
+      }
+
+      // 当たり判定モードではサイズ1と4をdisabledに
+      if (mode === 'collision' && (size === 1 || size === 4)) {
+        btn.disabled = true;
+      } else {
+        btn.disabled = false;
       }
     });
   }

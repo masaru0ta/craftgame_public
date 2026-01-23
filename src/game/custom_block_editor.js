@@ -47,6 +47,8 @@ class CustomBlockEditor {
 
     // ボクセルメッシュグループ
     this.voxelGroup = null;
+    this.lookMesh = null;        // 見た目メッシュ
+    this.collisionMesh = null;   // 当たり判定メッシュ
 
     // グリッドとラベル
     this.gridHelper = null;
@@ -99,7 +101,8 @@ class CustomBlockEditor {
   loadBlock(blockData) {
     // ボクセルデータをロード
     this.voxelLookData = VoxelData.decode(blockData.voxel_look || '');
-    this.voxelCollisionData = VoxelData.decode(blockData.voxel_collision || '');
+    // 当たり判定データは4x4x4形式（CustomCollision）
+    this.voxelCollisionData = CustomCollision.decode(blockData.voxel_collision || '');
 
     // マテリアルテクスチャをロード
     if (blockData.material_1) {
@@ -204,6 +207,12 @@ class CustomBlockEditor {
   setEditMode(mode) {
     if (['look', 'collision'].includes(mode)) {
       this.editMode = mode;
+
+      // 当たり判定モードではブラシサイズを2に固定
+      if (mode === 'collision') {
+        this.brushSize = 2;
+      }
+
       this._rebuildVoxelMesh();
     }
   }
@@ -226,22 +235,41 @@ class CustomBlockEditor {
 
   /**
    * 当たり判定ボクセルデータを取得（Base64）
-   * @returns {string} Base64エンコードされたデータ
+   * 4x4x4形式（8バイト）
+   * @returns {string} Base64エンコードされたデータ（12文字）
    */
   getVoxelCollisionData() {
-    return VoxelData.encode(this.voxelCollisionData);
+    return CustomCollision.encode(this.voxelCollisionData);
   }
 
   /**
    * 見た目から当たり判定を自動生成
+   * 見た目の2x2x2領域に1つでもボクセルがあれば、当たり判定の1ボクセルを1に設定
    */
   autoCreateCollision() {
-    // 見た目ボクセルがある箇所をコリジョンとしてコピー
-    for (let y = 0; y < 8; y++) {
-      for (let z = 0; z < 8; z++) {
-        for (let x = 0; x < 8; x++) {
-          const value = VoxelData.getVoxel(this.voxelLookData, x, y, z);
-          VoxelData.setVoxel(this.voxelCollisionData, x, y, z, value > 0 ? 1 : 0);
+    // 新しい当たり判定データを作成
+    this.voxelCollisionData = CustomCollision.createEmpty();
+
+    // 4x4x4の当たり判定グリッドを走査
+    for (let cy = 0; cy < 4; cy++) {
+      for (let cz = 0; cz < 4; cz++) {
+        for (let cx = 0; cx < 4; cx++) {
+          // 対応する見た目の2x2x2領域をチェック
+          let hasVoxel = false;
+          for (let dy = 0; dy < 2 && !hasVoxel; dy++) {
+            for (let dz = 0; dz < 2 && !hasVoxel; dz++) {
+              for (let dx = 0; dx < 2 && !hasVoxel; dx++) {
+                const lx = cx * 2 + dx;
+                const ly = cy * 2 + dy;
+                const lz = cz * 2 + dz;
+                if (VoxelData.getVoxel(this.voxelLookData, lx, ly, lz) > 0) {
+                  hasVoxel = true;
+                }
+              }
+            }
+          }
+          // 1つでもボクセルがあれば当たり判定を1に
+          CustomCollision.setVoxel(this.voxelCollisionData, cx, cy, cz, hasVoxel ? 1 : 0);
         }
       }
     }
@@ -284,6 +312,22 @@ class CustomBlockEditor {
    */
   getCamera() {
     return this.camera;
+  }
+
+  /**
+   * 見た目メッシュを取得
+   * @returns {THREE.Group}
+   */
+  getLookMesh() {
+    return this.lookMesh;
+  }
+
+  /**
+   * 当たり判定メッシュを取得
+   * @returns {THREE.Group}
+   */
+  getCollisionMesh() {
+    return this.collisionMesh;
   }
 
   /**
@@ -522,7 +566,8 @@ class CustomBlockEditor {
    */
   _initVoxelData() {
     this.voxelLookData = VoxelData.createEmpty();
-    this.voxelCollisionData = VoxelData.createEmpty();
+    // 当たり判定は4x4x4形式
+    this.voxelCollisionData = CustomCollision.createEmpty();
   }
 
   /**
@@ -531,25 +576,69 @@ class CustomBlockEditor {
    */
   _rebuildVoxelMesh() {
     // 既存のメッシュを削除
-    if (this.voxelGroup) {
-      this.scene.remove(this.voxelGroup);
-      this.voxelGroup.traverse(obj => {
+    if (this.lookMesh) {
+      this.scene.remove(this.lookMesh);
+      this.lookMesh.traverse(obj => {
+        if (obj.geometry) obj.geometry.dispose();
+      });
+    }
+    if (this.collisionMesh) {
+      this.scene.remove(this.collisionMesh);
+      this.collisionMesh.traverse(obj => {
         if (obj.geometry) obj.geometry.dispose();
       });
     }
 
-    // 現在の編集モードに応じたデータを使用
-    const voxelData = this.editMode === 'look' ? this.voxelLookData : this.voxelCollisionData;
+    // 見た目メッシュを構築
+    this.lookMesh = this.meshBuilder.buildWithUV(this.voxelLookData, this.materials);
+    this.scene.add(this.lookMesh);
 
-    // コリジョンモードでは単色表示
-    if (this.editMode === 'collision') {
-      const collisionMaterial = this.meshBuilder.createColorMaterial(0x4444ff);
-      this.voxelGroup = this.meshBuilder.build(voxelData, [collisionMaterial, collisionMaterial, collisionMaterial]);
+    // 当たり判定メッシュを構築（4x4x4から8x8x8に展開して表示）
+    const collisionDisplayData = this._expandCollisionToLookSize();
+    const whiteMaterial = this.meshBuilder.createColorMaterial(0xffffff);
+    this.collisionMesh = this.meshBuilder.build(collisionDisplayData, [whiteMaterial, whiteMaterial, whiteMaterial]);
+    this.scene.add(this.collisionMesh);
+
+    // モードに応じて表示切替
+    if (this.editMode === 'look') {
+      this.lookMesh.visible = true;
+      this.collisionMesh.visible = false;
     } else {
-      this.voxelGroup = this.meshBuilder.buildWithUV(voxelData, this.materials);
+      this.lookMesh.visible = false;
+      this.collisionMesh.visible = true;
     }
 
-    this.scene.add(this.voxelGroup);
+    // voxelGroupは互換性のため現在のモードのメッシュを参照
+    this.voxelGroup = this.editMode === 'look' ? this.lookMesh : this.collisionMesh;
+  }
+
+  /**
+   * 4x4x4の当たり判定データを8x8x8の表示用データに展開
+   * @private
+   * @returns {Uint8Array} 8x8x8のボクセルデータ
+   */
+  _expandCollisionToLookSize() {
+    const displayData = VoxelData.createEmpty();
+
+    for (let cy = 0; cy < 4; cy++) {
+      for (let cz = 0; cz < 4; cz++) {
+        for (let cx = 0; cx < 4; cx++) {
+          const value = CustomCollision.getVoxel(this.voxelCollisionData, cx, cy, cz);
+          if (value) {
+            // 2x2x2の領域に展開
+            for (let dy = 0; dy < 2; dy++) {
+              for (let dz = 0; dz < 2; dz++) {
+                for (let dx = 0; dx < 2; dx++) {
+                  VoxelData.setVoxel(displayData, cx * 2 + dx, cy * 2 + dy, cz * 2 + dz, 1);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return displayData;
   }
 
   /**
@@ -842,26 +931,39 @@ class CustomBlockEditor {
    * @private
    */
   _placeVoxelAt(x, y, z) {
-    const voxelData = this.editMode === 'look' ? this.voxelLookData : this.voxelCollisionData;
-    const value = this.editMode === 'look' ? this.currentMaterial : 1;
+    if (this.editMode === 'look') {
+      // 見た目モード: 8x8x8グリッド
+      const brushCoords = this._getBrushCoordinates(x, y, z);
 
-    // ブラシサイズに応じて配置
-    const brushCoords = this._getBrushCoordinates(x, y, z);
+      let changed = false;
+      brushCoords.forEach(coord => {
+        if (coord.x >= 0 && coord.x < 8 &&
+            coord.y >= 0 && coord.y < 8 &&
+            coord.z >= 0 && coord.z < 8) {
+          VoxelData.setVoxel(this.voxelLookData, coord.x, coord.y, coord.z, this.currentMaterial);
+          changed = true;
+        }
+      });
 
-    let changed = false;
-    brushCoords.forEach(coord => {
-      if (coord.x >= 0 && coord.x < 8 &&
-          coord.y >= 0 && coord.y < 8 &&
-          coord.z >= 0 && coord.z < 8) {
-        VoxelData.setVoxel(voxelData, coord.x, coord.y, coord.z, value);
-        changed = true;
+      if (changed) {
+        this._rebuildVoxelMesh();
+        if (this.onVoxelChange) {
+          this.onVoxelChange();
+        }
       }
-    });
+    } else {
+      // 当たり判定モード: 4x4x4グリッド
+      // 8x8x8座標を4x4x4座標に変換
+      const cx = Math.floor(x / 2);
+      const cy = Math.floor(y / 2);
+      const cz = Math.floor(z / 2);
 
-    if (changed) {
-      this._rebuildVoxelMesh();
-      if (this.onVoxelChange) {
-        this.onVoxelChange();
+      if (cx >= 0 && cx < 4 && cy >= 0 && cy < 4 && cz >= 0 && cz < 4) {
+        CustomCollision.setVoxel(this.voxelCollisionData, cx, cy, cz, 1);
+        this._rebuildVoxelMesh();
+        if (this.onVoxelChange) {
+          this.onVoxelChange();
+        }
       }
     }
   }
@@ -901,27 +1003,43 @@ class CustomBlockEditor {
    * @private
    */
   _removeVoxelAt(x, y, z) {
-    const voxelData = this.editMode === 'look' ? this.voxelLookData : this.voxelCollisionData;
+    if (this.editMode === 'look') {
+      // 見た目モード: 8x8x8グリッド
+      const brushCoords = this._getBrushCoordinates(x, y, z);
 
-    // ブラシサイズに応じて削除
-    const brushCoords = this._getBrushCoordinates(x, y, z);
+      let changed = false;
+      brushCoords.forEach(coord => {
+        if (coord.x >= 0 && coord.x < 8 &&
+            coord.y >= 0 && coord.y < 8 &&
+            coord.z >= 0 && coord.z < 8) {
+          if (VoxelData.getVoxel(this.voxelLookData, coord.x, coord.y, coord.z) !== 0) {
+            VoxelData.setVoxel(this.voxelLookData, coord.x, coord.y, coord.z, 0);
+            changed = true;
+          }
+        }
+      });
 
-    let changed = false;
-    brushCoords.forEach(coord => {
-      if (coord.x >= 0 && coord.x < 8 &&
-          coord.y >= 0 && coord.y < 8 &&
-          coord.z >= 0 && coord.z < 8) {
-        if (VoxelData.getVoxel(voxelData, coord.x, coord.y, coord.z) !== 0) {
-          VoxelData.setVoxel(voxelData, coord.x, coord.y, coord.z, 0);
-          changed = true;
+      if (changed) {
+        this._rebuildVoxelMesh();
+        if (this.onVoxelChange) {
+          this.onVoxelChange();
         }
       }
-    });
+    } else {
+      // 当たり判定モード: 4x4x4グリッド
+      // 8x8x8座標を4x4x4座標に変換
+      const cx = Math.floor(x / 2);
+      const cy = Math.floor(y / 2);
+      const cz = Math.floor(z / 2);
 
-    if (changed) {
-      this._rebuildVoxelMesh();
-      if (this.onVoxelChange) {
-        this.onVoxelChange();
+      if (cx >= 0 && cx < 4 && cy >= 0 && cy < 4 && cz >= 0 && cz < 4) {
+        if (CustomCollision.getVoxel(this.voxelCollisionData, cx, cy, cz) !== 0) {
+          CustomCollision.setVoxel(this.voxelCollisionData, cx, cy, cz, 0);
+          this._rebuildVoxelMesh();
+          if (this.onVoxelChange) {
+            this.onVoxelChange();
+          }
+        }
       }
     }
   }
