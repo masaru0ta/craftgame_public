@@ -297,7 +297,9 @@ BlockEditorUIが生成するUI要素。サイズ・色の詳細は `mockups/mock
 | 3Dプレビュー領域 | `.preview-3d` |
 | コントロールパネル | `.control-panel` |
 | スロットコンテナ | `.slots-container` |
+| 標準ブロック用スロットコンテナ | `.normal-slots` |
 | スロット枠 | `.material-item` |
+| スロット識別属性 | `data-slot="スロット名"` |
 | スロット画像 | `.slot-image` |
 | BGボタン | `.bg-btn` |
 | 背景色インジケーター | `.bg-color-indicator` |
@@ -308,6 +310,8 @@ BlockEditorUIが生成するUI要素。サイズ・色の詳細は `mockups/mock
 | モーダル閉じるボタン | `.texture-modal-close` |
 | テクスチャグリッド | `.texture-grid` |
 | テクスチャアイテム | `.texture-item` |
+| テクスチャアイテム名 | `.texture-item-name` |
+| 追加ボタン | `.texture-item.add-new` |
 
 ## 9. テスト観点
 

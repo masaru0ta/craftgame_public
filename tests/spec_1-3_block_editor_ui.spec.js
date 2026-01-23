@@ -301,12 +301,15 @@ test.describe('StandardBlockEditor クラス', () => {
 
     const initialized = await page.evaluate(() => {
       const editor = window.editorUI.standardBlockEditor;
+      // 公開メソッドを使用して初期化を確認
       return editor &&
-             editor.scene !== null &&
-             editor.camera !== null &&
-             editor.renderer !== null;
+             editor.getScene() !== null &&
+             editor.getCamera() !== null;
     });
     expect(initialized).toBe(true);
+
+    // canvasが生成されていることでレンダラー初期化を確認
+    await expect(page.locator('.preview-3d canvas')).toBeVisible();
   });
 
   test('getTextures() で現在のテクスチャ設定が取得できる', async ({ page }) => {
@@ -371,16 +374,17 @@ test.describe('3Dプレビュー表示', () => {
   });
 
   test('立方体が表示される', async ({ page }) => {
+    // シーン内にMeshオブジェクトが存在することを確認
     const hasCube = await page.evaluate(() => {
-      const editor = window.editorUI.standardBlockEditor;
-      return editor.blockMesh !== null;
+      const scene = window.editorUI.standardBlockEditor.getScene();
+      return scene.children.some(c => c.type === 'Mesh');
     });
     expect(hasCube).toBe(true);
   });
 
   test('初期表示でカメラ距離3になっている', async ({ page }) => {
     const distance = await page.evaluate(() => {
-      const camera = window.editorUI.standardBlockEditor.camera;
+      const camera = window.editorUI.standardBlockEditor.getCamera();
       return camera.position.length();
     });
     // カメラ距離が約3であることを確認（誤差許容）
@@ -389,18 +393,18 @@ test.describe('3Dプレビュー表示', () => {
 
   test('床面に白い枠線が表示される', async ({ page }) => {
     const hasFloorLine = await page.evaluate(() => {
-      const editor = window.editorUI.standardBlockEditor;
-      // floorLineまたはgridHelperが存在するか
-      return editor.floorLine !== null || editor.scene.children.some(c => c.type === 'LineSegments');
+      const scene = window.editorUI.standardBlockEditor.getScene();
+      // シーン内にLineまたはLineSegmentsが存在することを確認
+      return scene.children.some(c => c.type === 'Line' || c.type === 'LineSegments');
     });
     expect(hasFloorLine).toBe(true);
   });
 
   test('FRONT, RIGHT, LEFT, BACKのテキストが表示されている', async ({ page }) => {
     const hasLabels = await page.evaluate(() => {
-      const editor = window.editorUI.standardBlockEditor;
-      // Spriteまたはテキストオブジェクトが存在するか
-      return editor.scene.children.some(c => c.type === 'Sprite');
+      const scene = window.editorUI.standardBlockEditor.getScene();
+      // シーン内にSpriteオブジェクトが存在することを確認
+      return scene.children.some(c => c.type === 'Sprite');
     });
     expect(hasLabels).toBe(true);
   });
@@ -420,9 +424,10 @@ test.describe('カメラ操作', () => {
   });
 
   test('マウスドラッグで視点を回転できる', async ({ page }) => {
-    // 初期の水平角度を取得
-    const initialAngle = await page.evaluate(() => {
-      return window.editorUI.standardBlockEditor.horizontalAngle;
+    // 初期のカメラ位置を取得
+    const initialPos = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return { x: camera.position.x, z: camera.position.z };
     });
 
     // キャンバス上でドラッグ
@@ -434,16 +439,19 @@ test.describe('カメラ操作', () => {
     await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2);
     await page.mouse.up();
 
-    // 角度が変化している
-    const newAngle = await page.evaluate(() => {
-      return window.editorUI.standardBlockEditor.horizontalAngle;
+    // カメラ位置が変化している
+    const newPos = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return { x: camera.position.x, z: camera.position.z };
     });
-    expect(newAngle).not.toBe(initialAngle);
+    expect(newPos.x !== initialPos.x || newPos.z !== initialPos.z).toBe(true);
   });
 
   test('マウスを右にドラッグするとブロックが右に回転する', async ({ page }) => {
-    const initialAngle = await page.evaluate(() => {
-      return window.editorUI.standardBlockEditor.horizontalAngle;
+    // 初期のカメラ位置を取得
+    const initialPos = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return { x: camera.position.x, z: camera.position.z };
     });
 
     const canvas = page.locator('.preview-3d canvas');
@@ -455,17 +463,19 @@ test.describe('カメラ操作', () => {
     await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2);
     await page.mouse.up();
 
-    const newAngle = await page.evaluate(() => {
-      return window.editorUI.standardBlockEditor.horizontalAngle;
+    // カメラ位置が変化している（水平方向の回転）
+    const newPos = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return { x: camera.position.x, z: camera.position.z };
     });
-
-    // 右ドラッグで角度が変化する（実装により増減方向は異なる）
-    expect(newAngle).not.toBe(initialAngle);
+    expect(newPos.x !== initialPos.x || newPos.z !== initialPos.z).toBe(true);
   });
 
   test('マウスを上にドラッグするとブロックを上から見下ろす角度になる', async ({ page }) => {
-    const initialAngle = await page.evaluate(() => {
-      return window.editorUI.standardBlockEditor.verticalAngle;
+    // 初期のカメラY位置を取得
+    const initialY = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return camera.position.y;
     });
 
     const canvas = page.locator('.preview-3d canvas');
@@ -477,12 +487,12 @@ test.describe('カメラ操作', () => {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 100);
     await page.mouse.up();
 
-    const newAngle = await page.evaluate(() => {
-      return window.editorUI.standardBlockEditor.verticalAngle;
+    // カメラY位置が変化している（上から見下ろす角度になる）
+    const newY = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return camera.position.y;
     });
-
-    // 上ドラッグで垂直角度が変化する
-    expect(newAngle).not.toBe(initialAngle);
+    expect(newY).not.toBe(initialY);
   });
 
   test('上下の傾きが上側90度、下側90度までに制限される', async ({ page }) => {
@@ -495,17 +505,23 @@ test.describe('カメラ操作', () => {
     await page.mouse.move(box.x + box.width / 2, box.y - 500);
     await page.mouse.up();
 
-    const verticalAngle = await page.evaluate(() => {
-      return window.editorUI.standardBlockEditor.verticalAngle;
+    // カメラが真上（Y軸方向）を超えないことを確認
+    // カメラ距離を取得し、Y座標がその距離以下であることを確認
+    const cameraState = await page.evaluate(() => {
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      const distance = camera.position.length();
+      return { y: camera.position.y, distance };
     });
 
-    // 90度（π/2ラジアン）以下に制限されている
-    expect(verticalAngle).toBeLessThanOrEqual(90);
+    // Y座標が距離以下（真上を超えない）
+    expect(cameraState.y).toBeLessThanOrEqual(cameraState.distance);
   });
 
   test('マウスホイールで拡大縮小できる', async ({ page }) => {
+    // 初期のカメラ距離を取得
     const initialDistance = await page.evaluate(() => {
-      return window.editorUI.standardBlockEditor.cameraDistance;
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return camera.position.length();
     });
 
     const canvas = page.locator('.preview-3d canvas');
@@ -518,8 +534,10 @@ test.describe('カメラ操作', () => {
     // 少し待機
     await page.waitForTimeout(100);
 
+    // カメラ距離が変化している
     const newDistance = await page.evaluate(() => {
-      return window.editorUI.standardBlockEditor.cameraDistance;
+      const camera = window.editorUI.standardBlockEditor.getCamera();
+      return camera.position.length();
     });
 
     // 距離が変化している
