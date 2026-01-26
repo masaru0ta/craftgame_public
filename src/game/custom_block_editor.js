@@ -4,6 +4,11 @@
  * Three.jsシーン管理、カメラ操作、ボクセル編集を担当
  */
 class CustomBlockEditor {
+  // 定数
+  static GRID_SIZE = 8;           // グリッドサイズ（8x8x8）
+  static VOXEL_SIZE = 0.125;      // 各ボクセルのサイズ（1/8）
+  static COLLISION_GRID_SIZE = 4; // 当たり判定グリッドサイズ（4x4x4）
+
   /**
    * @param {Object} options
    * @param {HTMLElement} options.container - Three.jsをマウントするDOM要素
@@ -74,6 +79,9 @@ class CustomBlockEditor {
 
     // テクスチャ画像データ
     this.textureImages = {};
+
+    // 計算済み定数（キャッシュ）
+    this._voxelOffset = (CustomBlockEditor.GRID_SIZE * CustomBlockEditor.VOXEL_SIZE) / 2 - CustomBlockEditor.VOXEL_SIZE / 2;
   }
 
   /**
@@ -546,6 +554,49 @@ class CustomBlockEditor {
   _setupRaycaster() {
     this.raycaster = new this.THREE.Raycaster();
     this.mouse = new this.THREE.Vector2();
+    // 床面プレーンを事前作成（パフォーマンス向上）
+    this._floorPlane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), 0.5);
+    this._intersectionPoint = new this.THREE.Vector3();
+  }
+
+  /**
+   * マウスイベントからレイキャスターをセットアップ
+   * @private
+   * @param {MouseEvent} event
+   */
+  _updateRaycasterFromEvent(event) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+  }
+
+  /**
+   * メッシュ位置からボクセル座標を計算
+   * @private
+   * @param {THREE.Vector3} position - メッシュの位置
+   * @returns {{x: number, y: number, z: number}} ボクセル座標
+   */
+  _positionToVoxelCoord(position) {
+    const voxelSize = CustomBlockEditor.VOXEL_SIZE;
+    return {
+      x: Math.round((position.x + this._voxelOffset) / voxelSize),
+      y: Math.round((position.y + this._voxelOffset) / voxelSize),
+      z: Math.round((position.z + this._voxelOffset) / voxelSize)
+    };
+  }
+
+  /**
+   * 座標が有効範囲内かチェック
+   * @private
+   * @param {number} x
+   * @param {number} y
+   * @param {number} z
+   * @param {number} gridSize - グリッドサイズ（デフォルト: 8）
+   * @returns {boolean}
+   */
+  _isValidCoord(x, y, z, gridSize = CustomBlockEditor.GRID_SIZE) {
+    return x >= 0 && x < gridSize && y >= 0 && y < gridSize && z >= 0 && z < gridSize;
   }
 
   /**
@@ -776,11 +827,7 @@ class CustomBlockEditor {
    * @private
    */
   _updateHighlight(event) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-    this.raycaster.setFromCamera(this.mouse, this.camera);
+    this._updateRaycasterFromEvent(event);
 
     // ボクセルメッシュとの交差チェック
     if (this.voxelGroup && this.voxelGroup.children.length > 0) {
@@ -800,25 +847,17 @@ class CustomBlockEditor {
         normal.transformDirection(hitObject.matrixWorld);
 
         // ヒットしたボクセルの座標を取得
-        const voxelSize = 0.125;
-        const offset = 0.5 - voxelSize / 2;
-        const hitX = Math.round((hitObject.position.x + offset) / voxelSize);
-        const hitY = Math.round((hitObject.position.y + offset) / voxelSize);
-        const hitZ = Math.round((hitObject.position.z + offset) / voxelSize);
+        const hitCoord = this._positionToVoxelCoord(hitObject.position);
 
         // 法線方向に隣接する位置
-        const targetX = hitX + Math.round(normal.x);
-        const targetY = hitY + Math.round(normal.y);
-        const targetZ = hitZ + Math.round(normal.z);
+        const targetX = hitCoord.x + Math.round(normal.x);
+        const targetY = hitCoord.y + Math.round(normal.y);
+        const targetZ = hitCoord.z + Math.round(normal.z);
 
         // 設置可能かチェック（8x8x8の範囲内）
-        const canPlace = targetX >= 0 && targetX < 8 &&
-                         targetY >= 0 && targetY < 8 &&
-                         targetZ >= 0 && targetZ < 8;
-
-        if (canPlace) {
+        if (this._isValidCoord(targetX, targetY, targetZ)) {
           this.highlightFace.position.copy(hitObject.position);
-          this.highlightFace.position.add(normal.multiplyScalar(0.0625 + 0.001));
+          this.highlightFace.position.add(normal.multiplyScalar(CustomBlockEditor.VOXEL_SIZE / 2 + 0.001));
           this.highlightFace.lookAt(this.highlightFace.position.clone().add(normal));
           this.highlightFace.visible = true;
         } else {
@@ -831,23 +870,20 @@ class CustomBlockEditor {
     }
 
     // 床面との交差チェック
-    const floorPlane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), 0.5);
-    const intersection = new this.THREE.Vector3();
-    this.raycaster.ray.intersectPlane(floorPlane, intersection);
+    this.raycaster.ray.intersectPlane(this._floorPlane, this._intersectionPoint);
 
-    if (intersection) {
-      const voxelSize = 0.125;
-      const offset = 0.5 - voxelSize / 2;
+    if (this._intersectionPoint) {
+      const voxelSize = CustomBlockEditor.VOXEL_SIZE;
 
       // グリッドにスナップ
-      const gridX = Math.floor((intersection.x + 0.5) / voxelSize);
-      const gridZ = Math.floor((intersection.z + 0.5) / voxelSize);
+      const gridX = Math.floor((this._intersectionPoint.x + 0.5) / voxelSize);
+      const gridZ = Math.floor((this._intersectionPoint.z + 0.5) / voxelSize);
 
-      if (gridX >= 0 && gridX < 8 && gridZ >= 0 && gridZ < 8) {
+      if (gridX >= 0 && gridX < CustomBlockEditor.GRID_SIZE && gridZ >= 0 && gridZ < CustomBlockEditor.GRID_SIZE) {
         this.gridHighlight.position.set(
-          gridX * voxelSize - offset,
+          gridX * voxelSize - this._voxelOffset,
           -0.5 + 0.001,
-          gridZ * voxelSize - offset
+          gridZ * voxelSize - this._voxelOffset
         );
         this.gridHighlight.visible = true;
       } else {
@@ -866,11 +902,7 @@ class CustomBlockEditor {
    * @private
    */
   _placeVoxel(event) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-    this.raycaster.setFromCamera(this.mouse, this.camera);
+    this._updateRaycasterFromEvent(event);
 
     let targetCoord = null;
 
@@ -880,42 +912,30 @@ class CustomBlockEditor {
 
       if (intersects.length > 0) {
         const hit = intersects[0];
-        const hitObject = hit.object;
-        const hitFace = hit.face;
-
-        // ヒットしたボクセルの座標を取得
-        const voxelSize = 0.125;
-        const offset = 0.5 - voxelSize / 2;
-
-        const hitX = Math.round((hitObject.position.x + offset) / voxelSize);
-        const hitY = Math.round((hitObject.position.y + offset) / voxelSize);
-        const hitZ = Math.round((hitObject.position.z + offset) / voxelSize);
+        const hitCoord = this._positionToVoxelCoord(hit.object.position);
 
         // 法線方向に隣接する位置
-        const normal = hitFace.normal.clone();
-        normal.transformDirection(hitObject.matrixWorld);
+        const normal = hit.face.normal.clone();
+        normal.transformDirection(hit.object.matrixWorld);
 
         targetCoord = {
-          x: hitX + Math.round(normal.x),
-          y: hitY + Math.round(normal.y),
-          z: hitZ + Math.round(normal.z)
+          x: hitCoord.x + Math.round(normal.x),
+          y: hitCoord.y + Math.round(normal.y),
+          z: hitCoord.z + Math.round(normal.z)
         };
       }
     }
 
     // 床面との交差チェック（ボクセルがない場合）
     if (!targetCoord) {
-      const floorPlane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), 0.5);
-      const intersection = new this.THREE.Vector3();
-      this.raycaster.ray.intersectPlane(floorPlane, intersection);
+      this.raycaster.ray.intersectPlane(this._floorPlane, this._intersectionPoint);
 
-      if (intersection) {
-        const voxelSize = 0.125;
+      if (this._intersectionPoint) {
+        const voxelSize = CustomBlockEditor.VOXEL_SIZE;
+        const gridX = Math.floor((this._intersectionPoint.x + 0.5) / voxelSize);
+        const gridZ = Math.floor((this._intersectionPoint.z + 0.5) / voxelSize);
 
-        const gridX = Math.floor((intersection.x + 0.5) / voxelSize);
-        const gridZ = Math.floor((intersection.z + 0.5) / voxelSize);
-
-        if (gridX >= 0 && gridX < 8 && gridZ >= 0 && gridZ < 8) {
+        if (this._isValidCoord(gridX, 0, gridZ)) {
           targetCoord = { x: gridX, y: 0, z: gridZ };
         }
       }
@@ -936,20 +956,16 @@ class CustomBlockEditor {
       const brushCoords = this._getBrushCoordinates(x, y, z);
 
       let changed = false;
-      brushCoords.forEach(coord => {
-        if (coord.x >= 0 && coord.x < 8 &&
-            coord.y >= 0 && coord.y < 8 &&
-            coord.z >= 0 && coord.z < 8) {
+      for (const coord of brushCoords) {
+        if (this._isValidCoord(coord.x, coord.y, coord.z)) {
           VoxelData.setVoxel(this.voxelLookData, coord.x, coord.y, coord.z, this.currentMaterial);
           changed = true;
         }
-      });
+      }
 
       if (changed) {
         this._rebuildVoxelMesh();
-        if (this.onVoxelChange) {
-          this.onVoxelChange();
-        }
+        if (this.onVoxelChange) this.onVoxelChange();
       }
     } else {
       // 当たり判定モード: 4x4x4グリッド
@@ -958,7 +974,7 @@ class CustomBlockEditor {
       const cy = Math.floor(y / 2);
       const cz = Math.floor(z / 2);
 
-      if (cx >= 0 && cx < 4 && cy >= 0 && cy < 4 && cz >= 0 && cz < 4) {
+      if (this._isValidCoord(cx, cy, cz, CustomBlockEditor.COLLISION_GRID_SIZE)) {
         CustomCollision.setVoxel(this.voxelCollisionData, cx, cy, cz, 1);
         this._rebuildVoxelMesh();
         if (this.onVoxelChange) {
@@ -973,27 +989,14 @@ class CustomBlockEditor {
    * @private
    */
   _removeVoxel(event) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-    this.raycaster.setFromCamera(this.mouse, this.camera);
+    this._updateRaycasterFromEvent(event);
 
     if (this.voxelGroup && this.voxelGroup.children.length > 0) {
       const intersects = this.raycaster.intersectObjects(this.voxelGroup.children);
 
       if (intersects.length > 0) {
-        const hit = intersects[0];
-        const hitObject = hit.object;
-
-        const voxelSize = 0.125;
-        const offset = 0.5 - voxelSize / 2;
-
-        const hitX = Math.round((hitObject.position.x + offset) / voxelSize);
-        const hitY = Math.round((hitObject.position.y + offset) / voxelSize);
-        const hitZ = Math.round((hitObject.position.z + offset) / voxelSize);
-
-        this._removeVoxelAt(hitX, hitY, hitZ);
+        const hitCoord = this._positionToVoxelCoord(intersects[0].object.position);
+        this._removeVoxelAt(hitCoord.x, hitCoord.y, hitCoord.z);
       }
     }
   }
@@ -1008,22 +1011,18 @@ class CustomBlockEditor {
       const brushCoords = this._getBrushCoordinates(x, y, z);
 
       let changed = false;
-      brushCoords.forEach(coord => {
-        if (coord.x >= 0 && coord.x < 8 &&
-            coord.y >= 0 && coord.y < 8 &&
-            coord.z >= 0 && coord.z < 8) {
+      for (const coord of brushCoords) {
+        if (this._isValidCoord(coord.x, coord.y, coord.z)) {
           if (VoxelData.getVoxel(this.voxelLookData, coord.x, coord.y, coord.z) !== 0) {
             VoxelData.setVoxel(this.voxelLookData, coord.x, coord.y, coord.z, 0);
             changed = true;
           }
         }
-      });
+      }
 
       if (changed) {
         this._rebuildVoxelMesh();
-        if (this.onVoxelChange) {
-          this.onVoxelChange();
-        }
+        if (this.onVoxelChange) this.onVoxelChange();
       }
     } else {
       // 当たり判定モード: 4x4x4グリッド
@@ -1032,13 +1031,11 @@ class CustomBlockEditor {
       const cy = Math.floor(y / 2);
       const cz = Math.floor(z / 2);
 
-      if (cx >= 0 && cx < 4 && cy >= 0 && cy < 4 && cz >= 0 && cz < 4) {
+      if (this._isValidCoord(cx, cy, cz, CustomBlockEditor.COLLISION_GRID_SIZE)) {
         if (CustomCollision.getVoxel(this.voxelCollisionData, cx, cy, cz) !== 0) {
           CustomCollision.setVoxel(this.voxelCollisionData, cx, cy, cz, 0);
           this._rebuildVoxelMesh();
-          if (this.onVoxelChange) {
-            this.onVoxelChange();
-          }
+          if (this.onVoxelChange) this.onVoxelChange();
         }
       }
     }

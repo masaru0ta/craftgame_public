@@ -4,6 +4,10 @@
  * 8x8x8ボクセルデータからThree.jsメッシュを生成
  */
 class CustomBlockMeshBuilder {
+  // 定数
+  static GRID_SIZE = 8;
+  static DEFAULT_VOXEL_SIZE = 0.125;
+
   /**
    * @param {Object} THREE - Three.jsライブラリ
    */
@@ -75,18 +79,7 @@ class CustomBlockMeshBuilder {
    */
   _createVoxelMesh(x, y, z, size, material) {
     const geometry = new this.THREE.BoxGeometry(size, size, size);
-    const mesh = new this.THREE.Mesh(geometry, material);
-
-    // ボクセル位置を計算（中心を原点にする）
-    // 8x8x8の中心が(0,0,0)になるように配置
-    const offset = (8 * size) / 2 - size / 2;
-    mesh.position.set(
-      x * size - offset,
-      y * size - offset,
-      z * size - offset
-    );
-
-    return mesh;
+    return this._createMeshWithPosition(geometry, x, y, z, size, material);
   }
 
   /**
@@ -95,19 +88,23 @@ class CustomBlockMeshBuilder {
    */
   _createVoxelMeshWithUV(x, y, z, size, material) {
     const geometry = new this.THREE.BoxGeometry(size, size, size);
-
-    // UV座標を設定
     this._setVoxelUV(geometry, x, y, z);
+    return this._createMeshWithPosition(geometry, x, y, z, size, material);
+  }
 
+  /**
+   * ジオメトリからメッシュを作成し位置を設定
+   * @private
+   */
+  _createMeshWithPosition(geometry, x, y, z, size, material) {
     const mesh = new this.THREE.Mesh(geometry, material);
-
-    const offset = (8 * size) / 2 - size / 2;
+    // 8x8x8の中心が(0,0,0)になるように配置
+    const offset = (CustomBlockMeshBuilder.GRID_SIZE * size) / 2 - size / 2;
     mesh.position.set(
       x * size - offset,
       y * size - offset,
       z * size - offset
     );
-
     return mesh;
   }
 
@@ -164,21 +161,9 @@ class CustomBlockMeshBuilder {
    * @returns {THREE.MeshLambertMaterial}
    */
   createDefaultMaterial(textureBase64 = null) {
-    if (textureBase64) {
-      const loader = new this.THREE.TextureLoader();
-      const texture = loader.load(textureBase64);
-      texture.magFilter = this.THREE.NearestFilter;
-      texture.minFilter = this.THREE.NearestFilter;
-
-      return new this.THREE.MeshLambertMaterial({
-        map: texture,
-        transparent: false
-      });
-    }
-
-    return new this.THREE.MeshLambertMaterial({
-      color: 0x808080
-    });
+    return textureBase64
+      ? this.createMaterialFromTexture(textureBase64)
+      : this.createColorMaterial(0x808080);
   }
 
   /**
@@ -187,15 +172,8 @@ class CustomBlockMeshBuilder {
    * @returns {THREE.MeshLambertMaterial}
    */
   createMaterialFromTexture(textureBase64) {
-    const loader = new this.THREE.TextureLoader();
-    const texture = loader.load(textureBase64);
-    texture.magFilter = this.THREE.NearestFilter;
-    texture.minFilter = this.THREE.NearestFilter;
-
-    return new this.THREE.MeshLambertMaterial({
-      map: texture,
-      transparent: false
-    });
+    const texture = this._loadTexture(textureBase64);
+    return new this.THREE.MeshLambertMaterial({ map: texture, transparent: false });
   }
 
   /**
@@ -205,5 +183,17 @@ class CustomBlockMeshBuilder {
    */
   createColorMaterial(color) {
     return new this.THREE.MeshLambertMaterial({ color });
+  }
+
+  /**
+   * テクスチャをロード（共通処理）
+   * @private
+   */
+  _loadTexture(textureBase64) {
+    const loader = new this.THREE.TextureLoader();
+    const texture = loader.load(textureBase64);
+    texture.magFilter = this.THREE.NearestFilter;
+    texture.minFilter = this.THREE.NearestFilter;
+    return texture;
   }
 }

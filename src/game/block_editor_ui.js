@@ -799,6 +799,27 @@ class BlockEditorUI {
   }
 
   /**
+   * スロット画像を更新（共通処理）
+   * @private
+   * @param {HTMLElement} slotImage - スロット画像要素
+   * @param {string|null} textureName - テクスチャ名
+   * @param {boolean} showGrayFallback - テクスチャがない場合にグレー背景を表示するか
+   */
+  _updateSlotImage(slotImage, textureName, showGrayFallback = false) {
+    if (textureName) {
+      const tex = this.textures.find(t => t.file_name === textureName);
+      if (tex && tex.image_base64) {
+        slotImage.style.backgroundImage = `url(${tex.image_base64})`;
+        slotImage.style.backgroundSize = 'cover';
+        slotImage.style.backgroundPosition = 'center';
+        return;
+      }
+    }
+    slotImage.style.backgroundImage = '';
+    slotImage.style.backgroundColor = showGrayFallback ? '#808080' : '';
+  }
+
+  /**
    * 標準ブロック用スロットUIを更新
    * @private
    */
@@ -807,24 +828,10 @@ class BlockEditorUI {
 
     const textures = this.standardBlockEditor.getTextures();
 
-    this.normalSlots.forEach(slot => {
-      const slotEl = this.slotElements[slot];
-      const slotImage = slotEl.querySelector('.slot-image');
-      const textureName = textures[slot];
-
-      if (textureName) {
-        const tex = this.textures.find(t => t.file_name === textureName);
-        if (tex && tex.image_base64) {
-          slotImage.style.backgroundImage = `url(${tex.image_base64})`;
-          slotImage.style.backgroundSize = 'cover';
-          slotImage.style.backgroundPosition = 'center';
-        } else {
-          slotImage.style.backgroundImage = '';
-        }
-      } else {
-        slotImage.style.backgroundImage = '';
-      }
-    });
+    for (const slot of this.normalSlots) {
+      const slotImage = this.slotElements[slot].querySelector('.slot-image');
+      this._updateSlotImage(slotImage, textures[slot], false);
+    }
   }
 
   /**
@@ -836,26 +843,10 @@ class BlockEditorUI {
 
     const materials = this.customBlockEditor.getMaterials();
 
-    this.customSlots.forEach(slot => {
-      const slotEl = this.materialSlotElements[slot];
-      const slotImage = slotEl.querySelector('.slot-image');
-      const textureName = materials[`material_${slot}`];
-
-      if (textureName) {
-        const tex = this.textures.find(t => t.file_name === textureName);
-        if (tex && tex.image_base64) {
-          slotImage.style.backgroundImage = `url(${tex.image_base64})`;
-          slotImage.style.backgroundSize = 'cover';
-          slotImage.style.backgroundPosition = 'center';
-        } else {
-          slotImage.style.backgroundImage = '';
-          slotImage.style.backgroundColor = '#808080';
-        }
-      } else {
-        slotImage.style.backgroundImage = '';
-        slotImage.style.backgroundColor = '#808080';
-      }
-    });
+    for (const slot of this.customSlots) {
+      const slotImage = this.materialSlotElements[slot].querySelector('.slot-image');
+      this._updateSlotImage(slotImage, materials[`material_${slot}`], true);
+    }
 
     this._updateMaterialSlotSelection();
   }
