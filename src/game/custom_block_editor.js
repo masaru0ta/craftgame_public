@@ -82,6 +82,25 @@ class CustomBlockEditor {
 
     // 計算済み定数（キャッシュ）
     this._voxelOffset = (CustomBlockEditor.GRID_SIZE * CustomBlockEditor.VOXEL_SIZE) / 2 - CustomBlockEditor.VOXEL_SIZE / 2;
+
+    // パーティクルシステム
+    this.particleSystem = null;
+    this.lastFrameTime = null;
+
+    // ミニプレビュー用オブジェクト
+    this.miniPreviewContainer = null;
+    this.miniPreviewScene = null;
+    this.miniPreviewCamera = null;
+    this.miniPreviewRenderer = null;
+    this.miniPreviewMesh = null;
+
+    // 連続設置用状態
+    this.continuousPlacement = {
+      active: false,
+      direction: null,
+      lastCoord: null,
+      intervalId: null
+    };
   }
 
   /**
@@ -99,7 +118,19 @@ class CustomBlockEditor {
     this._attachEvents();
     this._initMaterials();
     this._initVoxelData();
+    this._initParticleSystem();
     this._startRenderLoop();
+  }
+
+  /**
+   * パーティクルシステムを初期化
+   * @private
+   */
+  _initParticleSystem() {
+    this.particleSystem = new VoxelParticleSystem({
+      scene: this.scene,
+      THREE: this.THREE
+    });
   }
 
   /**
@@ -218,6 +249,26 @@ class CustomBlockEditor {
   }
 
   /**
+   * パーティクルシステムを取得（テスト用）
+   * @returns {VoxelParticleSystem} パーティクルシステム
+   */
+  getParticleSystem() {
+    return this.particleSystem;
+  }
+
+  /**
+   * 連続設置状態を取得（テスト用）
+   * @returns {Object} 連続設置状態
+   */
+  getContinuousPlacementState() {
+    return {
+      active: this.continuousPlacement.active,
+      direction: this.continuousPlacement.direction,
+      lastCoord: this.continuousPlacement.lastCoord
+    };
+  }
+
+  /**
    * 編集モードを設定
    * @param {string} mode - 'look' または 'collision'
    */
@@ -231,6 +282,9 @@ class CustomBlockEditor {
       }
 
       this._rebuildVoxelMesh();
+
+      // ミニプレビューも更新
+      this._rebuildMiniPreviewMesh();
     }
   }
 
@@ -365,6 +419,9 @@ class CustomBlockEditor {
    * リソース解放
    */
   dispose() {
+    // 連続設置を停止
+    this._stopContinuousPlacement();
+
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
     }
@@ -378,6 +435,17 @@ class CustomBlockEditor {
       }
     }
 
+    // ミニプレビューリソース解放
+    if (this.miniPreviewRenderer) {
+      this.miniPreviewRenderer.dispose();
+    }
+
+    // パーティクルシステム解放
+    if (this.particleSystem) {
+      this.particleSystem.dispose();
+      this.particleSystem = null;
+    }
+
     // マテリアル解放
     this.materials.forEach(mat => {
       if (mat) mat.dispose();
@@ -388,6 +456,103 @@ class CustomBlockEditor {
       this.voxelGroup.traverse(obj => {
         if (obj.geometry) obj.geometry.dispose();
       });
+    }
+  }
+
+  /**
+   * ミニプレビューを初期化
+   * @param {HTMLElement} container - ミニプレビューをマウントするコンテナ（モード切替ボタン）
+   */
+  initMiniPreview(container) {
+    this.miniPreviewContainer = container;
+
+    // コンテナ内をクリア
+    container.innerHTML = '';
+
+    // シーン作成
+    this.miniPreviewScene = new this.THREE.Scene();
+
+    // カメラ作成（メインカメラと同じ角度）
+    this.miniPreviewCamera = new this.THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    this._updateMiniPreviewCamera();
+
+    // レンダラー作成
+    this.miniPreviewRenderer = new this.THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true
+    });
+    const size = Math.min(container.clientWidth, container.clientHeight) || 32;
+    this.miniPreviewRenderer.setSize(size, size);
+    this.miniPreviewRenderer.setClearColor(0x000000, 0);
+    container.appendChild(this.miniPreviewRenderer.domElement);
+
+    // ライト追加
+    const ambientLight = new this.THREE.AmbientLight(0xffffff, 0.6);
+    this.miniPreviewScene.add(ambientLight);
+    const directionalLight = new this.THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 10, 7.5);
+    this.miniPreviewScene.add(directionalLight);
+
+    // 初期メッシュを構築
+    this._rebuildMiniPreviewMesh();
+  }
+
+  /**
+   * ミニプレビューのカメラを更新（メインカメラと同期）
+   * @private
+   */
+  _updateMiniPreviewCamera() {
+    if (!this.miniPreviewCamera) return;
+
+    const hRad = this.horizontalAngle * Math.PI / 180;
+    const vRad = this.verticalAngle * Math.PI / 180;
+
+    const x = this.cameraDistance * Math.sin(hRad) * Math.cos(vRad);
+    const y = this.cameraDistance * Math.sin(vRad);
+    const z = this.cameraDistance * Math.cos(hRad) * Math.cos(vRad);
+
+    this.miniPreviewCamera.position.set(x, y, z);
+    this.miniPreviewCamera.lookAt(0, 0, 0);
+  }
+
+  /**
+   * ミニプレビューのメッシュを再構築
+   * 見た目モードでは当たり判定を、当たり判定モードでは見た目を表示
+   * @private
+   */
+  _rebuildMiniPreviewMesh() {
+    if (!this.miniPreviewScene) return;
+
+    // 既存メッシュを削除
+    if (this.miniPreviewMesh) {
+      this.miniPreviewScene.remove(this.miniPreviewMesh);
+      this.miniPreviewMesh.traverse(obj => {
+        if (obj.geometry) obj.geometry.dispose();
+      });
+    }
+
+    // 現在のモードの逆のデータを表示
+    if (this.editMode === 'look') {
+      // 見た目モードでは当たり判定ボクセルを表示
+      const collisionDisplayData = this._expandCollisionToLookSize();
+      const whiteMaterial = this.meshBuilder.createColorMaterial(0xffffff);
+      this.miniPreviewMesh = this.meshBuilder.build(collisionDisplayData, [whiteMaterial, whiteMaterial, whiteMaterial]);
+    } else {
+      // 当たり判定モードでは見た目ボクセルを表示
+      this.miniPreviewMesh = this.meshBuilder.buildWithUV(this.voxelLookData, this.materials);
+    }
+
+    this.miniPreviewMesh.visible = true;
+    this.miniPreviewScene.add(this.miniPreviewMesh);
+  }
+
+  /**
+   * ミニプレビューをレンダリング
+   * @private
+   */
+  _renderMiniPreview() {
+    if (this.miniPreviewRenderer && this.miniPreviewScene && this.miniPreviewCamera) {
+      this.miniPreviewRenderer.render(this.miniPreviewScene, this.miniPreviewCamera);
     }
   }
 
@@ -429,6 +594,9 @@ class CustomBlockEditor {
 
     this.camera.position.set(x, y, z);
     this.camera.lookAt(0, 0, 0);
+
+    // ミニプレビューカメラも同期
+    this._updateMiniPreviewCamera();
   }
 
   /**
@@ -474,17 +642,18 @@ class CustomBlockEditor {
    * @private
    */
   _setupLabels() {
+    // 床面の高さ（Y=-0.5）で各方向に距離1の位置
     const labelPositions = [
-      { text: 'FRONT', pos: [0, -0.5, 0.7] },
-      { text: 'BACK', pos: [0, -0.5, -0.7] },
-      { text: 'LEFT', pos: [-0.7, -0.5, 0] },
-      { text: 'RIGHT', pos: [0.7, -0.5, 0] }
+      { text: 'FRONT', pos: [0, -0.5, 1] },
+      { text: 'BACK', pos: [0, -0.5, -1] },
+      { text: 'LEFT', pos: [-1, -0.5, 0] },
+      { text: 'RIGHT', pos: [1, -0.5, 0] }
     ];
 
     labelPositions.forEach(label => {
       const sprite = this._createTextSprite(label.text);
       sprite.position.set(...label.pos);
-      sprite.scale.set(0.3, 0.15, 1);
+      sprite.scale.set(0.5, 0.125, 1); // 1-3 StandardBlockEditorと同一仕様
       this.scene.add(sprite);
       this.labels.push(sprite);
     });
@@ -492,22 +661,23 @@ class CustomBlockEditor {
 
   /**
    * テキストスプライトを作成
+   * 1-3 StandardBlockEditorと同一仕様：フォント20px Arial、色#ffffff
    * @private
    */
   _createTextSprite(text) {
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
+    canvas.width = 128;
+    canvas.height = 32;
     const ctx = canvas.getContext('2d');
 
     ctx.fillStyle = 'rgba(0, 0, 0, 0)';
-    ctx.fillRect(0, 0, 256, 64);
+    ctx.fillRect(0, 0, 128, 32);
 
-    ctx.font = '32px Arial';
-    ctx.fillStyle = '#888888';
+    ctx.font = '20px Arial';
+    ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, 128, 32);
+    ctx.fillText(text, 64, 16);
 
     const texture = new this.THREE.CanvasTexture(canvas);
     const material = new this.THREE.SpriteMaterial({
@@ -622,6 +792,23 @@ class CustomBlockEditor {
       x: Math.round((position.x + this._voxelOffset) / voxelSize),
       y: Math.round((position.y + this._voxelOffset) / voxelSize),
       z: Math.round((position.z + this._voxelOffset) / voxelSize)
+    };
+  }
+
+  /**
+   * ボクセル座標からワールド座標に変換
+   * @private
+   * @param {number} vx - ボクセルX座標
+   * @param {number} vy - ボクセルY座標
+   * @param {number} vz - ボクセルZ座標
+   * @returns {{x: number, y: number, z: number}} ワールド座標
+   */
+  _voxelCoordToPosition(vx, vy, vz) {
+    const voxelSize = CustomBlockEditor.VOXEL_SIZE;
+    return {
+      x: vx * voxelSize - this._voxelOffset,
+      y: vy * voxelSize - this._voxelOffset,
+      z: vz * voxelSize - this._voxelOffset
     };
   }
 
@@ -780,6 +967,9 @@ class CustomBlockEditor {
       this.lastMouseY = event.clientY;
       this.dragStartX = event.clientX;
       this.dragStartY = event.clientY;
+    } else if (event.button === 2) {
+      // 右クリックで連続設置を開始
+      this._startContinuousPlacement(event);
     }
   }
 
@@ -827,6 +1017,11 @@ class CustomBlockEditor {
       }
     }
     this.isDragging = false;
+
+    // 右クリック解放で連続設置を停止
+    if (event.button === 2) {
+      this._stopContinuousPlacement();
+    }
   }
 
   /**
@@ -843,14 +1038,12 @@ class CustomBlockEditor {
   }
 
   /**
-   * コンテキストメニュー無効化 & ボクセル配置
+   * コンテキストメニュー無効化
    * @private
    */
   _handleContextMenu(event) {
     event.preventDefault();
-
-    // 右クリックでボクセル配置
-    this._placeVoxel(event);
+    // ボクセル配置は mousedown で処理するため、ここでは何もしない
   }
 
   /**
@@ -964,51 +1157,14 @@ class CustomBlockEditor {
   }
 
   /**
-   * ボクセルを配置
+   * ボクセルを配置（単発、イベントから）
    * @private
    */
   _placeVoxel(event) {
     this._updateRaycasterFromEvent(event);
-
-    let targetCoord = null;
-
-    // ボクセルメッシュとの交差チェック
-    if (this.voxelGroup && this.voxelGroup.children.length > 0) {
-      const intersects = this.raycaster.intersectObjects(this.voxelGroup.children);
-
-      if (intersects.length > 0) {
-        const hit = intersects[0];
-        const hitCoord = this._positionToVoxelCoord(hit.object.position);
-
-        // 法線方向に隣接する位置
-        const normal = hit.face.normal.clone();
-        normal.transformDirection(hit.object.matrixWorld);
-
-        targetCoord = {
-          x: hitCoord.x + Math.round(normal.x),
-          y: hitCoord.y + Math.round(normal.y),
-          z: hitCoord.z + Math.round(normal.z)
-        };
-      }
-    }
-
-    // 床面との交差チェック（ボクセルがない場合）
-    if (!targetCoord) {
-      this.raycaster.ray.intersectPlane(this._floorPlane, this._intersectionPoint);
-
-      if (this._intersectionPoint) {
-        const voxelSize = CustomBlockEditor.VOXEL_SIZE;
-        const gridX = Math.floor((this._intersectionPoint.x + 0.5) / voxelSize);
-        const gridZ = Math.floor((this._intersectionPoint.z + 0.5) / voxelSize);
-
-        if (this._isValidCoord(gridX, 0, gridZ)) {
-          targetCoord = { x: gridX, y: 0, z: gridZ };
-        }
-      }
-    }
-
-    if (targetCoord) {
-      this._placeVoxelAt(targetCoord.x, targetCoord.y, targetCoord.z);
+    const placement = this._calculatePlacementTarget();
+    if (placement) {
+      this._placeVoxelAt(placement.coord.x, placement.coord.y, placement.coord.z);
     }
   }
 
@@ -1079,7 +1235,10 @@ class CustomBlockEditor {
       let changed = false;
       for (const coord of brushCoords) {
         if (this._isValidCoord(coord.x, coord.y, coord.z)) {
-          if (VoxelData.getVoxel(this.voxelLookData, coord.x, coord.y, coord.z) !== 0) {
+          const material = VoxelData.getVoxel(this.voxelLookData, coord.x, coord.y, coord.z);
+          if (material !== 0) {
+            // パーティクルを発生させる
+            this._emitVoxelParticle(coord.x, coord.y, coord.z, material);
             VoxelData.setVoxel(this.voxelLookData, coord.x, coord.y, coord.z, 0);
             changed = true;
           }
@@ -1105,6 +1264,31 @@ class CustomBlockEditor {
         }
       }
     }
+  }
+
+  /**
+   * ボクセル削除パーティクルを発生させる
+   * @param {number} vx - ボクセルX座標
+   * @param {number} vy - ボクセルY座標
+   * @param {number} vz - ボクセルZ座標
+   * @param {number} material - マテリアル番号 (1-3)
+   * @private
+   */
+  _emitVoxelParticle(vx, vy, vz, material) {
+    if (!this.particleSystem) return;
+
+    // ボクセル座標をワールド座標に変換
+    const worldPos = this._voxelCoordToPosition(vx, vy, vz);
+
+    // マテリアルの色を取得（白フォールバック）
+    let color = 0xffffff;
+    const materialIndex = material - 1;
+    if (materialIndex >= 0 && materialIndex < this.materials.length && this.materials[materialIndex].color) {
+      color = this.materials[materialIndex].color.getHex();
+    }
+
+    // パーティクルを発生
+    this.particleSystem.emit(worldPos.x, worldPos.y, worldPos.z, color);
   }
 
   /**
@@ -1148,14 +1332,164 @@ class CustomBlockEditor {
   }
 
   /**
+   * 連続設置を開始
+   * @private
+   * @param {MouseEvent} event
+   */
+  _startContinuousPlacement(event) {
+    this._updateRaycasterFromEvent(event);
+
+    // 最初の設置位置と方向を計算
+    const placement = this._calculatePlacementTarget();
+    if (!placement) return;
+
+    // 最初のボクセルを即座に設置
+    this._placeVoxelAt(placement.coord.x, placement.coord.y, placement.coord.z);
+
+    // 連続設置状態を開始
+    this.continuousPlacement.active = true;
+    this.continuousPlacement.direction = placement.direction;
+    this.continuousPlacement.lastCoord = placement.coord;
+
+    // 0.5秒後から連続設置を開始
+    this.continuousPlacement.intervalId = setInterval(() => {
+      this._continuePlacement();
+    }, 500);
+  }
+
+  /**
+   * 連続設置を停止
+   * @private
+   */
+  _stopContinuousPlacement() {
+    if (this.continuousPlacement.intervalId) {
+      clearInterval(this.continuousPlacement.intervalId);
+      this.continuousPlacement.intervalId = null;
+    }
+    this.continuousPlacement.active = false;
+    this.continuousPlacement.direction = null;
+    this.continuousPlacement.lastCoord = null;
+  }
+
+  /**
+   * 連続設置を継続（1回分の設置）
+   * @private
+   */
+  _continuePlacement() {
+    if (!this.continuousPlacement.active) return;
+
+    const lastCoord = this.continuousPlacement.lastCoord;
+    const direction = this.continuousPlacement.direction;
+    if (!lastCoord || !direction) return;
+
+    // 次の設置位置を計算
+    const brushSize = this.brushSize;
+    const nextCoord = {
+      x: lastCoord.x + Math.round(direction.x) * brushSize,
+      y: lastCoord.y + Math.round(direction.y) * brushSize,
+      z: lastCoord.z + Math.round(direction.z) * brushSize
+    };
+
+    // 範囲外チェック
+    const gridSize = this.editMode === 'look' ?
+      CustomBlockEditor.GRID_SIZE : CustomBlockEditor.COLLISION_GRID_SIZE;
+    const maxCoord = this.editMode === 'look' ?
+      CustomBlockEditor.GRID_SIZE - brushSize :
+      CustomBlockEditor.COLLISION_GRID_SIZE - 1;
+
+    if (nextCoord.x < 0 || nextCoord.x > maxCoord ||
+        nextCoord.y < 0 || nextCoord.y > maxCoord ||
+        nextCoord.z < 0 || nextCoord.z > maxCoord) {
+      // 範囲外に到達したら停止
+      this._stopContinuousPlacement();
+      return;
+    }
+
+    // ボクセルを設置
+    this._placeVoxelAt(nextCoord.x, nextCoord.y, nextCoord.z);
+    this.continuousPlacement.lastCoord = nextCoord;
+  }
+
+  /**
+   * 設置対象の位置と方向を計算
+   * @private
+   * @returns {{coord: {x,y,z}, direction: {x,y,z}} | null}
+   */
+  _calculatePlacementTarget() {
+    let targetCoord = null;
+    let direction = { x: 0, y: 1, z: 0 }; // デフォルトは上方向
+
+    // ボクセルメッシュとの交差チェック
+    if (this.voxelGroup && this.voxelGroup.children.length > 0) {
+      const intersects = this.raycaster.intersectObjects(this.voxelGroup.children);
+
+      if (intersects.length > 0) {
+        const hit = intersects[0];
+        const hitCoord = this._positionToVoxelCoord(hit.object.position);
+
+        // 法線方向を取得
+        const normal = hit.face.normal.clone();
+        normal.transformDirection(hit.object.matrixWorld);
+        direction = { x: normal.x, y: normal.y, z: normal.z };
+
+        // ブラシサイズに応じたスナップ
+        const snapX = Math.floor(hitCoord.x / this.brushSize) * this.brushSize;
+        const snapY = Math.floor(hitCoord.y / this.brushSize) * this.brushSize;
+        const snapZ = Math.floor(hitCoord.z / this.brushSize) * this.brushSize;
+
+        targetCoord = {
+          x: snapX + Math.round(normal.x) * this.brushSize,
+          y: snapY + Math.round(normal.y) * this.brushSize,
+          z: snapZ + Math.round(normal.z) * this.brushSize
+        };
+      }
+    }
+
+    // 床面との交差チェック（ボクセルがない場合）
+    if (!targetCoord) {
+      this.raycaster.ray.intersectPlane(this._floorPlane, this._intersectionPoint);
+
+      if (this._intersectionPoint) {
+        const voxelSize = CustomBlockEditor.VOXEL_SIZE;
+        const brushVoxelSize = voxelSize * this.brushSize;
+        const gridX = Math.floor((this._intersectionPoint.x + 0.5) / brushVoxelSize) * this.brushSize;
+        const gridZ = Math.floor((this._intersectionPoint.z + 0.5) / brushVoxelSize) * this.brushSize;
+
+        if (gridX >= 0 && gridX + this.brushSize <= CustomBlockEditor.GRID_SIZE &&
+            gridZ >= 0 && gridZ + this.brushSize <= CustomBlockEditor.GRID_SIZE) {
+          targetCoord = { x: gridX, y: 0, z: gridZ };
+          direction = { x: 0, y: 1, z: 0 }; // 床面からは上方向
+        }
+      }
+    }
+
+    if (!targetCoord) return null;
+
+    return { coord: targetCoord, direction: direction };
+  }
+
+  /**
    * レンダーループを開始
    * @private
    */
   _startRenderLoop() {
-    const render = () => {
+    const render = (currentTime) => {
       this.animationId = requestAnimationFrame(render);
+
+      // デルタタイムを計算（パーティクル更新用）
+      if (this.lastFrameTime !== null) {
+        const deltaTime = (currentTime - this.lastFrameTime) / 1000;
+        // パーティクルシステムを更新
+        if (this.particleSystem) {
+          this.particleSystem.update(deltaTime);
+        }
+      }
+      this.lastFrameTime = currentTime;
+
       this.renderer.render(this.scene, this.camera);
+      // ミニプレビューもレンダリング
+      this._renderMiniPreview();
     };
-    render();
+    render(performance.now());
   }
 }

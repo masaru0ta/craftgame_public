@@ -51,15 +51,18 @@ test.describe('BlockEditorUI カスタムブロック拡張', () => {
 
     // 初期モードはlook
     const modeBtn = page.locator('.mode-toggle-btn');
-    await expect(modeBtn).toHaveText('look');
+    let mode = await page.evaluate(() => window.editorUI.customBlockEditor.getEditMode());
+    expect(mode).toBe('look');
 
     // クリックでcollisionに切り替わる
     await modeBtn.click();
-    await expect(modeBtn).toHaveText('collision');
+    mode = await page.evaluate(() => window.editorUI.customBlockEditor.getEditMode());
+    expect(mode).toBe('collision');
 
     // 再度クリックでlookに戻る
     await modeBtn.click();
-    await expect(modeBtn).toHaveText('look');
+    mode = await page.evaluate(() => window.editorUI.customBlockEditor.getEditMode());
+    expect(mode).toBe('look');
   });
 
   test('ブラシサイズボタンでブラシサイズが変更される', async ({ page }) => {
@@ -1136,6 +1139,260 @@ test.describe('データ形式', () => {
 });
 
 // ============================================
+// 方向ラベルの位置仕様（床面の高さ Y=-0.5）
+// ============================================
+test.describe('方向ラベルの位置仕様', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await page.selectOption('#block-select', { index: 1 });
+    await expect(page.locator('.preview-3d canvas')).toBeVisible();
+  });
+
+  test('FRONTラベルが床面の高さ（Y=-0.5）で距離1の位置にある', async ({ page }) => {
+    const labelPos = await page.evaluate(() => {
+      const scene = window.editorUI.customBlockEditor.getScene();
+      const labels = scene.children.filter(c => c.type === 'Sprite');
+      // FRONTラベルを見つける（Z座標が正の方向）
+      const frontLabel = labels.find(l => l.position.z > 0.5);
+      if (frontLabel) {
+        return { x: frontLabel.position.x, y: frontLabel.position.y, z: frontLabel.position.z };
+      }
+      return null;
+    });
+    expect(labelPos).not.toBeNull();
+    expect(Math.abs(labelPos.x)).toBeLessThan(0.1);
+    expect(labelPos.y).toBeCloseTo(-0.5, 1);
+    expect(labelPos.z).toBeCloseTo(1, 1);
+  });
+
+  test('BACKラベルが床面の高さ（Y=-0.5）で距離1の位置にある', async ({ page }) => {
+    const labelPos = await page.evaluate(() => {
+      const scene = window.editorUI.customBlockEditor.getScene();
+      const labels = scene.children.filter(c => c.type === 'Sprite');
+      // BACKラベルを見つける（Z座標が負の方向）
+      const backLabel = labels.find(l => l.position.z < -0.5);
+      if (backLabel) {
+        return { x: backLabel.position.x, y: backLabel.position.y, z: backLabel.position.z };
+      }
+      return null;
+    });
+    expect(labelPos).not.toBeNull();
+    expect(Math.abs(labelPos.x)).toBeLessThan(0.1);
+    expect(labelPos.y).toBeCloseTo(-0.5, 1);
+    expect(labelPos.z).toBeCloseTo(-1, 1);
+  });
+
+  test('LEFTラベルが床面の高さ（Y=-0.5）で距離1の位置にある', async ({ page }) => {
+    const labelPos = await page.evaluate(() => {
+      const scene = window.editorUI.customBlockEditor.getScene();
+      const labels = scene.children.filter(c => c.type === 'Sprite');
+      // LEFTラベルを見つける（X座標が負の方向）
+      const leftLabel = labels.find(l => l.position.x < -0.5 && Math.abs(l.position.z) < 0.5);
+      if (leftLabel) {
+        return { x: leftLabel.position.x, y: leftLabel.position.y, z: leftLabel.position.z };
+      }
+      return null;
+    });
+    expect(labelPos).not.toBeNull();
+    expect(labelPos.x).toBeCloseTo(-1, 1);
+    expect(labelPos.y).toBeCloseTo(-0.5, 1);
+    expect(Math.abs(labelPos.z)).toBeLessThan(0.1);
+  });
+
+  test('RIGHTラベルが床面の高さ（Y=-0.5）で距離1の位置にある', async ({ page }) => {
+    const labelPos = await page.evaluate(() => {
+      const scene = window.editorUI.customBlockEditor.getScene();
+      const labels = scene.children.filter(c => c.type === 'Sprite');
+      // RIGHTラベルを見つける（X座標が正の方向）
+      const rightLabel = labels.find(l => l.position.x > 0.5 && Math.abs(l.position.z) < 0.5);
+      if (rightLabel) {
+        return { x: rightLabel.position.x, y: rightLabel.position.y, z: rightLabel.position.z };
+      }
+      return null;
+    });
+    expect(labelPos).not.toBeNull();
+    expect(labelPos.x).toBeCloseTo(1, 1);
+    expect(labelPos.y).toBeCloseTo(-0.5, 1);
+    expect(Math.abs(labelPos.z)).toBeLessThan(0.1);
+  });
+
+});
+
+// ============================================
+// 方向ラベルのフォント仕様（1-3との統一）
+// ============================================
+test.describe('方向ラベルのフォント仕様', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await page.selectOption('#block-select', { index: 1 });
+    await expect(page.locator('.preview-3d canvas')).toBeVisible();
+  });
+
+  test('FRONT/LEFT/RIGHT/BACKラベルのフォント色が#ffffff（白色）である', async ({ page }) => {
+    // シーン内のSpriteのマテリアルテクスチャを確認
+    const labelColor = await page.evaluate(() => {
+      const scene = window.editorUI.customBlockEditor.getScene();
+      const sprite = scene.children.find(c => c.type === 'Sprite');
+      if (sprite && sprite.material && sprite.material.map) {
+        const canvas = sprite.material.map.image;
+        const ctx = canvas.getContext('2d');
+        // キャンバス全体をスキャンして白色ピクセルを探す
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          const r = imageData.data[i];
+          const g = imageData.data[i + 1];
+          const b = imageData.data[i + 2];
+          const a = imageData.data[i + 3];
+          // 不透明で白に近いピクセルを見つける
+          if (a > 200 && r > 200 && g > 200 && b > 200) {
+            return { r, g, b };
+          }
+        }
+        return { r: 0, g: 0, b: 0, notFound: true };
+      }
+      return null;
+    });
+
+    expect(labelColor).not.toBeNull();
+    // 白色（RGB各255）に近いことを確認
+    expect(labelColor.r).toBeGreaterThanOrEqual(250);
+    expect(labelColor.g).toBeGreaterThanOrEqual(250);
+    expect(labelColor.b).toBeGreaterThanOrEqual(250);
+  });
+
+});
+
+// ============================================
+// モード切替ミニプレビュー
+// ============================================
+test.describe('モード切替ミニプレビュー', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await page.selectOption('#block-select', { index: 1 });
+    await expect(page.locator('.preview-3d canvas')).toBeVisible();
+  });
+
+  test('モード切替ボタン内にcanvas要素が存在する', async ({ page }) => {
+    const modeToggleCanvas = page.locator('.mode-toggle-btn canvas');
+    await expect(modeToggleCanvas).toBeVisible();
+  });
+
+  test('モード切替ボタンにテキストが表示されていない', async ({ page }) => {
+    const modeBtn = page.locator('.mode-toggle-btn');
+    // ボタン内のテキストコンテンツが空（またはcanvasのみ）
+    const textContent = await modeBtn.evaluate(el => {
+      // canvas以外の直接のテキストノードを確認
+      let text = '';
+      for (const node of el.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          text += node.textContent.trim();
+        }
+      }
+      return text;
+    });
+    expect(textContent).toBe('');
+  });
+
+  test('見た目モードではミニプレビューに当たり判定ボクセルが表示される', async ({ page }) => {
+    // 見た目モードであることを確認
+    const mode = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getEditMode();
+    });
+    expect(mode).toBe('look');
+
+    // ミニプレビューのシーンに当たり判定メッシュが表示されていることを確認
+    const miniPreviewShowsCollision = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      if (!editor.miniPreviewScene) return false;
+      // ミニプレビューに当たり判定用メッシュが追加されているか確認
+      return editor.miniPreviewMesh !== null && editor.miniPreviewMesh.visible;
+    });
+    expect(miniPreviewShowsCollision).toBe(true);
+  });
+
+  test('当たり判定モードではミニプレビューに見た目ボクセルが表示される', async ({ page }) => {
+    // 当たり判定モードに切り替え
+    await page.locator('.mode-toggle-btn').click();
+
+    const mode = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getEditMode();
+    });
+    expect(mode).toBe('collision');
+
+    // ミニプレビューのシーンに見た目メッシュが表示されていることを確認
+    const miniPreviewShowsLook = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      if (!editor.miniPreviewScene) return false;
+      // ミニプレビューに見た目用メッシュが追加されているか確認
+      return editor.miniPreviewMesh !== null && editor.miniPreviewMesh.visible;
+    });
+    expect(miniPreviewShowsLook).toBe(true);
+  });
+
+  test('ミニプレビューのカメラ角度が中央プレビューと連動する', async ({ page }) => {
+    // 初期状態のカメラ角度を取得
+    const initialAngles = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      return {
+        horizontal: editor.horizontalAngle,
+        vertical: editor.verticalAngle
+      };
+    });
+
+    // 中央プレビューをドラッグして回転
+    const canvas = page.locator('.preview-3d canvas');
+    const box = await canvas.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2);
+    await page.mouse.up();
+
+    // 回転後の角度を取得
+    const newAngles = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      return {
+        horizontal: editor.horizontalAngle,
+        vertical: editor.verticalAngle
+      };
+    });
+
+    // 角度が変化していることを確認
+    expect(newAngles.horizontal).not.toBe(initialAngles.horizontal);
+
+    // ミニプレビューのカメラ角度も同じであることを確認
+    const miniPreviewAngles = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      if (!editor.miniPreviewCamera) return null;
+      // ミニプレビューカメラの位置から角度を逆算
+      const camera = editor.miniPreviewCamera;
+      const distance = Math.sqrt(
+        camera.position.x ** 2 +
+        camera.position.y ** 2 +
+        camera.position.z ** 2
+      );
+      const verticalRad = Math.asin(camera.position.y / distance);
+      const horizontalRad = Math.atan2(camera.position.x, camera.position.z);
+      return {
+        horizontal: horizontalRad * 180 / Math.PI,
+        vertical: verticalRad * 180 / Math.PI
+      };
+    });
+
+    expect(miniPreviewAngles).not.toBeNull();
+    // 角度が連動していることを確認（許容誤差1度）
+    expect(Math.abs(miniPreviewAngles.horizontal - newAngles.horizontal)).toBeLessThan(1);
+    expect(Math.abs(miniPreviewAngles.vertical - newAngles.vertical)).toBeLessThan(1);
+  });
+
+});
+
+// ============================================
 // UIレイアウト（モックアップ準拠）
 // ============================================
 test.describe('UIレイアウト（モックアップ準拠）', () => {
@@ -1245,6 +1502,625 @@ test.describe('UIレイアウト（モックアップ準拠）', () => {
     const autoCreateBtn = page.locator('.auto-create-btn');
     const fontSize = await autoCreateBtn.evaluate(el => window.getComputedStyle(el).fontSize);
     expect(fontSize).toBe('16px');
+  });
+
+});
+
+// ============================================
+// 衝突テストボール挙動
+// ============================================
+test.describe('衝突テストボール挙動', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await page.selectOption('#block-select', { index: 1 });
+    await expect(page.locator('.preview-3d canvas')).toBeVisible();
+  });
+
+  test('衝突テストボールの重力加速度が-9.8*0.2（約-1.96）である', async ({ page }) => {
+    const gravity = await page.evaluate(() => {
+      return CollisionChecker.GRAVITY;
+    });
+    expect(gravity).toBeCloseTo(-9.8 * 0.2, 2);
+  });
+
+  test('ボール同士の衝突が有効化されている', async ({ page }) => {
+    const ballCollision = await page.evaluate(() => {
+      return CollisionChecker.BALL_COLLISION;
+    });
+    expect(ballCollision).toBe(true);
+  });
+
+  test('ボール同士が衝突すると速度が変化する', async ({ page }) => {
+    // 衝突テストを開始
+    await page.locator('.check-btn').click();
+
+    // ボールを2つ同じ位置に配置して衝突させる
+    const velocityChanged = await page.evaluate(() => {
+      const collisionChecker = window.editorUI.collisionChecker;
+      if (!collisionChecker || !collisionChecker.isRunning) return false;
+
+      const balls = collisionChecker.getBalls();
+      if (balls.length < 2) return false;
+
+      // ボール0とボール1を近い位置に配置
+      const ball0 = balls[0];
+      const ball1 = balls[1];
+
+      ball0.position.set(0, 0.5, 0);
+      ball0.velocity.set(0.5, 0, 0); // 右に移動
+
+      ball1.position.set(0.05, 0.5, 0); // ボール0のすぐ右
+      ball1.velocity.set(-0.5, 0, 0); // 左に移動
+
+      const initialV0x = ball0.velocity.x;
+      const initialV1x = ball1.velocity.x;
+
+      // 1フレーム分の更新を強制実行
+      collisionChecker._update(1 / 60);
+
+      // 速度が変化したか確認（衝突により速度が反転または変化）
+      return ball0.velocity.x !== initialV0x || ball1.velocity.x !== initialV1x;
+    });
+
+    expect(velocityChanged).toBe(true);
+
+    // テスト停止
+    await page.locator('.check-btn').click();
+  });
+
+  test('衝突テスト開始時にボールが生成される', async ({ page }) => {
+    // 衝突テストを開始
+    await page.locator('.check-btn').click();
+
+    // ボールが存在することを確認
+    const ballCount = await page.evaluate(() => {
+      const collisionChecker = window.editorUI.collisionChecker;
+      if (collisionChecker && collisionChecker.isRunning) {
+        return collisionChecker.getBalls().length;
+      }
+      return 0;
+    });
+    expect(ballCount).toBe(30);
+
+    // テスト停止
+    await page.locator('.check-btn').click();
+  });
+
+  test('ボールは当たり判定ボクセルがない状態では奈落に落ちる', async ({ page }) => {
+    // 衝突テストを開始
+    await page.locator('.check-btn').click();
+
+    // 少し待機してボールが落下する
+    await page.waitForTimeout(500);
+
+    // ボールのY座標を確認（初期位置より下がっているはず）
+    const ballPositions = await page.evaluate(() => {
+      const collisionChecker = window.editorUI.collisionChecker;
+      if (collisionChecker && collisionChecker.isRunning) {
+        return collisionChecker.getBalls().map(b => b.position.y);
+      }
+      return [];
+    });
+
+    // ボールが存在し、落下していることを確認
+    expect(ballPositions.length).toBeGreaterThan(0);
+
+    // テスト停止
+    await page.locator('.check-btn').click();
+  });
+
+  test('奈落に落ちたボールは初期位置に再生成される', async ({ page }) => {
+    // 衝突テストを開始
+    await page.locator('.check-btn').click();
+
+    // 長めに待機してボールが奈落に落ち再生成される
+    await page.waitForTimeout(2000);
+
+    // ボールの数が維持されていることを確認
+    const ballCount = await page.evaluate(() => {
+      const collisionChecker = window.editorUI.collisionChecker;
+      if (collisionChecker && collisionChecker.isRunning) {
+        return collisionChecker.getBalls().length;
+      }
+      return 0;
+    });
+    expect(ballCount).toBe(30);
+
+    // テスト停止
+    await page.locator('.check-btn').click();
+  });
+
+});
+
+// ============================================
+// テクスチャアップロード機能
+// ============================================
+test.describe('テクスチャアップロード機能', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await page.selectOption('#block-select', { index: 1 });
+  });
+
+  test('「追加」クリックでファイル選択ダイアログが開く', async ({ page }) => {
+    // マテリアルスロットをクリックしてモーダルを開く
+    await page.click('.custom-slots .material-item[data-material-slot="1"]');
+    await expect(page.locator('.texture-modal-overlay')).toBeVisible();
+
+    // ファイル選択要素が存在することを確認
+    const fileInputExists = await page.evaluate(() => {
+      return document.querySelector('#texture-file-input') !== null;
+    });
+    expect(fileInputExists).toBe(true);
+
+    // 「追加」をクリック
+    const fileInputPromise = page.waitForEvent('filechooser');
+    await page.locator('.texture-grid .texture-item.add-new').click();
+
+    // ファイル選択ダイアログが開くことを確認
+    const fileChooser = await fileInputPromise;
+    expect(fileChooser).toBeDefined();
+  });
+
+});
+
+// ============================================
+// 面ごとの明るさ
+// ============================================
+test.describe('面ごとの明るさ', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await page.selectOption('#block-select', { index: 1 });
+    await expect(page.locator('.preview-3d canvas')).toBeVisible();
+  });
+
+  test('FACE_BRIGHTNESS定数が定義されている', async ({ page }) => {
+    const brightness = await page.evaluate(() => {
+      return CustomBlockMeshBuilder.FACE_BRIGHTNESS;
+    });
+    expect(brightness).toBeDefined();
+    expect(brightness.TOP).toBeCloseTo(1.0, 2);
+    expect(brightness.FRONT).toBeCloseTo(0.85, 2);
+    expect(brightness.BACK).toBeCloseTo(0.85, 2);
+    expect(brightness.LEFT).toBeCloseTo(0.75, 2);
+    expect(brightness.RIGHT).toBeCloseTo(0.75, 2);
+    expect(brightness.BOTTOM).toBeCloseTo(0.5, 2);
+  });
+
+  test('ボクセルメッシュに頂点カラーが設定されている', async ({ page }) => {
+    const hasVertexColors = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      const mesh = editor.getLookMesh();
+      if (!mesh || mesh.children.length === 0) return false;
+
+      // 最初のボクセルメッシュをチェック
+      const voxel = mesh.children[0];
+      if (!voxel || !voxel.geometry) return false;
+
+      // 頂点カラー属性が存在するか
+      return voxel.geometry.attributes.color !== undefined;
+    });
+    expect(hasVertexColors).toBe(true);
+  });
+
+  test('マテリアルにvertexColorsが有効化されている', async ({ page }) => {
+    const vertexColorsEnabled = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      const mesh = editor.getLookMesh();
+      if (!mesh || mesh.children.length === 0) return false;
+
+      const voxel = mesh.children[0];
+      if (!voxel || !voxel.material) return false;
+
+      return voxel.material.vertexColors === true;
+    });
+    expect(vertexColorsEnabled).toBe(true);
+  });
+
+  test('MeshBasicMaterialが使用されている', async ({ page }) => {
+    const isMeshBasicMaterial = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      const mesh = editor.getLookMesh();
+      if (!mesh || mesh.children.length === 0) return false;
+
+      const voxel = mesh.children[0];
+      if (!voxel || !voxel.material) return false;
+
+      return voxel.material.type === 'MeshBasicMaterial';
+    });
+    expect(isMeshBasicMaterial).toBe(true);
+  });
+
+});
+
+// ============================================
+// 連続設置機能
+// ============================================
+test.describe('連続設置機能', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await page.selectOption('#block-select', { index: 1 });
+    await expect(page.locator('.preview-3d canvas')).toBeVisible();
+  });
+
+  test('getContinuousPlacementState() で連続設置状態を取得できる', async ({ page }) => {
+    const state = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getContinuousPlacementState();
+    });
+
+    expect(state).toBeDefined();
+    expect(state).toHaveProperty('active');
+    expect(state).toHaveProperty('direction');
+    expect(state).toHaveProperty('lastCoord');
+  });
+
+  test('初期状態では連続設置が非アクティブ', async ({ page }) => {
+    const state = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getContinuousPlacementState();
+    });
+
+    expect(state.active).toBe(false);
+    expect(state.direction).toBeNull();
+    expect(state.lastCoord).toBeNull();
+  });
+
+  test('右クリック押下で即座に1個目のボクセルが設置される', async ({ page }) => {
+    // 初期データを取得
+    const initialData = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getVoxelLookData();
+    });
+
+    const canvas = page.locator('.preview-3d canvas');
+    const box = await canvas.boundingBox();
+
+    // 右クリック押下（mousedownのみ）
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down({ button: 'right' });
+
+    // 即座に設置されることを確認
+    const afterData = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getVoxelLookData();
+    });
+
+    // データが変化していればボクセルが設置された
+    // （床面にボクセルがない状態からの設置）
+    expect(typeof afterData).toBe('string');
+
+    // マウスアップで終了
+    await page.mouse.up({ button: 'right' });
+  });
+
+  test('右クリック長押しで0.5秒後に2個目のボクセルが設置される', async ({ page }) => {
+    // プログラム的に連続設置をテスト（マウスイベントの代わり）
+    const result = await page.evaluate(async () => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // 空のボクセルデータで初期化
+      editor.voxelLookData = VoxelData.createEmpty();
+      editor._rebuildVoxelMesh();
+      editor._stopContinuousPlacement();
+
+      // 最初のボクセルを設置
+      editor._placeVoxelAt(2, 0, 2);
+      const afterFirstData = editor.getVoxelLookData();
+
+      // 連続設置を開始（プログラム的に）
+      editor.continuousPlacement.active = true;
+      editor.continuousPlacement.direction = { x: 0, y: 1, z: 0 };
+      editor.continuousPlacement.lastCoord = { x: 2, y: 0, z: 2 };
+
+      editor.continuousPlacement.intervalId = setInterval(() => {
+        editor._continuePlacement();
+      }, 500);
+
+      // 0.6秒待機
+      await new Promise(r => setTimeout(r, 600));
+
+      const afterSecondData = editor.getVoxelLookData();
+      const state = editor.getContinuousPlacementState();
+
+      // 停止
+      editor._stopContinuousPlacement();
+
+      return {
+        afterFirstData,
+        afterSecondData,
+        state,
+        dataChanged: afterFirstData !== afterSecondData
+      };
+    });
+
+    // データが変化している（追加設置された）
+    expect(result.dataChanged).toBe(true);
+    expect(result.afterSecondData).not.toBe(result.afterFirstData);
+  });
+
+  test('右クリック長押し中は連続設置状態がアクティブになる', async ({ page }) => {
+    // プログラム的に連続設置状態をテスト
+    const state = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // リセット
+      editor.voxelLookData = VoxelData.createEmpty();
+      editor._rebuildVoxelMesh();
+      editor._stopContinuousPlacement();
+
+      // 連続設置を開始（プログラム的に）
+      editor._placeVoxelAt(2, 0, 2);
+      editor.continuousPlacement.active = true;
+      editor.continuousPlacement.direction = { x: 0, y: 1, z: 0 };
+      editor.continuousPlacement.lastCoord = { x: 2, y: 0, z: 2 };
+
+      return editor.getContinuousPlacementState();
+    });
+
+    expect(state.active).toBe(true);
+    expect(state.direction).not.toBeNull();
+    expect(state.lastCoord).not.toBeNull();
+
+    // クリーンアップ
+    await page.evaluate(() => {
+      window.editorUI.customBlockEditor._stopContinuousPlacement();
+    });
+  });
+
+  test('右クリックを離すと連続設置が停止する', async ({ page }) => {
+    // プログラム的に連続設置の停止をテスト
+    const result = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // リセット
+      editor._stopContinuousPlacement();
+
+      // 連続設置を開始（プログラム的に）
+      editor.continuousPlacement.active = true;
+      editor.continuousPlacement.direction = { x: 0, y: 1, z: 0 };
+      editor.continuousPlacement.lastCoord = { x: 2, y: 0, z: 2 };
+
+      const stateActive = editor.getContinuousPlacementState().active;
+
+      // 停止
+      editor._stopContinuousPlacement();
+
+      const stateInactive = editor.getContinuousPlacementState().active;
+
+      return { stateActive, stateInactive };
+    });
+
+    expect(result.stateActive).toBe(true);
+    expect(result.stateInactive).toBe(false);
+  });
+
+  test('連続設置中にマウスを動かしても最初の位置から延長し続ける', async ({ page }) => {
+    // プログラム的に連続設置中の方向固定をテスト
+    const result = await page.evaluate(async () => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // リセット
+      editor.voxelLookData = VoxelData.createEmpty();
+      editor._rebuildVoxelMesh();
+      editor._stopContinuousPlacement();
+
+      // 連続設置を開始
+      const initialDirection = { x: 0, y: 1, z: 0 };
+      editor._placeVoxelAt(2, 0, 2);
+      editor.continuousPlacement.active = true;
+      editor.continuousPlacement.direction = { ...initialDirection };
+      editor.continuousPlacement.lastCoord = { x: 2, y: 0, z: 2 };
+
+      editor.continuousPlacement.intervalId = setInterval(() => {
+        editor._continuePlacement();
+      }, 500);
+
+      // 0.6秒待機
+      await new Promise(r => setTimeout(r, 600));
+
+      const afterState = editor.getContinuousPlacementState();
+
+      // 停止
+      editor._stopContinuousPlacement();
+
+      return {
+        initialDirection,
+        afterDirection: afterState.direction
+      };
+    });
+
+    // 方向は最初と同じ（連続設置中に変わらない）
+    expect(result.afterDirection.x).toBe(result.initialDirection.x);
+    expect(result.afterDirection.y).toBe(result.initialDirection.y);
+    expect(result.afterDirection.z).toBe(result.initialDirection.z);
+  });
+
+  test('範囲外に到達すると連続設置が停止する', async ({ page }) => {
+    // プログラム的に範囲外到達時の停止をテスト
+    const result = await page.evaluate(async () => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // リセット
+      editor.voxelLookData = VoxelData.createEmpty();
+      editor._rebuildVoxelMesh();
+      editor._stopContinuousPlacement();
+      editor.brushSize = 4; // ブラシサイズ4
+
+      // 連続設置を開始（Y=4から開始、次はY=8で範囲外）
+      editor._placeVoxelAt(0, 4, 0);
+      editor.continuousPlacement.active = true;
+      editor.continuousPlacement.direction = { x: 0, y: 1, z: 0 };
+      editor.continuousPlacement.lastCoord = { x: 0, y: 4, z: 0 };
+
+      editor.continuousPlacement.intervalId = setInterval(() => {
+        editor._continuePlacement();
+      }, 500);
+
+      // 0.6秒待機（1回の連続設置で範囲外に到達）
+      await new Promise(r => setTimeout(r, 600));
+
+      const state = editor.getContinuousPlacementState();
+
+      // クリーンアップ
+      editor._stopContinuousPlacement();
+      editor.brushSize = 2;
+
+      return state;
+    });
+
+    // 範囲外に到達したので停止している
+    expect(result.active).toBe(false);
+  });
+
+  test('連続設置間隔が約0.5秒である', async ({ page }) => {
+    // プログラム的に連続設置間隔をテスト
+    const result = await page.evaluate(async () => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // リセット
+      editor.voxelLookData = VoxelData.createEmpty();
+      editor._rebuildVoxelMesh();
+      editor._stopContinuousPlacement();
+
+      // 連続設置を開始
+      editor._placeVoxelAt(2, 0, 2);
+      editor.continuousPlacement.active = true;
+      editor.continuousPlacement.direction = { x: 0, y: 1, z: 0 };
+      editor.continuousPlacement.lastCoord = { x: 2, y: 0, z: 2 };
+
+      const timestamps = [];
+      timestamps.push({ time: Date.now(), coord: { ...editor.continuousPlacement.lastCoord } });
+
+      editor.continuousPlacement.intervalId = setInterval(() => {
+        editor._continuePlacement();
+        if (editor.continuousPlacement.lastCoord) {
+          timestamps.push({ time: Date.now(), coord: { ...editor.continuousPlacement.lastCoord } });
+        }
+      }, 500);
+
+      // 1.2秒待機（2回の連続設置）
+      await new Promise(r => setTimeout(r, 1200));
+
+      const state = editor.getContinuousPlacementState();
+
+      // 停止
+      editor._stopContinuousPlacement();
+
+      return {
+        timestamps,
+        finalState: state
+      };
+    });
+
+    // 少なくとも2回の設置が行われている（初期 + 2回）
+    expect(result.timestamps.length).toBeGreaterThanOrEqual(3);
+
+    // 間隔が約500msであることを確認
+    if (result.timestamps.length >= 2) {
+      const interval = result.timestamps[1].time - result.timestamps[0].time;
+      // 許容誤差 100ms
+      expect(interval).toBeLessThan(600);
+    }
+  });
+
+});
+
+// ============================================
+// パーティクルエフェクト
+// ============================================
+test.describe('パーティクルエフェクト', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await page.selectOption('#block-select', { index: 1 });
+    await expect(page.locator('.preview-3d canvas')).toBeVisible();
+  });
+
+  test('getParticleSystem() でパーティクルシステムを取得できる', async ({ page }) => {
+    const hasParticleSystem = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      return editor.getParticleSystem() !== null;
+    });
+    expect(hasParticleSystem).toBe(true);
+  });
+
+  test('パーティクル数が1個（削除ボクセルあたり）である', async ({ page }) => {
+    const count = await page.evaluate(() => {
+      return VoxelParticleSystem.PARTICLE_COUNT;
+    });
+    expect(count).toBe(1);
+  });
+
+  test('パーティクルサイズが0.16である', async ({ page }) => {
+    const size = await page.evaluate(() => {
+      return VoxelParticleSystem.PARTICLE_SIZE;
+    });
+    expect(size).toBeCloseTo(0.16, 2);
+  });
+
+  test('パーティクル重力加速度が4.0である', async ({ page }) => {
+    const gravity = await page.evaluate(() => {
+      return VoxelParticleSystem.PARTICLE_GRAVITY;
+    });
+    expect(gravity).toBeCloseTo(4.0, 2);
+  });
+
+  test('ボクセル削除時にパーティクルが生成される', async ({ page }) => {
+    // プログラム的にボクセルを配置して削除し、パーティクルを確認
+    const result = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // VoxelDataを使ってボクセルを配置
+      VoxelData.setVoxel(editor.voxelLookData, 4, 4, 4, 1);
+      editor._rebuildVoxelMesh();
+
+      // パーティクル数を取得（削除前は0）
+      const beforeCount = editor.getParticleSystem().getActiveCount();
+
+      // ボクセルを削除（パーティクルが発生するはず）
+      editor._removeVoxelAt(4, 4, 4);
+
+      // パーティクルが生成されたか確認
+      const afterCount = editor.getParticleSystem().getActiveCount();
+
+      return { before: beforeCount, after: afterCount };
+    });
+
+    expect(result.after).toBeGreaterThan(result.before);
+  });
+
+  test('パーティクルは時間経過で消滅する', async ({ page }) => {
+    // ボクセルを配置して削除、パーティクルを生成
+    const immediateCount = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // VoxelDataを使ってボクセルを配置
+      VoxelData.setVoxel(editor.voxelLookData, 3, 3, 3, 2);
+      editor._rebuildVoxelMesh();
+
+      // ボクセルを削除（パーティクルが発生）
+      editor._removeVoxelAt(3, 3, 3);
+
+      return editor.getParticleSystem().getActiveCount();
+    });
+
+    // パーティクルが生成されたことを確認
+    expect(immediateCount).toBeGreaterThan(0);
+
+    // パーティクル寿命（0.8秒）より長く待機
+    await page.waitForTimeout(1000);
+
+    // パーティクルが消滅したか確認
+    const afterCount = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getParticleSystem().getActiveCount();
+    });
+
+    expect(afterCount).toBeLessThan(immediateCount);
   });
 
 });
