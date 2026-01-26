@@ -309,11 +309,16 @@ function createBlock(blockData) {
 }
 
 /**
- * ブロックを追加または更新
+ * ブロックを更新（既存ブロックのみ）
  * @param {Object} blockData - ブロックデータ
  * @returns {Object} 結果
  */
 function saveBlock(blockData) {
+  // バリデーション: block_id が必須
+  if (blockData.block_id === undefined || blockData.block_id === null) {
+    throw new Error('block_id is required');
+  }
+
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_BLOCKS);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
@@ -329,6 +334,11 @@ function saveBlock(blockData) {
     }
   }
 
+  // 存在しない場合はエラー
+  if (rowIndex < 0) {
+    throw new Error('block_id not found');
+  }
+
   // 行データを作成
   const rowData = headers.map(header => {
     if (blockData.hasOwnProperty(header)) {
@@ -337,13 +347,8 @@ function saveBlock(blockData) {
     return '';
   });
 
-  if (rowIndex > 0) {
-    // 既存行を更新
-    sheet.getRange(rowIndex, 1, 1, headers.length).setValues([rowData]);
-  } else {
-    // 新規行を追加
-    sheet.appendRow(rowData);
-  }
+  // 既存行を更新
+  sheet.getRange(rowIndex, 1, 1, headers.length).setValues([rowData]);
 
   return { block_id: blockData.block_id };
 }
@@ -367,7 +372,7 @@ function deleteBlock(params) {
     }
   }
 
-  return { deleted: false };
+  throw new Error('block_id not found');
 }
 
 /**
@@ -383,16 +388,29 @@ function saveTexture(textureData) {
   // texture_idで既存行を検索
   const textureIdIndex = headers.indexOf('texture_id');
   let rowIndex = -1;
+  let maxTextureId = 0;
 
   for (let i = 1; i < data.length; i++) {
+    const id = data[i][textureIdIndex];
+    if (id && id > maxTextureId) {
+      maxTextureId = id;
+    }
     if (data[i][textureIdIndex] === textureData.texture_id) {
       rowIndex = i + 1;
-      break;
     }
+  }
+
+  // 新規作成時はtexture_idを自動生成
+  let textureId = textureData.texture_id;
+  if (rowIndex < 0 && (textureId === undefined || textureId === null)) {
+    textureId = maxTextureId + 1;
   }
 
   // 行データを作成
   const rowData = headers.map(header => {
+    if (header === 'texture_id') {
+      return textureId;
+    }
     if (textureData.hasOwnProperty(header)) {
       return textureData[header];
     }
@@ -407,7 +425,7 @@ function saveTexture(textureData) {
     sheet.appendRow(rowData);
   }
 
-  return { texture_id: textureData.texture_id };
+  return { texture_id: textureId };
 }
 
 /**
@@ -429,5 +447,5 @@ function deleteTexture(params) {
     }
   }
 
-  return { deleted: false };
+  throw new Error('texture_id not found');
 }
