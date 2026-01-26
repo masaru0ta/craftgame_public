@@ -610,6 +610,8 @@ class CustomBlockEditor {
     this.renderer = new this.THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.setClearColor(new this.THREE.Color(this.bgColors[this.bgColorIndex]));
+    // モバイルでのタッチ操作を有効にするため、デフォルトのタッチ動作を無効化
+    this.renderer.domElement.style.touchAction = 'none';
     this.container.appendChild(this.renderer.domElement);
   }
 
