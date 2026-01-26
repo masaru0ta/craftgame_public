@@ -262,6 +262,7 @@ function switchTab(tabName) {
   document.getElementById('dataSelect').classList.toggle('active', tabName === 'data');
   document.getElementById('blockList').classList.toggle('active', tabName === 'blocks');
   document.getElementById('textureList').classList.toggle('active', tabName === 'textures');
+  document.getElementById('chunkTest').classList.toggle('active', tabName === 'chunkTest');
 }
 
 // ========================================
