@@ -15,10 +15,13 @@ const MOCK_BLOCKS = [
   { block_id: 3, block_str_id: 'grass', name: '草ブロック', shape_type: 'normal', texture_id: 2 },
 ];
 
+// テスト用base64画像（1x1ピクセルの赤色PNG）
+const TEST_IMAGE_BASE64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+
 const MOCK_TEXTURES = [
-  { texture_id: 0, filename: 'stone.png', file_name: 'stone.png', color_hex: '#9e9e9e' },
-  { texture_id: 1, filename: 'dirt.png', file_name: 'dirt.png', color_hex: '#8d6e63' },
-  { texture_id: 2, filename: 'grass_top.png', file_name: 'grass_top.png', color_hex: '#81c784' },
+  { texture_id: 0, filename: 'stone.png', file_name: 'stone.png', color_hex: '#9e9e9e', image_base64: TEST_IMAGE_BASE64 },
+  { texture_id: 1, filename: 'dirt.png', file_name: 'dirt.png', color_hex: '#8d6e63' }, // image_base64 なし
+  { texture_id: 2, filename: 'grass_top.png', file_name: 'grass_top.png', color_hex: '#81c784', image_base64: TEST_IMAGE_BASE64 },
 ];
 
 // モックAPIのベースURL
@@ -86,6 +89,14 @@ async function mockGasApi(page, options = {}) {
           textures[texIdx] = { ...textures[texIdx], ...texBody };
         }
         response.data = { texture_id: texBody.texture_id };
+        break;
+      case 'deleteTexture':
+        const delTexBody = JSON.parse(route.request().postData() || '{}');
+        const delTexIdx = textures.findIndex(t => t.texture_id === delTexBody.texture_id);
+        if (delTexIdx >= 0) {
+          textures.splice(delTexIdx, 1);
+        }
+        response.data = { deleted: true };
         break;
       default:
         response = { success: false, error: 'Unknown action' };
@@ -468,12 +479,161 @@ test.describe('4.2.7 テクスチャ編集', () => {
     expect(savedData).not.toBeNull();
     expect(savedData.color_hex).toBe('#ff0000');
   });
+
+  test('テクスチャタイルがimage_base64を持つ場合、背景画像として表示される', async ({ page }) => {
+    // texture_id: 0 は image_base64 を持つ
+    const tile = page.locator('.col-7 .tile').first();
+    const tileImg = tile.locator('.tile-img');
+
+    // background-image が設定されていることを確認
+    const bgImage = await tileImg.evaluate(el => window.getComputedStyle(el).backgroundImage);
+    expect(bgImage).toContain('url(');
+    expect(bgImage).toContain('data:image');
+  });
+
+  test('テクスチャタイルがimage_base64を持たない場合、color_hexを背景色として表示される', async ({ page }) => {
+    // texture_id: 1 (2番目のタイル) は image_base64 を持たない
+    const tile = page.locator('.col-7 .tile').nth(1);
+    const tileImg = tile.locator('.tile-img');
+
+    // background-image が設定されていないか "none" であることを確認
+    const bgImage = await tileImg.evaluate(el => window.getComputedStyle(el).backgroundImage);
+    expect(bgImage === 'none' || !bgImage.includes('data:image')).toBe(true);
+
+    // background-color が設定されていることを確認
+    const bgColor = await tileImg.evaluate(el => window.getComputedStyle(el).backgroundColor);
+    expect(bgColor).toBeTruthy();
+    expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
+  });
+
+  test('テクスチャ選択時にプレビューがimage_base64を表示する', async ({ page }) => {
+    // texture_id: 0 を選択（image_base64 あり）
+    await page.locator('.col-7 .tile').first().click();
+
+    // プレビュー領域の背景画像を確認
+    const preview = page.locator('.col-3 .preview-large');
+    const bgImage = await preview.evaluate(el => window.getComputedStyle(el).backgroundImage);
+    expect(bgImage).toContain('url(');
+    expect(bgImage).toContain('data:image');
+  });
+
+  test('テクスチャ選択時にプレビューがcolor_hexにフォールバックする', async ({ page }) => {
+    // texture_id: 1 を選択（image_base64 なし）
+    await page.locator('.col-7 .tile').nth(1).click();
+
+    // プレビュー領域の背景色を確認
+    const preview = page.locator('.col-3 .preview-large');
+
+    // background-image が設定されていないか "none" であることを確認
+    const bgImage = await preview.evaluate(el => window.getComputedStyle(el).backgroundImage);
+    expect(bgImage === 'none' || !bgImage.includes('data:image')).toBe(true);
+
+    // background-color が設定されていることを確認
+    const bgColor = await preview.evaluate(el => window.getComputedStyle(el).backgroundColor);
+    expect(bgColor).toBeTruthy();
+    expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
+  });
+
+  test('テクスチャタイルにfile_nameが表示される', async ({ page }) => {
+    // 最初のタイルのファイル名を確認
+    const tileName = page.locator('.col-7 .tile').first().locator('.tile-name');
+    await expect(tileName).toHaveText('stone.png');
+
+    // 2番目のタイルのファイル名を確認
+    const tileName2 = page.locator('.col-7 .tile').nth(1).locator('.tile-name');
+    await expect(tileName2).toHaveText('dirt.png');
+  });
 });
 
 // ========================================
-// 4.2.8 BlockEditorUI統合
+// 4.2.8 テクスチャ削除
 // ========================================
-test.describe('4.2.8 BlockEditorUI統合', () => {
+test.describe('4.2.8 テクスチャ削除', () => {
+  test.beforeEach(async ({ page }) => {
+    await mockGasApi(page);
+    await page.goto(TOOL_PAGE_PATH);
+    // テクスチャタブに切り替え
+    await page.locator('.tab[data-tab="textures"]').click();
+    await page.waitForSelector('.col-7 .tile', { timeout: 10000 });
+  });
+
+  test('削除ボタンで確認ダイアログが表示される', async ({ page }) => {
+    // テクスチャを選択
+    await page.locator('.col-7 .tile').first().click();
+
+    // confirm をモック
+    page.on('dialog', async dialog => {
+      expect(dialog.type()).toBe('confirm');
+      expect(dialog.message()).toContain('削除');
+      await dialog.dismiss();
+    });
+
+    // 削除ボタンをクリック
+    await page.locator('#deleteTextureBtn').click();
+  });
+
+  test('キャンセルで削除されない', async ({ page }) => {
+    // 初期タイル数を記録
+    const initialCount = await page.locator('.col-7 .tile').count();
+
+    // テクスチャを選択
+    await page.locator('.col-7 .tile').first().click();
+
+    // confirm をモック（キャンセル）
+    page.on('dialog', async dialog => {
+      await dialog.dismiss();
+    });
+
+    // 削除ボタンをクリック
+    await page.locator('#deleteTextureBtn').click();
+
+    // タイル数が変わらない
+    await expect(page.locator('.col-7 .tile')).toHaveCount(initialCount);
+  });
+
+  test('OKで削除され、一覧が更新される', async ({ page }) => {
+    // 初期タイル数を記録
+    const initialCount = await page.locator('.col-7 .tile').count();
+
+    // テクスチャを選択
+    await page.locator('.col-7 .tile').first().click();
+
+    // confirm をモック（OK）
+    page.on('dialog', async dialog => {
+      await dialog.accept();
+    });
+
+    // 削除ボタンをクリック
+    await page.locator('#deleteTextureBtn').click();
+
+    // タイル数が1つ減る
+    await expect(page.locator('.col-7 .tile')).toHaveCount(initialCount - 1);
+  });
+
+  test('削除後、別のテクスチャが選択される', async ({ page }) => {
+    // 最初のテクスチャを選択
+    await page.locator('.col-7 .tile').first().click();
+
+    // confirm をモック（OK）
+    page.on('dialog', async dialog => {
+      await dialog.accept();
+    });
+
+    // 削除ボタンをクリック
+    await page.locator('#deleteTextureBtn').click();
+
+    // 待機
+    await page.waitForTimeout(300);
+
+    // 選択状態のタイルがある
+    await expect(page.locator('.col-7 .tile.selected')).toHaveCount(1);
+  });
+});
+
+// ========================================
+// 4.2.9 BlockEditorUI統合
+// ========================================
+test.describe('4.2.9 BlockEditorUI統合', () => {
   test('ブロック選択時にBlockEditorUIが右カラムに初期化される', async ({ page }) => {
     await mockGasApi(page);
     await page.goto(TOOL_PAGE_PATH);

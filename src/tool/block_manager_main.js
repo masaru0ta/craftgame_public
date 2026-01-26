@@ -133,6 +133,9 @@ function setupEventListeners() {
   // テクスチャ保存
   elements.saveTextureBtn.addEventListener('click', saveTexture);
 
+  // テクスチャ削除
+  elements.deleteTextureBtn.addEventListener('click', deleteTexture);
+
   // テクスチャカラー同期
   elements.textureColor.addEventListener('input', () => {
     elements.textureColorHex.value = elements.textureColor.value;
@@ -488,10 +491,15 @@ function createTextureTile(texture) {
     tile.classList.add('selected');
   }
 
+  // テクスチャ画像があれば表示、なければ代表色
+  const imgStyle = texture.image_base64
+    ? `background-image:url(${texture.image_base64});background-size:cover;background-position:center;`
+    : `background:${texture.color_hex || '#9e9e9e'};`;
+
   tile.innerHTML = `
-    <div class="tile-img" style="background:${texture.color_hex || '#9e9e9e'};"></div>
+    <div class="tile-img" style="${imgStyle}"></div>
     <div class="tile-id">ID: ${texture.texture_id}</div>
-    <div class="tile-name">${escapeHtml(texture.filename || '')}</div>
+    <div class="tile-name">${escapeHtml(texture.file_name || '')}</div>
   `;
 
   tile.addEventListener('click', () => selectTexture(texture.texture_id));
@@ -513,10 +521,20 @@ function selectTexture(textureId) {
   const texture = state.textures.find(t => t.texture_id === textureId);
   if (texture) {
     elements.textureId.value = texture.texture_id;
-    elements.textureFilename.value = texture.filename || '';
+    elements.textureFilename.value = texture.file_name || '';
     elements.textureColor.value = texture.color_hex || '#9e9e9e';
     elements.textureColorHex.value = texture.color_hex || '#9e9e9e';
-    elements.texturePreview.style.background = texture.color_hex || '#9e9e9e';
+
+    // プレビュー：テクスチャ画像があれば表示、なければ代表色
+    if (texture.image_base64) {
+      elements.texturePreview.style.backgroundImage = `url(${texture.image_base64})`;
+      elements.texturePreview.style.backgroundSize = 'cover';
+      elements.texturePreview.style.backgroundPosition = 'center';
+      elements.texturePreview.style.backgroundColor = '';
+    } else {
+      elements.texturePreview.style.backgroundImage = '';
+      elements.texturePreview.style.backgroundColor = texture.color_hex || '#9e9e9e';
+    }
   }
 }
 
@@ -549,6 +567,38 @@ async function saveTexture() {
   }
 }
 
+/**
+ * テクスチャ削除
+ */
+async function deleteTexture() {
+  const texture = state.textures.find(t => t.texture_id === state.selectedTextureId);
+  if (!texture) return;
+
+  if (!confirm(`テクスチャ「${texture.file_name || texture.texture_id}」を削除しますか？`)) {
+    return;
+  }
+
+  try {
+    await state.api.deleteTexture(texture.texture_id);
+
+    // ローカル状態から削除
+    const idx = state.textures.findIndex(t => t.texture_id === texture.texture_id);
+    if (idx >= 0) {
+      state.textures.splice(idx, 1);
+    }
+
+    renderTextureGrid();
+
+    // 先頭のテクスチャを選択（あれば）
+    if (state.textures.length > 0) {
+      selectTexture(state.textures[0].texture_id);
+    }
+  } catch (error) {
+    console.error('削除エラー:', error);
+    alert('削除に失敗しました。');
+  }
+}
+
 // ========================================
 // テクスチャピッカー
 // ========================================
@@ -564,7 +614,7 @@ function openPicker(callback) {
     item.className = 'picker-item';
     item.innerHTML = `
       <div class="tex-preview" style="background:${texture.color_hex || '#9e9e9e'};"></div>
-      <div class="tex-label">${escapeHtml(texture.filename || '')}</div>
+      <div class="tex-label">${escapeHtml(texture.file_name || '')}</div>
     `;
     item.addEventListener('click', () => {
       callback(texture);

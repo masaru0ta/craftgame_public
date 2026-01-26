@@ -130,6 +130,17 @@ editorUI.loadBlock(blockData, textures);
 2. 代表色（color_hex）のみ編集可能
 3. 保存で GAS API に反映
 
+テクスチャ表示:
+- タイル・プレビューは `image_base64` があれば画像を表示、なければ `color_hex` を表示
+- ファイル名は GAS API の `file_name` プロパティを使用
+
+#### 4.2.8 テクスチャ削除
+
+削除ボタン（`#deleteTextureBtn`）クリック時:
+1. 確認ダイアログを表示
+2. OK で GAS API `deleteTexture` を呼び出し
+3. 一覧を更新し、先頭のテクスチャを選択状態にする（削除したテクスチャが選択されていた場合）
+
 ## 5. ファイル構成
 
 ```
