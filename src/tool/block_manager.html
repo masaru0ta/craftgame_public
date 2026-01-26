@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ブロック形状管理ツール</title>
+  <link rel="stylesheet" href="block_manager_style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div class="tabs">
+    <div class="tab active" data-tab="blocks">ブロック一覧</div>
+    <div class="tab" data-tab="textures">テクスチャ一覧</div>
+  </div>
+
+  <!-- ブロック一覧 -->
+  <div class="main active" id="blockList">
+    <div class="column col-left">
+      <div class="grid" id="blockGrid"></div>
+    </div>
+    <div class="column col-mid">
+      <h3>基本情報</h3>
+      <div class="form-group">
+        <label>ブロックID<span class="required">*</span></label>
+        <input type="text" id="blockStrId" readonly>
+      </div>
+      <div class="form-group">
+        <label>表示名<span class="required">*</span></label>
+        <input type="text" id="blockName">
+      </div>
+      <div class="form-group">
+        <label>ブロックタイプ</label>
+        <select id="blockTypeSelect">
+          <option value="normal">通常ブロック</option>
+          <option value="custom">カスタムブロック</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>ドロップアイテム</label>
+        <input type="text" id="dropItem">
+      </div>
+      <div class="form-group">
+        <label>発光レベル (0-15)</label>
+        <input type="number" id="lightLevel" min="0" max="15" value="0">
+      </div>
+      <div class="form-group">
+        <label>オプション</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item"><input type="checkbox" id="isTransparent">透過ブロック</label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-danger" id="deleteBlockBtn">削除</button>
+        <button class="btn-primary" id="saveBlockBtn">保存</button>
+      </div>
+    </div>
+    <div class="column col-right">
+      <div class="preview-container" id="editorContainer">
+        <div class="preview-toolbar">
+          <div style="flex:1;"></div>
+          <button class="toolbar-btn" id="bgBtn" title="背景色切り替え">BG</button>
+        </div>
+        <div class="preview-3d" id="preview3d">
+          <span>(3Dプレビュー)</span>
+        </div>
+        <div class="preview-control" id="controlPanel"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ一覧 -->
+  <div class="main" id="textureList">
+    <div class="column col-7">
+      <h3>テクスチャ一覧</h3>
+      <div class="grid" id="textureGrid"></div>
+    </div>
+    <div class="column col-3">
+      <h3>テクスチャ詳細</h3>
+      <div class="preview-large" id="texturePreview"></div>
+      <div class="form-group">
+        <label>テクスチャID</label>
+        <input type="number" id="textureId" readonly>
+      </div>
+      <div class="form-group">
+        <label>ファイル名</label>
+        <input type="text" id="textureFilename" readonly>
+      </div>
+      <div class="form-group">
+        <label>代表色（マップ表示用）</label>
+        <div class="color-row">
+          <input type="color" id="textureColor">
+          <input type="text" id="textureColorHex">
+        </div>
+      </div>
+      <div class="btn-row btn-row-between">
+        <button class="btn-danger" id="deleteTextureBtn">削除</button>
+        <button class="btn-primary" id="saveTextureBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新規ブロック作成モーダル -->
+  <div class="modal-overlay" id="createBlockModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h4>新規ブロック作成</h4>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>ブロックID<span class="required">*</span></label>
+          <input type="text" name="block_str_id" placeholder="英数字とアンダースコアのみ">
+        </div>
+        <div class="form-group">
+          <label>表示名<span class="required">*</span></label>
+          <input type="text" name="name" placeholder="ブロック名">
+        </div>
+        <div class="form-group">
+          <label>ブロックタイプ</label>
+          <select name="shape_type">
+            <option value="normal">通常ブロック</option>
+            <option value="custom">カスタムブロック</option>
+          </select>
+        </div>
+        <div class="error" id="createError"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary modal-cancel">キャンセル</button>
+        <button class="btn-primary" id="createBlockSubmit">作成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ選択ポップアップ -->
+  <div class="picker-overlay" id="pickerOverlay">
+    <div class="picker">
+      <div class="picker-header">
+        <h4>テクスチャを選択</h4>
+        <button class="picker-close">&times;</button>
+      </div>
+      <div class="picker-grid" id="pickerGrid"></div>
+    </div>
+  </div>
+
+  <script src="../game/gas_api.js"></script>
+  <script src="block_manager_main.js"></script>
+</body>
+</html>
