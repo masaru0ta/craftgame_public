@@ -112,9 +112,14 @@ editorUI.loadBlock(blockData, textures);
 
 保存ボタンクリック時:
 1. 基本情報フォームの値を取得
-2. BlockEditorUI から形状データを取得
-3. GAS API で保存
+2. BlockEditorUI.getBlockData() から形状データを取得
+   - 標準ブロック（shape_type: normal）の場合: tex_default, tex_front, tex_top, tex_bottom, tex_left, tex_right, tex_back
+   - カスタムブロック（shape_type: custom）の場合: material_1, material_2, material_3, voxel_look, voxel_collision
+3. 基本情報と形状データをマージして GAS API で保存
 4. 変更フラグをクリア
+5. 保存結果のフィードバック表示:
+   - 成功時: ボタンに `.save-success` クラスを追加、テキストを「保存完了」に変更、1.5秒後に元に戻る
+   - 失敗時: ボタンに `.save-error` クラスを追加、テキストを「保存失敗」に変更、1.5秒後に元に戻る
 
 #### 4.2.6 ブロック削除
 
@@ -133,6 +138,7 @@ editorUI.loadBlock(blockData, textures);
 テクスチャ表示:
 - タイル・プレビューは `image_base64` があれば画像を表示、なければ `color_hex` を表示
 - ファイル名は GAS API の `file_name` プロパティを使用
+- テクスチャ画像はピクセルアート対応のため `image-rendering: pixelated` を適用し、拡大時にぼやけないようにする
 
 #### 4.2.8 テクスチャ削除
 
@@ -166,11 +172,57 @@ src/
 
 ### 6.1 サムネイル
 
-- ブロック一覧のサムネイルはテクスチャの代表色（color_hex）を使用
+- ブロック一覧のサムネイルは BlockThumbnail クラスを使用して3Dプレビュー画像を生成
+- カメラアングルは3Dプレビュー（BlockEditorUI）と同じ設定
 - サムネイルはメモリ内キャッシュ（永続化なし）
 - ブロック更新時にキャッシュを無効化
 
-### 6.2 一覧のソート
+### 6.2 BlockThumbnail クラス
+
+ブロックのサムネイル画像を生成するユーティリティクラス。
+ゲーム内のアイテムプレビュー等でも利用可能。
+
+**ファイル**: `src/game/block_thumbnail.js`
+
+#### コンストラクタオプション
+
+| プロパティ | 型 | デフォルト | 説明 |
+|-----------|-----|---------|------|
+| THREE | Object | 必須 | Three.jsライブラリ |
+| size | number | 64 | 出力画像サイズ（px） |
+| backgroundColor | string | '#1a237e' | 背景色（null で透明） |
+
+#### メソッド
+
+| メソッド | 戻り値 | 説明 |
+|---------|-------|------|
+| `generate(blockData, textures)` | Promise<string> | サムネイル画像（Data URL）を生成 |
+| `dispose()` | void | リソースを解放 |
+
+#### 使用例
+
+```javascript
+const thumbnail = new BlockThumbnail({ THREE: THREE, size: 64 });
+const imageDataUrl = await thumbnail.generate(blockData, textures);
+// <img src="${imageDataUrl}"> として使用可能
+thumbnail.dispose();
+```
+
+#### カメラ設定
+
+3Dプレビューと同じアングルを使用:
+- cameraDistance: 3
+- horizontalAngle: 0（度）
+- verticalAngle: 20（度）
+
+#### テスト用セレクタ
+
+| 要素 | セレクタ | 検証内容 |
+|------|----------|----------|
+| サムネイル画像 | `.tile-img img` | ブロックタイル内のサムネイル画像 |
+| サムネイル画像（data属性） | `.tile[data-has-thumbnail="true"]` | サムネイル生成済みのタイル |
+
+### 6.3 一覧のソート
 
 - デフォルトは block_id 昇順
 
@@ -188,6 +240,8 @@ src/
 | 右カラム | `.col-right` | BlockEditorUI（3Dエディタ） |
 | グリッド | `.grid` | タイルのグリッド表示 |
 | タイル | `.tile` | 各ブロック/テクスチャのタイル |
+| タイル画像 | `.tile-img` | width: 100%、aspect-ratio: 1で枠いっぱいに表示。タイル名は画像に重ねて下部に表示 |
+| タイル画像（テクスチャ拡大時） | `.tile-img`, `.tile-img img`, `.preview-large` | image-rendering: pixelated を適用（ぼやけ防止） |
 | 選択中タイル | `.tile.selected` | 選択状態 |
 | 3Dプレビュー枠 | `.preview-container` | BlockEditorUIのコンテナ |
 | ツールバー | `.toolbar` | ツールボタン枠 |
