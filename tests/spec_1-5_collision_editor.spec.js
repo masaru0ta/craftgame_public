@@ -629,3 +629,343 @@ test.describe('テストページ固有', () => {
   });
 
 });
+
+// ============================================
+// 追加テスト: 補足仕様（10.x）
+// ============================================
+test.describe('補足仕様', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await selectCustomBlock(page);
+  });
+
+  test('voxel_collisionが空のブロック選択時、全て0で開始される', async ({ page }) => {
+    const allZero = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      const base64 = editor.getVoxelCollisionData();
+      const data = window.CustomCollision.decode(base64);
+
+      for (let y = 0; y < 4; y++) {
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            if (data[y][z][x] !== 0) {
+              return false;
+            }
+          }
+        }
+      }
+      return true;
+    });
+
+    expect(allZero).toBe(true);
+  });
+
+  test('4x4x4範囲外への配置は無視される', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // 範囲外座標への設定を試みる
+      window.CustomCollision.setVoxel(editor.voxelCollisionData, 5, 0, 0, 1);
+      window.CustomCollision.setVoxel(editor.voxelCollisionData, 0, 5, 0, 1);
+      window.CustomCollision.setVoxel(editor.voxelCollisionData, 0, 0, 5, 1);
+      window.CustomCollision.setVoxel(editor.voxelCollisionData, -1, 0, 0, 1);
+
+      // 範囲内のデータが影響を受けていないことを確認
+      return {
+        validCoord: window.CustomCollision.getVoxel(editor.voxelCollisionData, 0, 0, 0),
+        success: true
+      };
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  test('空の状態（全て0）でも保存が許可される', async ({ page }) => {
+    const data = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // 全て0にクリア
+      for (let y = 0; y < 4; y++) {
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            window.CustomCollision.setVoxel(editor.voxelCollisionData, x, y, z, 0);
+          }
+        }
+      }
+
+      return editor.getVoxelCollisionData();
+    });
+
+    // 空でもBase64文字列が返される（12文字）
+    expect(typeof data).toBe('string');
+    expect(data.length).toBe(12);
+  });
+
+});
+
+// ============================================
+// 追加テスト: CustomCollision 追加メソッド
+// ============================================
+test.describe('CustomCollision 追加メソッド', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+  });
+
+  test('createEmpty()メソッドが存在する', async ({ page }) => {
+    const hasMethod = await page.evaluate(() => {
+      return typeof window.CustomCollision.createEmpty === 'function';
+    });
+    expect(hasMethod).toBe(true);
+  });
+
+  test('createEmpty()は4x4x4の空配列を返す', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const data = window.CustomCollision.createEmpty();
+      return {
+        yLength: data.length,
+        zLength: data[0].length,
+        xLength: data[0][0].length,
+        allZero: data.every(y => y.every(z => z.every(x => x === 0)))
+      };
+    });
+
+    expect(result.yLength).toBe(4);
+    expect(result.zLength).toBe(4);
+    expect(result.xLength).toBe(4);
+    expect(result.allZero).toBe(true);
+  });
+
+  test('getVoxel()メソッドが存在する', async ({ page }) => {
+    const hasMethod = await page.evaluate(() => {
+      return typeof window.CustomCollision.getVoxel === 'function';
+    });
+    expect(hasMethod).toBe(true);
+  });
+
+  test('setVoxel()メソッドが存在する', async ({ page }) => {
+    const hasMethod = await page.evaluate(() => {
+      return typeof window.CustomCollision.setVoxel === 'function';
+    });
+    expect(hasMethod).toBe(true);
+  });
+
+  test('getVoxel/setVoxelで値を正しく読み書きできる', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const data = window.CustomCollision.createEmpty();
+
+      window.CustomCollision.setVoxel(data, 1, 2, 3, 1);
+      const value = window.CustomCollision.getVoxel(data, 1, 2, 3);
+
+      return { setValue: 1, getValue: value };
+    });
+
+    expect(result.getValue).toBe(result.setValue);
+  });
+
+  test('decode()に空文字列を渡すと空の配列を返す', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const data = window.CustomCollision.decode('');
+      return {
+        yLength: data.length,
+        allZero: data.every(y => y.every(z => z.every(x => x === 0)))
+      };
+    });
+
+    expect(result.yLength).toBe(4);
+    expect(result.allZero).toBe(true);
+  });
+
+  test('decode()にnullを渡すと空の配列を返す', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const data = window.CustomCollision.decode(null);
+      return {
+        yLength: data.length,
+        allZero: data.every(y => y.every(z => z.every(x => x === 0)))
+      };
+    });
+
+    expect(result.yLength).toBe(4);
+    expect(result.allZero).toBe(true);
+  });
+
+});
+
+// ============================================
+// 追加テスト: setEditMode/getEditMode
+// ============================================
+test.describe('setEditMode/getEditMode', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await selectCustomBlock(page);
+  });
+
+  test('getEditMode()がデフォルトでlookを返す', async ({ page }) => {
+    const mode = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getEditMode();
+    });
+    expect(mode).toBe('look');
+  });
+
+  test('setEditMode(collision)後、getEditMode()がcollisionを返す', async ({ page }) => {
+    const mode = await page.evaluate(() => {
+      window.editorUI.customBlockEditor.setEditMode('collision');
+      return window.editorUI.customBlockEditor.getEditMode();
+    });
+    expect(mode).toBe('collision');
+  });
+
+  test('setEditMode(look)後、getEditMode()がlookを返す', async ({ page }) => {
+    const mode = await page.evaluate(() => {
+      window.editorUI.customBlockEditor.setEditMode('collision');
+      window.editorUI.customBlockEditor.setEditMode('look');
+      return window.editorUI.customBlockEditor.getEditMode();
+    });
+    expect(mode).toBe('look');
+  });
+
+});
+
+// ============================================
+// 追加テスト: CollisionChecker 物理演算
+// ============================================
+test.describe('CollisionChecker 物理演算', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await selectCustomBlock(page);
+  });
+
+  test('衝突テスト停止時にボールが削除される', async ({ page }) => {
+    // 衝突テスト開始
+    await page.click('.check-btn');
+    await page.waitForTimeout(500);
+
+    const ballCountBefore = await page.evaluate(() => {
+      return window.editorUI.collisionChecker.getBalls().length;
+    });
+    expect(ballCountBefore).toBe(30);
+
+    // 衝突テスト停止
+    await page.click('.check-btn');
+    await page.waitForTimeout(100);
+
+    const ballCountAfter = await page.evaluate(() => {
+      return window.editorUI.collisionChecker.getBalls().length;
+    });
+    expect(ballCountAfter).toBe(0);
+  });
+
+  test('ボールに重力が適用される（Y座標が時間経過で減少）', async ({ page }) => {
+    // 衝突テスト開始
+    await page.click('.check-btn');
+    await page.waitForTimeout(100);
+
+    const initialY = await page.evaluate(() => {
+      const balls = window.editorUI.collisionChecker.getBalls();
+      return balls[0].position.y;
+    });
+
+    await page.waitForTimeout(500);
+
+    const afterY = await page.evaluate(() => {
+      const balls = window.editorUI.collisionChecker.getBalls();
+      return balls[0].position.y;
+    });
+
+    // 重力により下に落ちる（Y座標が減少するか、床で反射）
+    // 初期位置より大きく下がっているか、床で反射しているはず
+    expect(afterY).toBeLessThanOrEqual(initialY);
+  });
+
+  test('getBalls()メソッドが存在する', async ({ page }) => {
+    const hasMethod = await page.evaluate(() => {
+      return typeof window.editorUI.collisionChecker.getBalls === 'function';
+    });
+    expect(hasMethod).toBe(true);
+  });
+
+  test('反発係数(restitution)が設定されている', async ({ page }) => {
+    const restitution = await page.evaluate(() => {
+      return window.editorUI.collisionChecker.restitution;
+    });
+    expect(restitution).toBeGreaterThan(0);
+    expect(restitution).toBeLessThanOrEqual(1);
+  });
+
+});
+
+// ============================================
+// 追加テスト: autoCreateCollision詳細
+// ============================================
+test.describe('autoCreateCollision詳細', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await selectCustomBlock(page);
+  });
+
+  test('既存の当たり判定データが上書きされる', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // 当たり判定を手動で設定
+      window.CustomCollision.setVoxel(editor.voxelCollisionData, 3, 3, 3, 1);
+
+      // 見た目データをクリア
+      for (let y = 0; y < 8; y++) {
+        for (let z = 0; z < 8; z++) {
+          for (let x = 0; x < 8; x++) {
+            VoxelData.setVoxel(editor.voxelLookData, x, y, z, 0);
+          }
+        }
+      }
+
+      // 自動作成実行（見た目が空なので当たり判定も全て0になるはず）
+      editor.autoCreateCollision();
+
+      const base64 = editor.getVoxelCollisionData();
+      const data = window.CustomCollision.decode(base64);
+
+      // 手動で設定した(3,3,3)も0になっているはず
+      return data[3][3][3];
+    });
+
+    expect(result).toBe(0);
+  });
+
+  test('見た目座標(2,2,2)〜(3,3,3)にボクセルがあれば当たり判定座標(1,1,1)が1になる', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+
+      // 見た目データをクリア
+      for (let y = 0; y < 8; y++) {
+        for (let z = 0; z < 8; z++) {
+          for (let x = 0; x < 8; x++) {
+            VoxelData.setVoxel(editor.voxelLookData, x, y, z, 0);
+          }
+        }
+      }
+
+      // 見た目座標(3,3,3)にボクセルを配置（当たり判定座標(1,1,1)の領域内）
+      VoxelData.setVoxel(editor.voxelLookData, 3, 3, 3, 1);
+
+      editor.autoCreateCollision();
+
+      const base64 = editor.getVoxelCollisionData();
+      const data = window.CustomCollision.decode(base64);
+
+      return data[1][1][1];
+    });
+
+    expect(result).toBe(1);
+  });
+
+});

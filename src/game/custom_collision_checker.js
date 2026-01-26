@@ -4,6 +4,16 @@
  * 30個の球体を落下させ、当たり判定ボクセルとの衝突・反射を行う
  */
 class CollisionChecker {
+  // 定数
+  static BALL_COUNT = 30;
+  static BALL_DIAMETER = 0.1;
+  static FIXED_TIMESTEP = 1 / 60;
+  static GRAVITY = -9.8 * 0.1;
+  static RESTITUTION = 0.7;
+  static BOUNDARY = 0.5;
+  static UPPER_BOUNDARY = 1.5;
+  static VOXEL_SIZE = 0.25; // 4x4x4グリッドで1ボクセル = 0.25
+
   /**
    * @param {Object} options
    * @param {THREE.Scene} options.scene - Three.jsシーン
@@ -13,19 +23,23 @@ class CollisionChecker {
     this.scene = options.scene;
     this.THREE = options.THREE;
 
-    // ボール設定
-    this.ballCount = 30;
-    this.ballDiameter = 0.1;
+    // ボール設定（定数への参照）
+    this.ballCount = CollisionChecker.BALL_COUNT;
+    this.ballDiameter = CollisionChecker.BALL_DIAMETER;
     this.ballRadius = this.ballDiameter / 2;
 
-    // 物理演算設定
-    this.fixedTimestep = 1 / 60; // 60fps
-    this.gravity = -9.8 * 0.1; // スケール調整された重力
-    this.restitution = 0.7; // 反発係数
+    // 物理演算設定（定数への参照）
+    this.fixedTimestep = CollisionChecker.FIXED_TIMESTEP;
+    this.gravity = CollisionChecker.GRAVITY;
+    this.restitution = CollisionChecker.RESTITUTION;
 
     // ボール配列
     this.balls = [];
     this.ballMeshes = [];
+
+    // 共有リソース（パフォーマンス向上）
+    this._sharedGeometry = null;
+    this._sharedMaterial = null;
 
     // 当たり判定データ（4x4x4）
     this.collisionData = null;
@@ -99,12 +113,17 @@ class CollisionChecker {
   _createBalls() {
     this._removeBalls();
 
-    const geometry = new this.THREE.SphereGeometry(this.ballRadius, 16, 16);
-    const material = new this.THREE.MeshStandardMaterial({
-      color: 0xff6600,
-      metalness: 0.3,
-      roughness: 0.7
-    });
+    // ジオメトリとマテリアルを共有（パフォーマンス向上）
+    if (!this._sharedGeometry) {
+      this._sharedGeometry = new this.THREE.SphereGeometry(this.ballRadius, 16, 16);
+    }
+    if (!this._sharedMaterial) {
+      this._sharedMaterial = new this.THREE.MeshStandardMaterial({
+        color: 0xff6600,
+        metalness: 0.3,
+        roughness: 0.7
+      });
+    }
 
     for (let i = 0; i < this.ballCount; i++) {
       // ランダムな初期位置（ブロック上部）
@@ -112,7 +131,7 @@ class CollisionChecker {
       const y = 0.8 + Math.random() * 0.3;
       const z = (Math.random() - 0.5) * 0.8;
 
-      const mesh = new this.THREE.Mesh(geometry, material);
+      const mesh = new this.THREE.Mesh(this._sharedGeometry, this._sharedMaterial);
       mesh.position.set(x, y, z);
       this.scene.add(mesh);
       this.ballMeshes.push(mesh);
@@ -135,11 +154,9 @@ class CollisionChecker {
    * @private
    */
   _removeBalls() {
-    this.ballMeshes.forEach(mesh => {
+    for (const mesh of this.ballMeshes) {
       this.scene.remove(mesh);
-      mesh.geometry.dispose();
-      mesh.material.dispose();
-    });
+    }
     this.balls = [];
     this.ballMeshes = [];
   }
@@ -175,51 +192,41 @@ class CollisionChecker {
    * @private
    */
   _update(dt) {
-    this.balls.forEach(ball => {
+    const r = this.ballRadius;
+    const boundary = CollisionChecker.BOUNDARY;
+    const upperBoundary = CollisionChecker.UPPER_BOUNDARY;
+
+    for (const ball of this.balls) {
       // 重力を適用
       ball.velocity.y += this.gravity * dt;
 
       // 位置を更新
-      const newPos = ball.position.clone().add(
-        ball.velocity.clone().multiplyScalar(dt)
-      );
+      const newPos = ball.position.clone().addScaledVector(ball.velocity, dt);
 
       // 当たり判定チェック
       this._checkCollision(ball, newPos);
 
-      // 床面との衝突
-      if (newPos.y - this.ballRadius < -0.5) {
-        newPos.y = -0.5 + this.ballRadius;
-        ball.velocity.y = -ball.velocity.y * this.restitution;
-      }
-
-      // 壁面との衝突（ブロック境界）
-      const boundary = 0.5;
-      if (newPos.x - this.ballRadius < -boundary) {
-        newPos.x = -boundary + this.ballRadius;
-        ball.velocity.x = -ball.velocity.x * this.restitution;
-      }
-      if (newPos.x + this.ballRadius > boundary) {
-        newPos.x = boundary - this.ballRadius;
-        ball.velocity.x = -ball.velocity.x * this.restitution;
-      }
-      if (newPos.z - this.ballRadius < -boundary) {
-        newPos.z = -boundary + this.ballRadius;
-        ball.velocity.z = -ball.velocity.z * this.restitution;
-      }
-      if (newPos.z + this.ballRadius > boundary) {
-        newPos.z = boundary - this.ballRadius;
-        ball.velocity.z = -ball.velocity.z * this.restitution;
-      }
-
-      // 上部境界
-      if (newPos.y + this.ballRadius > 1.5) {
-        newPos.y = 1.5 - this.ballRadius;
-        ball.velocity.y = -ball.velocity.y * this.restitution;
-      }
+      // 境界衝突チェック（共通化）
+      this._clampAxis(ball, newPos, 'y', -boundary, upperBoundary, r);
+      this._clampAxis(ball, newPos, 'x', -boundary, boundary, r);
+      this._clampAxis(ball, newPos, 'z', -boundary, boundary, r);
 
       ball.position.copy(newPos);
-    });
+    }
+  }
+
+  /**
+   * 軸方向の境界チェックと反射
+   * @private
+   */
+  _clampAxis(ball, newPos, axis, min, max, radius) {
+    if (newPos[axis] - radius < min) {
+      newPos[axis] = min + radius;
+      ball.velocity[axis] = -ball.velocity[axis] * this.restitution;
+    } else if (newPos[axis] + radius > max) {
+      newPos[axis] = max - radius;
+      ball.velocity[axis] = -ball.velocity[axis] * this.restitution;
+    }
   }
 
   /**
@@ -229,48 +236,58 @@ class CollisionChecker {
   _checkCollision(ball, newPos) {
     if (!this.collisionData) return;
 
-    // ボール位置をボクセル座標に変換（4x4x4グリッド）
-    // ワールド座標 (-0.5, -0.5, -0.5) 〜 (0.5, 0.5, 0.5) を
-    // グリッド座標 (0, 0, 0) 〜 (3, 3, 3) に変換
-    const voxelSize = 1.0 / 4; // 4x4x4なので1ボクセル = 0.25
-
-    const checkVoxel = (wx, wy, wz) => {
-      const vx = Math.floor((wx + 0.5) / voxelSize);
-      const vy = Math.floor((wy + 0.5) / voxelSize);
-      const vz = Math.floor((wz + 0.5) / voxelSize);
-
-      if (vx >= 0 && vx < 4 && vy >= 0 && vy < 4 && vz >= 0 && vz < 4) {
-        return CustomCollision.getVoxel(this.collisionData, vx, vy, vz) === 1;
-      }
-      return false;
-    };
-
-    // 6方向のチェックポイント
     const r = this.ballRadius;
-    const directions = [
-      { axis: 'x', sign: 1, point: new this.THREE.Vector3(newPos.x + r, newPos.y, newPos.z) },
-      { axis: 'x', sign: -1, point: new this.THREE.Vector3(newPos.x - r, newPos.y, newPos.z) },
-      { axis: 'y', sign: 1, point: new this.THREE.Vector3(newPos.x, newPos.y + r, newPos.z) },
-      { axis: 'y', sign: -1, point: new this.THREE.Vector3(newPos.x, newPos.y - r, newPos.z) },
-      { axis: 'z', sign: 1, point: new this.THREE.Vector3(newPos.x, newPos.y, newPos.z + r) },
-      { axis: 'z', sign: -1, point: new this.THREE.Vector3(newPos.x, newPos.y, newPos.z - r) }
-    ];
+    const voxelSize = CollisionChecker.VOXEL_SIZE;
 
-    directions.forEach(dir => {
-      if (checkVoxel(dir.point.x, dir.point.y, dir.point.z)) {
-        // 衝突検出、反射
-        if (dir.axis === 'x') {
-          newPos.x = ball.position.x;
-          ball.velocity.x = -ball.velocity.x * this.restitution;
-        } else if (dir.axis === 'y') {
-          newPos.y = ball.position.y;
-          ball.velocity.y = -ball.velocity.y * this.restitution;
-        } else if (dir.axis === 'z') {
-          newPos.z = ball.position.z;
-          ball.velocity.z = -ball.velocity.z * this.restitution;
-        }
-      }
-    });
+    // 6方向を直接チェック（オブジェクト生成を回避）
+    // +X方向
+    if (this._checkVoxelAt(newPos.x + r, newPos.y, newPos.z, voxelSize)) {
+      this._reflectAxis(ball, newPos, 'x');
+    }
+    // -X方向
+    if (this._checkVoxelAt(newPos.x - r, newPos.y, newPos.z, voxelSize)) {
+      this._reflectAxis(ball, newPos, 'x');
+    }
+    // +Y方向
+    if (this._checkVoxelAt(newPos.x, newPos.y + r, newPos.z, voxelSize)) {
+      this._reflectAxis(ball, newPos, 'y');
+    }
+    // -Y方向
+    if (this._checkVoxelAt(newPos.x, newPos.y - r, newPos.z, voxelSize)) {
+      this._reflectAxis(ball, newPos, 'y');
+    }
+    // +Z方向
+    if (this._checkVoxelAt(newPos.x, newPos.y, newPos.z + r, voxelSize)) {
+      this._reflectAxis(ball, newPos, 'z');
+    }
+    // -Z方向
+    if (this._checkVoxelAt(newPos.x, newPos.y, newPos.z - r, voxelSize)) {
+      this._reflectAxis(ball, newPos, 'z');
+    }
+  }
+
+  /**
+   * ワールド座標でボクセル衝突をチェック
+   * @private
+   */
+  _checkVoxelAt(wx, wy, wz, voxelSize) {
+    const vx = Math.floor((wx + 0.5) / voxelSize);
+    const vy = Math.floor((wy + 0.5) / voxelSize);
+    const vz = Math.floor((wz + 0.5) / voxelSize);
+
+    if (vx >= 0 && vx < 4 && vy >= 0 && vy < 4 && vz >= 0 && vz < 4) {
+      return CustomCollision.getVoxel(this.collisionData, vx, vy, vz) === 1;
+    }
+    return false;
+  }
+
+  /**
+   * 軸方向の反射処理
+   * @private
+   */
+  _reflectAxis(ball, newPos, axis) {
+    newPos[axis] = ball.position[axis];
+    ball.velocity[axis] = -ball.velocity[axis] * this.restitution;
   }
 }
 
