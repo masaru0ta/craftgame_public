@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1-6 ブロック形状管理ツール テスト</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; background: #f0f0f0; height: 100vh; display: flex; flex-direction: column; }
+
+    /* タブ */
+    .tabs { display: flex; background: #333; }
+    .tab { padding: 12px 24px; color: #aaa; cursor: pointer; border-bottom: 3px solid transparent; }
+    .tab:hover { color: #fff; background: #444; }
+    .tab.active { color: #fff; border-bottom-color: #4285f4; background: #444; }
+
+    /* レイアウト */
+    .main { flex: 1; display: none; overflow: hidden; }
+    .main.active { display: flex; }
+    .column { background: #fff; overflow-y: auto; padding: 16px; }
+    .col-left { flex: 3; border-right: 1px solid #ddd; }
+    .col-mid { flex: 2; border-right: 1px solid #ddd; }
+    .col-right { flex: 5; background: #fafafa; }
+    .col-7 { flex: 7; }
+    .col-3 { flex: 3; }
+
+    /* タイル・グリッド共通 */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; }
+    .tile { padding: 8px; border: 2px solid transparent; border-radius: 6px; cursor: pointer; text-align: center; transition: all 0.15s; }
+    .tile:hover { background: #f5f5f5; border-color: #ddd; }
+    .tile.selected { background: #e3f2fd; border-color: #4285f4; }
+    .tile.add-new { border: 2px dashed #aaa; }
+    .tile.add-new:hover { border-color: #4285f4; background: #e8f0fe; }
+    .tile-img { width: 48px; height: 48px; margin: 0 auto 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+    .tile-name { font-size: 11px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tile-id { font-size: 10px; color: #888; }
+
+    /* フォーム */
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    .form-group .required { color: #d93025; }
+    input, textarea, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    input:focus, textarea:focus { outline: none; border-color: #4285f4; box-shadow: 0 0 0 2px rgba(66,133,244,0.2); }
+    input[readonly] { background: #f5f5f5; color: #666; cursor: not-allowed; }
+    .checkbox-group { display: flex; flex-direction: column; gap: 6px; }
+    .checkbox-item { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+    .checkbox-item input { width: auto; }
+    .color-row { display: flex; gap: 8px; align-items: center; }
+    .color-row input[type="color"] { width: 40px; height: 34px; padding: 2px; cursor: pointer; }
+    .color-row input[type="text"] { flex: 1; }
+
+    /* ボタン */
+    .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; padding-top: 16px; border-top: 1px solid #ddd; }
+    .btn-row-between { justify-content: space-between; }
+    button { padding: 8px 20px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; }
+    .btn-primary { background: #4285f4; color: #fff; }
+    .btn-primary:hover { background: #3367d6; }
+    .btn-danger { background: #fff; color: #d93025; border: 1px solid #d93025; }
+
+    /* テクスチャ選択ポップアップ */
+    .picker-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .picker-overlay.show { display: flex; }
+    .picker { background: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); max-width: 360px; }
+    .picker-header { padding: 12px 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .picker-header h4 { margin: 0; font-size: 14px; }
+    .picker-close { background: none; border: none; font-size: 20px; cursor: pointer; color: #999; padding: 0; }
+    .picker-grid { padding: 12px; display: grid; grid-template-columns: repeat(4, 64px); gap: 8px; }
+    .picker-item { padding: 6px; border: 2px solid #ddd; border-radius: 4px; cursor: pointer; text-align: center; }
+    .picker-item:hover { border-color: #999; }
+    .picker-item .tex-preview { width: 36px; height: 36px; margin: 0 auto 4px; border-radius: 2px; }
+    .picker-item .tex-label { font-size: 10px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* プレビュー */
+    .preview-large { width: 100px; height: 100px; margin: 0 auto 16px; }
+
+    /* 3Dプレビュー枠 */
+    .preview-container { width: 100%; aspect-ratio: 3 / 4; background: #000; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+    .preview-toolbar { height: 12.5%; background: #1a1a1a; display: flex; align-items: center; padding: 0 8px; gap: 8px; }
+    .preview-3d { flex: 1; display: flex; align-items: center; justify-content: center; color: #666; }
+    .preview-control { height: 12.5%; background: #1a1a1a; display: flex; align-items: center; justify-content: center; padding: 0 8px; gap: 8px; }
+    .toolbar-btn { width: 32px; height: 32px; background: #333; border: 1px solid #555; border-radius: 4px; color: #fff; cursor: pointer; font-size: 11px; }
+    .toolbar-btn:hover { background: #444; }
+    .toolbar-btn.active { background: #4285f4; border-color: #4285f4; }
+
+    /* マテリアルアイテム */
+    .material-item { text-align: center; }
+    .material-item .preview { width: 32px; height: 32px; margin: 0 auto 4px; border: 1px solid #444; border-radius: 4px; cursor: pointer; }
+    .material-item .tex-name { font-size: 9px; color: #888; }
+  </style>
+</head>
+<body>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('blocks')">ブロック一覧</div>
+    <div class="tab" onclick="switchTab('textures')">テクスチャ一覧</div>
+  </div>
+
+  <!-- ブロック一覧 -->
+  <div class="main active" id="blockList">
+    <div class="column col-left">
+      <div class="grid">
+        <div class="tile selected"><div class="tile-img" style="background:#9e9e9e;"></div><div class="tile-name">石</div></div>
+        <div class="tile"><div class="tile-img" style="background:#8d6e63;"></div><div class="tile-name">土</div></div>
+        <div class="tile"><div class="tile-img" style="background:#81c784;"></div><div class="tile-name">草ブロック</div></div>
+        <div class="tile add-new"><div class="tile-img" style="font-size:24px;color:#4285f4;">+</div><div class="tile-name">新規追加</div></div>
+      </div>
+    </div>
+    <div class="column col-mid">
+      <h3 style="margin-bottom:16px;">基本情報</h3>
+      <div class="form-group"><label>ブロックID<span class="required">*</span></label><input type="text" value="stone"></div>
+      <div class="form-group"><label>表示名<span class="required">*</span></label><input type="text" value="石"></div>
+      <div class="form-group">
+        <label>ブロックタイプ</label>
+        <select id="blockTypeSelect">
+          <option value="normal" selected>通常ブロック</option>
+          <option value="custom">カスタムブロック</option>
+        </select>
+      </div>
+      <div class="form-group"><label>ドロップアイテム</label><input type="text" value="cobblestone"></div>
+      <div class="form-group"><label>発光レベル (0-15)</label><input type="number" min="0" max="15" value="0"></div>
+      <div class="form-group">
+        <label>オプション</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item"><input type="checkbox">透過ブロック</label>
+        </div>
+      </div>
+      <div class="btn-row"><button class="btn-danger">削除</button><button class="btn-primary">保存</button></div>
+    </div>
+    <div class="column col-right">
+      <div class="preview-container">
+        <div class="preview-toolbar">
+          <div style="flex:1;"></div>
+          <button class="toolbar-btn" id="bgBtn" title="背景色切り替え">BG</button>
+        </div>
+        <div class="preview-3d">
+          <span>(3Dプレビュー)</span>
+        </div>
+        <div class="preview-control" id="controlPanel">
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;" onclick="openPicker()"></div><div class="tex-name">default</div></div>
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;" onclick="openPicker()"></div><div class="tex-name">top</div></div>
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;" onclick="openPicker()"></div><div class="tex-name">bottom</div></div>
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;" onclick="openPicker()"></div><div class="tex-name">front</div></div>
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;" onclick="openPicker()"></div><div class="tex-name">back</div></div>
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;" onclick="openPicker()"></div><div class="tex-name">left</div></div>
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;" onclick="openPicker()"></div><div class="tex-name">right</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ一覧 -->
+  <div class="main" id="textureList">
+    <div class="column col-7">
+      <h3 style="margin-bottom:16px;">テクスチャ一覧</h3>
+      <div class="grid">
+        <div class="tile selected"><div class="tile-img" style="background:#9e9e9e;"></div><div class="tile-id">ID: 0</div><div class="tile-name">stone.png</div></div>
+        <div class="tile"><div class="tile-img" style="background:#8d6e63;"></div><div class="tile-id">ID: 1</div><div class="tile-name">dirt.png</div></div>
+        <div class="tile"><div class="tile-img" style="background:#81c784;"></div><div class="tile-id">ID: 2</div><div class="tile-name">grass_top.png</div></div>
+      </div>
+    </div>
+    <div class="column col-3">
+      <h3 style="margin-bottom:16px;">テクスチャ詳細</h3>
+      <div class="preview-large" style="background:#9e9e9e;border-radius:8px;"></div>
+      <div class="form-group"><label>テクスチャID</label><input type="number" value="0" readonly></div>
+      <div class="form-group"><label>ファイル名</label><input type="text" value="stone.png" readonly></div>
+      <div class="form-group">
+        <label>代表色（マップ表示用）</label>
+        <div class="color-row"><input type="color" value="#9e9e9e"><input type="text" value="#9e9e9e"></div>
+      </div>
+      <div class="btn-row btn-row-between"><button class="btn-danger">削除</button><button class="btn-primary">保存</button></div>
+    </div>
+  </div>
+
+  <!-- テクスチャ選択ポップアップ -->
+  <div class="picker-overlay" id="pickerOverlay" onclick="closePicker(event)">
+    <div class="picker" onclick="event.stopPropagation()">
+      <div class="picker-header"><h4>テクスチャを選択</h4><button class="picker-close" onclick="closePicker()">&times;</button></div>
+      <div class="picker-grid">
+        <div class="picker-item"><div class="tex-preview" style="background:#9e9e9e;"></div><div class="tex-label">stone.png</div></div>
+        <div class="picker-item"><div class="tex-preview" style="background:#8d6e63;"></div><div class="tex-label">dirt.png</div></div>
+        <div class="picker-item"><div class="tex-preview" style="background:#81c784;"></div><div class="tex-label">grass_top.png</div></div>
+        <div class="picker-item"><div class="tex-preview" style="background:#78909c;"></div><div class="tex-label">cobblestone.png</div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (tab === 'blocks' ? i === 0 : i === 1)));
+      document.getElementById('blockList').classList.toggle('active', tab === 'blocks');
+      document.getElementById('textureList').classList.toggle('active', tab === 'textures');
+    }
+    function openPicker() { document.getElementById('pickerOverlay').classList.add('show'); }
+    function closePicker(e) { if (!e || e.target === e.currentTarget) document.getElementById('pickerOverlay').classList.remove('show'); }
+  </script>
+</body>
+</html>
