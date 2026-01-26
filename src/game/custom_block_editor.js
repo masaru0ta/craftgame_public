@@ -1351,10 +1351,10 @@ class CustomBlockEditor {
     this.continuousPlacement.direction = placement.direction;
     this.continuousPlacement.lastCoord = placement.coord;
 
-    // 0.5秒後から連続設置を開始
+    // 0.3秒後から連続設置を開始
     this.continuousPlacement.intervalId = setInterval(() => {
       this._continuePlacement();
-    }, 500);
+    }, 300);
   }
 
   /**

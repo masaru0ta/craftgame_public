@@ -1818,10 +1818,10 @@ test.describe('連続設置機能', () => {
 
       editor.continuousPlacement.intervalId = setInterval(() => {
         editor._continuePlacement();
-      }, 500);
+      }, 300);
 
-      // 0.6秒待機
-      await new Promise(r => setTimeout(r, 600));
+      // 0.4秒待機
+      await new Promise(r => setTimeout(r, 400));
 
       const afterSecondData = editor.getVoxelLookData();
       const state = editor.getContinuousPlacementState();
@@ -1917,10 +1917,10 @@ test.describe('連続設置機能', () => {
 
       editor.continuousPlacement.intervalId = setInterval(() => {
         editor._continuePlacement();
-      }, 500);
+      }, 300);
 
-      // 0.6秒待機
-      await new Promise(r => setTimeout(r, 600));
+      // 0.4秒待機
+      await new Promise(r => setTimeout(r, 400));
 
       const afterState = editor.getContinuousPlacementState();
 
@@ -1958,10 +1958,10 @@ test.describe('連続設置機能', () => {
 
       editor.continuousPlacement.intervalId = setInterval(() => {
         editor._continuePlacement();
-      }, 500);
+      }, 300);
 
-      // 0.6秒待機（1回の連続設置で範囲外に到達）
-      await new Promise(r => setTimeout(r, 600));
+      // 0.4秒待機（1回の連続設置で範囲外に到達）
+      await new Promise(r => setTimeout(r, 400));
 
       const state = editor.getContinuousPlacementState();
 
@@ -1976,7 +1976,7 @@ test.describe('連続設置機能', () => {
     expect(result.active).toBe(false);
   });
 
-  test('連続設置間隔が約0.5秒である', async ({ page }) => {
+  test('連続設置間隔が約0.3秒である', async ({ page }) => {
     // プログラム的に連続設置間隔をテスト
     const result = await page.evaluate(async () => {
       const editor = window.editorUI.customBlockEditor;
@@ -2000,10 +2000,10 @@ test.describe('連続設置機能', () => {
         if (editor.continuousPlacement.lastCoord) {
           timestamps.push({ time: Date.now(), coord: { ...editor.continuousPlacement.lastCoord } });
         }
-      }, 500);
+      }, 300);
 
-      // 1.2秒待機（2回の連続設置）
-      await new Promise(r => setTimeout(r, 1200));
+      // 0.8秒待機（2回の連続設置）
+      await new Promise(r => setTimeout(r, 800));
 
       const state = editor.getContinuousPlacementState();
 
@@ -2019,11 +2019,11 @@ test.describe('連続設置機能', () => {
     // 少なくとも2回の設置が行われている（初期 + 2回）
     expect(result.timestamps.length).toBeGreaterThanOrEqual(3);
 
-    // 間隔が約500msであることを確認
+    // 間隔が約300msであることを確認
     if (result.timestamps.length >= 2) {
       const interval = result.timestamps[1].time - result.timestamps[0].time;
       // 許容誤差 100ms
-      expect(interval).toBeLessThan(600);
+      expect(interval).toBeLessThan(400);
     }
   });
 
