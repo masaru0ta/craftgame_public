@@ -20,7 +20,8 @@
       "Bash(start:*)",
       "Bash(mkdir:*)",
       "WebFetch(domain:*)",
-      "mcp__playwright__*"
+      "mcp__playwright__*",
+      "WebFetch(domain:*)"
     ]
   }
 }

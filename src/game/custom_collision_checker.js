@@ -8,11 +8,11 @@ class CollisionChecker {
   static BALL_COUNT = 30;
   static BALL_DIAMETER = 0.1;
   static FIXED_TIMESTEP = 1 / 60;
-  static GRAVITY = -9.8 * 0.1;
+  static GRAVITY = -9.8 * 0.2;
   static RESTITUTION = 0.7;
-  static BOUNDARY = 0.5;
-  static UPPER_BOUNDARY = 1.5;
   static VOXEL_SIZE = 0.25; // 4x4x4グリッドで1ボクセル = 0.25
+  static FALL_THRESHOLD = -2; // 奈落判定のY座標閾値
+  static BALL_COLLISION = true; // ボール同士の衝突を有効化
 
   /**
    * @param {Object} options
@@ -126,27 +126,32 @@ class CollisionChecker {
     }
 
     for (let i = 0; i < this.ballCount; i++) {
-      // ランダムな初期位置（ブロック上部）
-      const x = (Math.random() - 0.5) * 0.8;
-      const y = 0.8 + Math.random() * 0.3;
-      const z = (Math.random() - 0.5) * 0.8;
-
       const mesh = new this.THREE.Mesh(this._sharedGeometry, this._sharedMaterial);
-      mesh.position.set(x, y, z);
       this.scene.add(mesh);
       this.ballMeshes.push(mesh);
 
       // 物理状態
-      this.balls.push({
-        position: new this.THREE.Vector3(x, y, z),
-        velocity: new this.THREE.Vector3(
-          (Math.random() - 0.5) * 0.5,
-          0,
-          (Math.random() - 0.5) * 0.5
-        ),
+      const ball = {
+        position: new this.THREE.Vector3(),
+        velocity: new this.THREE.Vector3(),
         mesh: mesh
-      });
+      };
+      this._setRandomSpawnPosition(ball);
+      this.balls.push(ball);
     }
+  }
+
+  /**
+   * ボールにランダムな初期位置・速度を設定
+   * @private
+   */
+  _setRandomSpawnPosition(ball) {
+    const x = (Math.random() - 0.5) * 0.8;
+    const y = 0.8 + Math.random() * 0.3;
+    const z = (Math.random() - 0.5) * 0.8;
+    ball.position.set(x, y, z);
+    ball.velocity.set((Math.random() - 0.5) * 0.5, 0, (Math.random() - 0.5) * 0.5);
+    ball.mesh.position.copy(ball.position);
   }
 
   /**
@@ -193,8 +198,7 @@ class CollisionChecker {
    */
   _update(dt) {
     const r = this.ballRadius;
-    const boundary = CollisionChecker.BOUNDARY;
-    const upperBoundary = CollisionChecker.UPPER_BOUNDARY;
+    const fallThreshold = CollisionChecker.FALL_THRESHOLD;
 
     for (const ball of this.balls) {
       // 重力を適用
@@ -203,30 +207,95 @@ class CollisionChecker {
       // 位置を更新
       const newPos = ball.position.clone().addScaledVector(ball.velocity, dt);
 
-      // 当たり判定チェック
+      // 当たり判定ボクセルとのみ衝突チェック（床面/壁面衝突なし）
       this._checkCollision(ball, newPos);
 
-      // 境界衝突チェック（共通化）
-      this._clampAxis(ball, newPos, 'y', -boundary, upperBoundary, r);
-      this._clampAxis(ball, newPos, 'x', -boundary, boundary, r);
-      this._clampAxis(ball, newPos, 'z', -boundary, boundary, r);
-
       ball.position.copy(newPos);
+
+      // 奈落に落ちたら初期位置に再生成
+      if (ball.position.y < fallThreshold) {
+        this._respawnBall(ball);
+      }
+    }
+
+    // ボール同士の衝突チェック
+    if (CollisionChecker.BALL_COLLISION) {
+      this._checkBallCollisions();
     }
   }
 
   /**
-   * 軸方向の境界チェックと反射
+   * ボール同士の衝突チェック
    * @private
    */
-  _clampAxis(ball, newPos, axis, min, max, radius) {
-    if (newPos[axis] - radius < min) {
-      newPos[axis] = min + radius;
-      ball.velocity[axis] = -ball.velocity[axis] * this.restitution;
-    } else if (newPos[axis] + radius > max) {
-      newPos[axis] = max - radius;
-      ball.velocity[axis] = -ball.velocity[axis] * this.restitution;
+  _checkBallCollisions() {
+    const balls = this.balls;
+    const count = balls.length;
+    const diameter = this.ballDiameter;
+    const restitution = this.restitution;
+
+    for (let i = 0; i < count; i++) {
+      for (let j = i + 1; j < count; j++) {
+        const ball1 = balls[i];
+        const ball2 = balls[j];
+
+        // 距離を計算
+        const dx = ball2.position.x - ball1.position.x;
+        const dy = ball2.position.y - ball1.position.y;
+        const dz = ball2.position.z - ball1.position.z;
+        const distSq = dx * dx + dy * dy + dz * dz;
+
+        // 衝突判定（直径の2乗と比較）
+        if (distSq < diameter * diameter && distSq > 0.0001) {
+          const dist = Math.sqrt(distSq);
+
+          // 衝突法線（ball1からball2への方向）
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const nz = dz / dist;
+
+          // 相対速度
+          const dvx = ball1.velocity.x - ball2.velocity.x;
+          const dvy = ball1.velocity.y - ball2.velocity.y;
+          const dvz = ball1.velocity.z - ball2.velocity.z;
+
+          // 法線方向の相対速度
+          const dvn = dvx * nx + dvy * ny + dvz * nz;
+
+          // 離れていく場合はスキップ
+          if (dvn <= 0) continue;
+
+          // 衝撃量（同じ質量として計算）
+          const impulse = dvn * restitution;
+
+          // 速度を更新
+          ball1.velocity.x -= impulse * nx;
+          ball1.velocity.y -= impulse * ny;
+          ball1.velocity.z -= impulse * nz;
+          ball2.velocity.x += impulse * nx;
+          ball2.velocity.y += impulse * ny;
+          ball2.velocity.z += impulse * nz;
+
+          // 位置を押し出し（めり込み解消）
+          const overlap = diameter - dist;
+          const pushDist = overlap * 0.5;
+          ball1.position.x -= pushDist * nx;
+          ball1.position.y -= pushDist * ny;
+          ball1.position.z -= pushDist * nz;
+          ball2.position.x += pushDist * nx;
+          ball2.position.y += pushDist * ny;
+          ball2.position.z += pushDist * nz;
+        }
+      }
     }
+  }
+
+  /**
+   * ボールを初期位置に再生成
+   * @private
+   */
+  _respawnBall(ball) {
+    this._setRandomSpawnPosition(ball);
   }
 
   /**

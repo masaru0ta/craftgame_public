@@ -226,24 +226,7 @@
 }
 ```
 
-## 3. テスト項目
+## 3. テスト方針
 
-### 読み取りAPI
-- [x] getBlocksでブロック状態リストがJSON形式で取得できる
-- [x] getBlocksで省略可能な項目は省略されている
-- [x] getTexturesでテクスチャリストがJSON形式で取得できる
-- [x] getAllで全データが取得できる
-- [x] 不正なリクエストでエラーレスポンスが返る
-
-### 書き込みAPI
-- [x] createBlockでブロックを新規作成できる
-- [x] createBlockでblock_str_idが空の場合エラーになる
-- [x] createBlockでblock_str_idが重複する場合エラーになる
-- [x] createBlockでblock_str_idが不正な文字を含む場合エラーになる
-- [x] createBlockでnameが空の場合エラーになる
-- [x] createBlockでshape_typeが不正な値の場合エラーになる
-- [x] saveBlockで既存ブロックを更新できる
-- [x] deleteBlockでブロックを削除できる
-- [x] saveTextureでテクスチャを追加できる
-- [x] saveTextureで既存テクスチャを更新できる
-- [x] deleteTextureでテクスチャを削除できる
+- 読み取りAPI、書き込みAPI の要件を一通りテストする。
+- 正常系、異常系をテストする。

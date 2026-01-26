@@ -8,6 +8,16 @@ class CustomBlockMeshBuilder {
   static GRID_SIZE = 8;
   static DEFAULT_VOXEL_SIZE = 0.125;
 
+  // 面ごとの明るさ
+  static FACE_BRIGHTNESS = {
+    TOP: 1.0,      // +Y (上面)
+    BOTTOM: 0.5,   // -Y (底面)
+    FRONT: 0.85,   // +Z (前)
+    BACK: 0.85,    // -Z (後)
+    LEFT: 0.75,    // -X (左)
+    RIGHT: 0.75    // +X (右)
+  };
+
   /**
    * @param {Object} THREE - Three.jsライブラリ
    */
@@ -79,6 +89,7 @@ class CustomBlockMeshBuilder {
    */
   _createVoxelMesh(x, y, z, size, material) {
     const geometry = new this.THREE.BoxGeometry(size, size, size);
+    this._setVertexColors(geometry);
     return this._createMeshWithPosition(geometry, x, y, z, size, material);
   }
 
@@ -89,6 +100,7 @@ class CustomBlockMeshBuilder {
   _createVoxelMeshWithUV(x, y, z, size, material) {
     const geometry = new this.THREE.BoxGeometry(size, size, size);
     this._setVoxelUV(geometry, x, y, z);
+    this._setVertexColors(geometry);
     return this._createMeshWithPosition(geometry, x, y, z, size, material);
   }
 
@@ -106,6 +118,38 @@ class CustomBlockMeshBuilder {
       z * size - offset
     );
     return mesh;
+  }
+
+  /**
+   * 頂点カラーを設定（面ごとの明るさ）
+   * @private
+   */
+  _setVertexColors(geometry) {
+    const brightness = CustomBlockMeshBuilder.FACE_BRIGHTNESS;
+
+    // BoxGeometryの面順序: +X, -X, +Y, -Y, +Z, -Z
+    // 各面4頂点、計24頂点
+    const faceBrightness = [
+      brightness.RIGHT,  // +X (0-3)
+      brightness.LEFT,   // -X (4-7)
+      brightness.TOP,    // +Y (8-11)
+      brightness.BOTTOM, // -Y (12-15)
+      brightness.FRONT,  // +Z (16-19)
+      brightness.BACK    // -Z (20-23)
+    ];
+
+    const colors = new Float32Array(24 * 3);
+    for (let face = 0; face < 6; face++) {
+      const b = faceBrightness[face];
+      for (let v = 0; v < 4; v++) {
+        const idx = (face * 4 + v) * 3;
+        colors[idx] = b;
+        colors[idx + 1] = b;
+        colors[idx + 2] = b;
+      }
+    }
+
+    geometry.setAttribute('color', new this.THREE.BufferAttribute(colors, 3));
   }
 
   /**
@@ -158,7 +202,7 @@ class CustomBlockMeshBuilder {
   /**
    * 見た目用のデフォルトマテリアルを作成
    * @param {string} textureBase64 - テクスチャのBase64データ（省略時はグレー単色）
-   * @returns {THREE.MeshLambertMaterial}
+   * @returns {THREE.MeshBasicMaterial}
    */
   createDefaultMaterial(textureBase64 = null) {
     return textureBase64
@@ -169,20 +213,24 @@ class CustomBlockMeshBuilder {
   /**
    * テクスチャからマテリアルを作成
    * @param {string} textureBase64 - テクスチャのBase64データ
-   * @returns {THREE.MeshLambertMaterial}
+   * @returns {THREE.MeshBasicMaterial}
    */
   createMaterialFromTexture(textureBase64) {
     const texture = this._loadTexture(textureBase64);
-    return new this.THREE.MeshLambertMaterial({ map: texture, transparent: false });
+    return new this.THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: false,
+      vertexColors: true
+    });
   }
 
   /**
    * 単色マテリアルを作成
    * @param {number} color - 色（16進数）
-   * @returns {THREE.MeshLambertMaterial}
+   * @returns {THREE.MeshBasicMaterial}
    */
   createColorMaterial(color) {
-    return new this.THREE.MeshLambertMaterial({ color });
+    return new this.THREE.MeshBasicMaterial({ color, vertexColors: true });
   }
 
   /**

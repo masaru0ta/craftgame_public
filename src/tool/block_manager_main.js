@@ -15,10 +15,16 @@ const state = {
   isModified: false,
   api: null,
   editorUI: null, // BlockEditorUI インスタンス
+  thumbnailGenerator: null, // BlockThumbnail インスタンス
+  thumbnailCache: {}, // サムネイルキャッシュ { block_id: dataUrl }
 };
 
 // DOM要素キャッシュ
 const elements = {};
+
+// テクスチャ追加時のスロット情報を保持
+let pendingTextureSlot = null;
+let pendingTextureSlotType = null;
 
 /**
  * 初期化
@@ -33,11 +39,21 @@ async function init() {
   // BlockEditorUI 初期化
   initBlockEditorUI();
 
+  // BlockThumbnail 初期化（サムネイル生成用）
+  state.thumbnailGenerator = new BlockThumbnail({
+    THREE: THREE,
+    size: 128,
+    backgroundColor: '#ffffff'
+  });
+
   // イベントリスナー設定
   setupEventListeners();
 
   // データ読み込み
   await loadData();
+
+  // テスト用にstateをグローバルに公開
+  window.state = state;
 }
 
 /**
@@ -58,8 +74,7 @@ function initBlockEditorUI() {
     container: container,
     THREE: THREE,
     onTextureAdd: (slot) => {
-      // テクスチャ追加ダイアログを開く（将来の拡張用）
-      console.log('テクスチャ追加:', slot);
+      openTextureFileDialog(slot);
     },
     onBlockChange: (blockData) => {
       state.isModified = true;
@@ -96,6 +111,7 @@ function cacheElements() {
   elements.deleteTextureBtn = document.getElementById('deleteTextureBtn');
   elements.pickerOverlay = document.getElementById('pickerOverlay');
   elements.pickerGrid = document.getElementById('pickerGrid');
+  elements.textureFileInput = document.getElementById('textureFileInput');
 }
 
 /**
@@ -151,6 +167,9 @@ function setupEventListeners() {
   elements.pickerOverlay.addEventListener('click', (e) => {
     if (e.target === elements.pickerOverlay) closePicker();
   });
+
+  // テクスチャファイル選択
+  elements.textureFileInput.addEventListener('change', handleTextureFileSelect);
 }
 
 /**
@@ -224,7 +243,7 @@ function createBlockTile(block) {
     tile.classList.add('selected');
   }
 
-  // サムネイル色を取得
+  // サムネイル色を取得（フォールバック用）
   const texture = state.textures.find(t => t.texture_id === block.texture_id);
   const color = texture ? texture.color_hex : '#9e9e9e';
 
@@ -234,7 +253,59 @@ function createBlockTile(block) {
   `;
 
   tile.addEventListener('click', () => handleBlockClick(block.block_id));
+
+  // サムネイル生成（非同期）
+  generateThumbnailForTile(tile, block);
+
   return tile;
+}
+
+/**
+ * タイルのサムネイルを生成
+ * @param {HTMLElement} tile - タイル要素
+ * @param {Object} block - ブロックデータ
+ */
+async function generateThumbnailForTile(tile, block) {
+  if (!state.thumbnailGenerator) return;
+
+  // キャッシュにあればそれを使用
+  if (state.thumbnailCache[block.block_id]) {
+    applyThumbnailToTile(tile, state.thumbnailCache[block.block_id]);
+    return;
+  }
+
+  try {
+    const dataUrl = await state.thumbnailGenerator.generate(block, state.textures);
+    state.thumbnailCache[block.block_id] = dataUrl;
+    applyThumbnailToTile(tile, dataUrl);
+  } catch (error) {
+    console.error('サムネイル生成エラー:', error);
+  }
+}
+
+/**
+ * サムネイル画像をタイルに適用
+ * @param {HTMLElement} tile - タイル要素
+ * @param {string} dataUrl - Data URL
+ */
+function applyThumbnailToTile(tile, dataUrl) {
+  const tileImg = tile.querySelector('.tile-img');
+  if (!tileImg) return;
+
+  // 背景スタイルをクリア
+  tileImg.style.background = '';
+
+  // img要素を作成
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.alt = '';
+
+  // 既存の内容をクリアして画像を追加
+  tileImg.innerHTML = '';
+  tileImg.appendChild(img);
+
+  // サムネイル生成済みフラグを設定
+  tile.dataset.hasThumbnail = 'true';
 }
 
 /**
@@ -312,6 +383,7 @@ async function saveBlock() {
   const block = state.blocks.find(b => b.block_id === state.selectedBlockId);
   if (!block) return;
 
+  // 基本情報
   const updatedBlock = {
     block_id: block.block_id,
     block_str_id: elements.blockStrId.value,
@@ -322,6 +394,28 @@ async function saveBlock() {
     is_transparent: elements.isTransparent.checked,
   };
 
+  // BlockEditorUIから形状データを取得してマージ
+  if (state.editorUI) {
+    const shapeData = state.editorUI.getBlockData();
+    if (updatedBlock.shape_type === 'custom') {
+      // カスタムブロック用データ
+      updatedBlock.material_1 = shapeData.material_1 || '';
+      updatedBlock.material_2 = shapeData.material_2 || '';
+      updatedBlock.material_3 = shapeData.material_3 || '';
+      updatedBlock.voxel_look = shapeData.voxel_look || '';
+      updatedBlock.voxel_collision = shapeData.voxel_collision || '';
+    } else {
+      // 標準ブロック用データ
+      updatedBlock.tex_default = shapeData.tex_default || '';
+      updatedBlock.tex_front = shapeData.tex_front || '';
+      updatedBlock.tex_top = shapeData.tex_top || '';
+      updatedBlock.tex_bottom = shapeData.tex_bottom || '';
+      updatedBlock.tex_left = shapeData.tex_left || '';
+      updatedBlock.tex_right = shapeData.tex_right || '';
+      updatedBlock.tex_back = shapeData.tex_back || '';
+    }
+  }
+
   try {
     await state.api.saveBlock(updatedBlock);
 
@@ -329,12 +423,42 @@ async function saveBlock() {
     Object.assign(block, updatedBlock);
     state.isModified = false;
 
+    // サムネイルキャッシュを無効化
+    delete state.thumbnailCache[block.block_id];
+
     renderBlockGrid();
     selectBlock(block.block_id);
+
+    // 成功フィードバック
+    showSaveResult(true);
   } catch (error) {
     console.error('保存エラー:', error);
-    alert('保存に失敗しました。');
+    // 失敗フィードバック
+    showSaveResult(false);
   }
+}
+
+/**
+ * 保存結果のフィードバックを表示
+ * @param {boolean} success - 成功かどうか
+ */
+function showSaveResult(success) {
+  const btn = elements.saveBlockBtn;
+  const originalText = btn.textContent;
+
+  if (success) {
+    btn.classList.add('save-success');
+    btn.textContent = '保存完了';
+  } else {
+    btn.classList.add('save-error');
+    btn.textContent = '保存失敗';
+  }
+
+  // 1.5秒後に元に戻す
+  setTimeout(() => {
+    btn.classList.remove('save-success', 'save-error');
+    btn.textContent = '保存';
+  }, 1500);
 }
 
 /**
@@ -631,6 +755,97 @@ function openPicker(callback) {
  */
 function closePicker() {
   elements.pickerOverlay.classList.remove('show');
+}
+
+// ========================================
+// テクスチャアップロード
+// ========================================
+
+/**
+ * テクスチャファイル選択ダイアログを開く
+ * @param {string|number} slot - スロット名または番号
+ */
+function openTextureFileDialog(slot) {
+  // 現在のスロットタイプを判定
+  const slotType = state.editorUI && state.editorUI.currentShapeType === 'custom' ? 'custom' : 'normal';
+  pendingTextureSlot = slot;
+  pendingTextureSlotType = slotType;
+
+  // ファイル選択ダイアログを開く
+  elements.textureFileInput.click();
+}
+
+/**
+ * テクスチャファイル選択ハンドラ
+ * @param {Event} e - changeイベント
+ */
+async function handleTextureFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  // ファイル入力をリセット（同じファイルを再選択可能に）
+  e.target.value = '';
+
+  try {
+    // ファイルをBase64に変換
+    const base64 = await fileToBase64(file);
+
+    // GAS APIでアップロード（saveTextureでtexture_id省略時は新規追加）
+    const result = await state.api.saveTexture({
+      file_name: file.name,
+      image_base64: base64,
+      color_hex: '#808080' // デフォルトの代表色
+    });
+
+    // ローカル状態に追加
+    const newTexture = {
+      texture_id: result.texture_id,
+      file_name: file.name,
+      image_base64: base64,
+      color_hex: '#808080'
+    };
+    state.textures.push(newTexture);
+    state.textures.sort((a, b) => a.texture_id - b.texture_id);
+
+    // テクスチャ一覧を更新
+    renderTextureGrid();
+
+    // BlockEditorUIのテクスチャを更新
+    if (state.editorUI) {
+      state.editorUI.setTextures(state.textures);
+
+      // アップロードしたテクスチャをスロットに設定
+      if (pendingTextureSlot !== null) {
+        if (pendingTextureSlotType === 'custom') {
+          state.editorUI.setMaterial(pendingTextureSlot, file.name);
+        } else {
+          state.editorUI.setTexture(pendingTextureSlot, file.name);
+        }
+      }
+    }
+
+    // 保留中のスロット情報をクリア
+    pendingTextureSlot = null;
+    pendingTextureSlotType = null;
+
+  } catch (error) {
+    console.error('テクスチャアップロードエラー:', error);
+    alert('テクスチャのアップロードに失敗しました。');
+  }
+}
+
+/**
+ * ファイルをBase64に変換
+ * @param {File} file - ファイル
+ * @returns {Promise<string>} Base64データURL
+ */
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // ========================================

@@ -45,6 +45,10 @@ async function init() {
   // イベント設定
   blockSelect.addEventListener('change', handleBlockSelect);
   saveBtn.addEventListener('click', handleSave);
+
+  // ファイル入力イベント
+  const fileInput = document.getElementById('texture-file-input');
+  fileInput.addEventListener('change', handleFileSelect);
 }
 
 /**
@@ -112,7 +116,75 @@ function handleBlockSelect(e) {
  * テクスチャ追加ボタン押下時の処理
  */
 function handleTextureAdd(slot) {
-  alert(`テクスチャ追加が選択されました (スロット: ${slot})\nこの機能はblock_managerで実装されます。`);
+  // ファイル入力要素を使用してファイル選択ダイアログを開く
+  const fileInput = document.getElementById('texture-file-input');
+  fileInput.dataset.targetSlot = slot;
+  fileInput.click();
+}
+
+/**
+ * ファイル選択時の処理
+ */
+async function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const slot = e.target.dataset.targetSlot;
+
+  // 画像ファイルかチェック
+  if (!file.type.startsWith('image/')) {
+    showStatus('error', '画像ファイルを選択してください');
+    return;
+  }
+
+  try {
+    showStatus('loading', 'テクスチャをアップロード中...');
+
+    // ファイルをBase64に変換
+    const base64 = await fileToBase64(file);
+
+    // APIでアップロード
+    const fileName = file.name.replace(/\.[^/.]+$/, ''); // 拡張子を除去
+    await api.saveTexture({
+      file_name: fileName,
+      image_base64: base64
+    });
+
+    // テクスチャ一覧を再読み込み
+    const data = await api.getAll();
+    textures = data.textures || [];
+    editorUI.setTextures(textures);
+
+    // アップロードしたテクスチャをスロットに設定
+    if (slot && currentBlock) {
+      if (editorUI.currentShapeType === 'custom') {
+        editorUI.setMaterial(parseInt(slot), fileName);
+      } else {
+        editorUI.setTexture(slot, fileName);
+      }
+    }
+
+    showStatus('success', 'テクスチャをアップロードしました');
+    setTimeout(() => hideStatus(), 2000);
+  } catch (error) {
+    console.error('アップロードエラー:', error);
+    showStatus('error', 'アップロードに失敗しました: ' + error.message);
+  }
+
+  // ファイル入力をリセット
+  e.target.value = '';
+}
+
+/**
+ * ファイルをBase64に変換
+ */
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 /**
