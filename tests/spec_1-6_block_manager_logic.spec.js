@@ -16,9 +16,9 @@ const MOCK_BLOCKS = [
 ];
 
 const MOCK_TEXTURES = [
-  { texture_id: 0, filename: 'stone.png', color_hex: '#9e9e9e' },
-  { texture_id: 1, filename: 'dirt.png', color_hex: '#8d6e63' },
-  { texture_id: 2, filename: 'grass_top.png', color_hex: '#81c784' },
+  { texture_id: 0, filename: 'stone.png', file_name: 'stone.png', color_hex: '#9e9e9e' },
+  { texture_id: 1, filename: 'dirt.png', file_name: 'dirt.png', color_hex: '#8d6e63' },
+  { texture_id: 2, filename: 'grass_top.png', file_name: 'grass_top.png', color_hex: '#81c784' },
 ];
 
 // モックAPIのベースURL
@@ -467,5 +467,148 @@ test.describe('4.2.7 テクスチャ編集', () => {
 
     expect(savedData).not.toBeNull();
     expect(savedData.color_hex).toBe('#ff0000');
+  });
+});
+
+// ========================================
+// 4.2.8 BlockEditorUI統合
+// ========================================
+test.describe('4.2.8 BlockEditorUI統合', () => {
+  test('ブロック選択時にBlockEditorUIが右カラムに初期化される', async ({ page }) => {
+    await mockGasApi(page);
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 10000 });
+
+    // 右カラムにBlockEditorUIのコンテナが存在
+    await expect(page.locator('.col-right .preview-container')).toBeVisible();
+    await expect(page.locator('.col-right .preview-3d')).toBeVisible();
+  });
+
+  test('標準ブロック選択時にテクスチャスロットが表示される', async ({ page }) => {
+    await mockGasApi(page, {
+      blocks: [
+        { block_id: 1, block_str_id: 'stone', name: '石', shape_type: 'normal', texture_id: 0 },
+      ],
+    });
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 10000 });
+
+    // 標準ブロック用のテクスチャスロットが表示
+    await expect(page.locator('.col-right .slot').first()).toBeVisible();
+  });
+
+  test('カスタムブロック選択時にマテリアルスロットとモード切替ボタンが表示される', async ({ page }) => {
+    await mockGasApi(page, {
+      blocks: [
+        { block_id: 1, block_str_id: 'custom_block', name: 'カスタム', shape_type: 'custom' },
+      ],
+    });
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 10000 });
+
+    // カスタムブロック用のマテリアルスロットが表示
+    await expect(page.locator('.col-right .material-slot').first()).toBeVisible();
+
+    // モード切替ボタンが表示
+    await expect(page.locator('.col-right #modeToggle')).toBeVisible();
+  });
+
+  test('ブロック切り替え時にエディタが切り替わる', async ({ page }) => {
+    await mockGasApi(page, {
+      blocks: [
+        { block_id: 1, block_str_id: 'stone', name: '石', shape_type: 'normal', texture_id: 0 },
+        { block_id: 2, block_str_id: 'custom_block', name: 'カスタム', shape_type: 'custom' },
+      ],
+    });
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 10000 });
+
+    // 最初は標準ブロック（スロットが表示）
+    await expect(page.locator('.col-right .slot').first()).toBeVisible();
+
+    // カスタムブロックを選択
+    await page.locator('.col-left .tile').nth(1).click();
+
+    // マテリアルスロットに切り替わる
+    await expect(page.locator('.col-right .material-slot').first()).toBeVisible();
+  });
+
+  test('スロットクリックでテクスチャ選択モーダルが表示される', async ({ page }) => {
+    await mockGasApi(page, {
+      blocks: [
+        { block_id: 1, block_str_id: 'stone', name: '石', shape_type: 'normal', texture_id: 0 },
+      ],
+      textures: [
+        { texture_id: 0, filename: 'stone.png', file_name: 'stone.png', color_hex: '#9e9e9e' },
+      ],
+    });
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 10000 });
+
+    // スロットをクリック
+    await page.locator('.col-right .slot').first().click();
+
+    // テクスチャ選択モーダルが表示される
+    await expect(page.locator('.texture-modal-overlay')).toBeVisible();
+  });
+
+  test('テクスチャ選択後にスロット画像が更新される', async ({ page }) => {
+    await mockGasApi(page, {
+      blocks: [
+        { block_id: 1, block_str_id: 'stone', name: '石', shape_type: 'normal', texture_id: 0 },
+      ],
+      textures: [
+        { texture_id: 0, filename: 'stone.png', file_name: 'stone.png', color_hex: '#9e9e9e', image_base64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' },
+      ],
+    });
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 10000 });
+
+    // スロットをクリックしてモーダルを開く
+    const slot = page.locator('.col-right .slot').first();
+    await slot.click();
+    await expect(page.locator('.texture-modal-overlay')).toBeVisible();
+
+    // テクスチャを選択
+    await page.locator('.texture-modal-overlay .texture-item').nth(1).click();
+
+    // モーダルが閉じる
+    await expect(page.locator('.texture-modal-overlay')).not.toBeVisible();
+
+    // スロット画像にbackground-imageが設定される
+    const slotImage = slot.locator('.slot-image');
+    await expect(slotImage).toHaveCSS('background-image', /url/);
+  });
+
+  test('BGボタンがツールバーに表示される', async ({ page }) => {
+    await mockGasApi(page, {
+      blocks: [
+        { block_id: 1, block_str_id: 'stone', name: '石', shape_type: 'normal', texture_id: 0 },
+      ],
+    });
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 10000 });
+
+    // BGボタンがツールバー内に表示される
+    await expect(page.locator('.col-right .preview-toolbar .bg-btn')).toBeVisible();
+  });
+
+  test('カスタムブロックでマテリアルスロットクリックでモーダルが表示される', async ({ page }) => {
+    await mockGasApi(page, {
+      blocks: [
+        { block_id: 1, block_str_id: 'custom_block', name: 'カスタム', shape_type: 'custom' },
+      ],
+      textures: [
+        { texture_id: 0, filename: 'stone.png', file_name: 'stone.png', color_hex: '#9e9e9e' },
+      ],
+    });
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 10000 });
+
+    // マテリアルスロットをクリック
+    await page.locator('.col-right .material-slot').first().click();
+
+    // テクスチャ選択モーダルが表示される
+    await expect(page.locator('.texture-modal-overlay')).toBeVisible();
   });
 });

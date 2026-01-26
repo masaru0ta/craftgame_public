@@ -88,6 +88,8 @@ editorUI.loadBlock(blockData, textures);
 2. 選択状態を更新
 3. 基本情報フォームを更新
 4. BlockEditorUI にブロックをロード
+   - shape_type が `normal` の場合: StandardBlockEditor（1-3）でテクスチャ編集
+   - shape_type が `custom` の場合: CustomBlockEditor（1-4/1-5）でボクセル・当たり判定編集
 
 #### 4.2.3 新規ブロック作成
 
@@ -172,13 +174,19 @@ src/
 | アクティブコンテンツ | `.main.active` | 表示中のコンテンツ |
 | 左カラム | `.col-left` | ブロック一覧グリッド |
 | 中央カラム | `.col-mid` | 基本情報フォーム |
-| 右カラム | `.col-right` | 3Dプレビュー枠 |
+| 右カラム | `.col-right` | BlockEditorUI（3Dエディタ） |
 | グリッド | `.grid` | タイルのグリッド表示 |
 | タイル | `.tile` | 各ブロック/テクスチャのタイル |
 | 選択中タイル | `.tile.selected` | 選択状態 |
 | 3Dプレビュー枠 | `.preview-container` | BlockEditorUIのコンテナ |
 | ツールバー | `.toolbar` | ツールボタン枠 |
 | コントロールパネル | `.control-panel` | テクスチャ/マテリアル設定枠 |
+| 標準ブロック用スロット | `.slot` | テクスチャスロット（normal時に表示） |
+| カスタムブロック用マテリアル | `.material-slot` | マテリアルスロット（custom時に表示） |
+| モード切替ボタン | `#modeToggle` | 編集/衝突テストモード切替（custom時） |
+| テクスチャ選択モーダル | `.texture-modal-overlay` | テクスチャ選択UI |
+| スロット画像 | `.slot-image` | スロット内のテクスチャ画像表示 |
+| BGボタン | `.bg-btn` | 背景色切替ボタン |
 
 ## 8. テスト方針
 
@@ -189,6 +197,13 @@ src/
 
 - モックアップとUIデザイン（要素の存在、場所、色、サイズ）が一致するか検証
 - 処理ロジックの要件１つずつ動作検証
+- BlockEditorUI統合テスト:
+  - ブロック選択時に右カラムにBlockEditorUIが初期化される
+  - 標準ブロック（shape_type: normal）選択時にテクスチャスロット（`.slot`）が表示される
+  - カスタムブロック（shape_type: custom）選択時にマテリアルスロット（`.material-slot`）とモード切替ボタン（`#modeToggle`）が表示される
+  - スロットクリックでテクスチャ選択モーダル（`.texture-modal-overlay`）が表示される
+  - テクスチャ選択後にスロット画像（`.slot-image`）が更新される
+  - BGボタン（`.bg-btn`）がツールバーに表示される
 
 ### テスト用ページ
 

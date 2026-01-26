@@ -14,6 +14,7 @@ const state = {
   selectedTextureId: null,
   isModified: false,
   api: null,
+  editorUI: null, // BlockEditorUI インスタンス
 };
 
 // DOM要素キャッシュ
@@ -29,11 +30,42 @@ async function init() {
   // GAS APIクライアント初期化
   state.api = new GasApi(GAS_API_URL);
 
+  // BlockEditorUI 初期化
+  initBlockEditorUI();
+
   // イベントリスナー設定
   setupEventListeners();
 
   // データ読み込み
   await loadData();
+}
+
+/**
+ * BlockEditorUI を初期化
+ */
+function initBlockEditorUI() {
+  const container = document.querySelector('.col-right');
+  if (!container) return;
+
+  // 既存のプレビューコンテナを削除
+  const existingPreview = container.querySelector('.preview-container');
+  if (existingPreview) {
+    existingPreview.remove();
+  }
+
+  // BlockEditorUI を初期化
+  state.editorUI = new BlockEditorUI({
+    container: container,
+    THREE: THREE,
+    onTextureAdd: (slot) => {
+      // テクスチャ追加ダイアログを開く（将来の拡張用）
+      console.log('テクスチャ追加:', slot);
+    },
+    onBlockChange: (blockData) => {
+      state.isModified = true;
+    }
+  });
+  state.editorUI.init();
 }
 
 /**
@@ -238,6 +270,11 @@ function selectBlock(blockId) {
     elements.dropItem.value = block.drop_item || '';
     elements.lightLevel.value = block.light_level || 0;
     elements.isTransparent.checked = block.is_transparent || false;
+
+    // BlockEditorUI にブロックをロード
+    if (state.editorUI) {
+      state.editorUI.loadBlock(block, state.textures);
+    }
   }
 }
 
@@ -256,6 +293,12 @@ function handleBlockTypeChange(e) {
       return;
     }
     state.isModified = true;
+
+    // BlockEditorUI を再ロード
+    if (state.editorUI) {
+      const updatedBlock = { ...block, shape_type: newType };
+      state.editorUI.loadBlock(updatedBlock, state.textures);
+    }
   }
 }
 

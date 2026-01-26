@@ -355,6 +355,7 @@ class BlockEditorUI {
 
     // モード切替ボタン（カスタムブロック用、初期非表示）
     this.modeToggleBtn = document.createElement('button');
+    this.modeToggleBtn.id = 'modeToggle'; // 仕様書 1-6 で定義されたセレクタ
     this.modeToggleBtn.className = 'mode-toggle-btn';
     this.modeToggleBtn.textContent = 'look';
     this.modeToggleBtn.style.display = 'none';
@@ -400,7 +401,7 @@ class BlockEditorUI {
 
     this.normalSlots.forEach(slot => {
       const item = document.createElement('div');
-      item.className = 'material-item';
+      item.className = 'slot material-item'; // 1-6 で .slot、1-3 で .material-item を使用
       item.dataset.slot = slot;
       item.innerHTML = `
         <div class="slot-image"></div>
@@ -417,7 +418,7 @@ class BlockEditorUI {
 
     this.customSlots.forEach(slot => {
       const item = document.createElement('div');
-      item.className = 'material-item';
+      item.className = 'material-slot material-item'; // 1-6 で .material-slot、1-4 で .material-item を使用
       item.dataset.materialSlot = slot;
       item.innerHTML = `
         <div class="slot-image"></div>
