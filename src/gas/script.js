@@ -10,6 +10,46 @@ const SPREADSHEET_ID = '1opkXxb8BRxQKGD7WKwbEvElWfd9UvIvx8wIDdm36GiM';
 const SHEET_BLOCKS = 'ブロック状態';
 const SHEET_TEXTURES = 'テクスチャ';
 
+// キャッシュ設定
+const CACHE_KEY_BLOCKS = 'blocks';
+const CACHE_KEY_TEXTURES = 'textures';
+const CACHE_EXPIRATION_SECONDS = 300; // 5分
+
+/**
+ * キャッシュからデータを取得
+ * @param {string} key - キャッシュキー
+ * @returns {*} キャッシュデータ（なければnull）
+ */
+function getFromCache(key) {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(key);
+  return cached ? JSON.parse(cached) : null;
+}
+
+/**
+ * キャッシュにデータを保存（失敗しても処理を続行）
+ * @param {string} key - キャッシュキー
+ * @param {*} data - 保存するデータ
+ */
+function saveToCache(key, data) {
+  try {
+    const cache = CacheService.getScriptCache();
+    cache.put(key, JSON.stringify(data), CACHE_EXPIRATION_SECONDS);
+  } catch (e) {
+    // キャッシュ保存失敗（100KB超過など）は無視して続行
+    console.log('Cache save failed: ' + key + ' - ' + e.message);
+  }
+}
+
+/**
+ * キャッシュを削除
+ * @param {string} key - キャッシュキー
+ */
+function clearCache(key) {
+  const cache = CacheService.getScriptCache();
+  cache.remove(key);
+}
+
 /**
  * GETリクエストのハンドラ
  * 読み取り・書き込み両方をGETで処理（CORS対策）
@@ -98,11 +138,32 @@ function doPost(e) {
 }
 
 /**
- * ブロック状態リストを取得
+ * ブロック状態リストを取得（キャッシュ対応）
  * @returns {Array} ブロック状態の配列
  */
 function getBlocks() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_BLOCKS);
+  // キャッシュを確認
+  const cached = getFromCache(CACHE_KEY_BLOCKS);
+  if (cached) {
+    return cached;
+  }
+
+  // スプレッドシートから取得
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const blocks = getBlocksFromSheet(ss.getSheetByName(SHEET_BLOCKS));
+
+  // キャッシュに保存
+  saveToCache(CACHE_KEY_BLOCKS, blocks);
+
+  return blocks;
+}
+
+/**
+ * シートからブロック状態リストを取得（内部関数）
+ * @param {Sheet} sheet - ブロックシート
+ * @returns {Array} ブロック状態の配列
+ */
+function getBlocksFromSheet(sheet) {
   const data = sheet.getDataRange().getValues();
 
   if (data.length < 2) {
@@ -152,11 +213,32 @@ function getBlocks() {
 }
 
 /**
- * テクスチャリストを取得
+ * テクスチャリストを取得（キャッシュ対応）
  * @returns {Array} テクスチャの配列
  */
 function getTextures() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_TEXTURES);
+  // キャッシュを確認
+  const cached = getFromCache(CACHE_KEY_TEXTURES);
+  if (cached) {
+    return cached;
+  }
+
+  // スプレッドシートから取得
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const textures = getTexturesFromSheet(ss.getSheetByName(SHEET_TEXTURES));
+
+  // キャッシュに保存
+  saveToCache(CACHE_KEY_TEXTURES, textures);
+
+  return textures;
+}
+
+/**
+ * シートからテクスチャリストを取得（内部関数）
+ * @param {Sheet} sheet - テクスチャシート
+ * @returns {Array} テクスチャの配列
+ */
+function getTexturesFromSheet(sheet) {
   const data = sheet.getDataRange().getValues();
 
   if (data.length < 2) {
@@ -193,13 +275,14 @@ function getTextures() {
 }
 
 /**
- * 全データを取得
+ * 全データを取得（スプレッドシートを1回だけ開く）
  * @returns {Object} ブロックとテクスチャのデータ
  */
 function getAll() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   return {
-    blocks: getBlocks(),
-    textures: getTextures()
+    blocks: getBlocksFromSheet(ss.getSheetByName(SHEET_BLOCKS)),
+    textures: getTexturesFromSheet(ss.getSheetByName(SHEET_TEXTURES))
   };
 }
 
@@ -305,6 +388,9 @@ function createBlock(blockData) {
   // 新規行を追加
   sheet.appendRow(rowData);
 
+  // キャッシュを無効化
+  clearCache(CACHE_KEY_BLOCKS);
+
   return { block_id: newBlockId };
 }
 
@@ -350,6 +436,9 @@ function saveBlock(blockData) {
   // 既存行を更新
   sheet.getRange(rowIndex, 1, 1, headers.length).setValues([rowData]);
 
+  // キャッシュを無効化
+  clearCache(CACHE_KEY_BLOCKS);
+
   return { block_id: blockData.block_id };
 }
 
@@ -368,6 +457,8 @@ function deleteBlock(params) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][blockIdIndex] === params.block_id) {
       sheet.deleteRow(i + 1);
+      // キャッシュを無効化
+      clearCache(CACHE_KEY_BLOCKS);
       return { deleted: true };
     }
   }
@@ -425,6 +516,9 @@ function saveTexture(textureData) {
     sheet.appendRow(rowData);
   }
 
+  // キャッシュを無効化
+  clearCache(CACHE_KEY_TEXTURES);
+
   return { texture_id: textureId };
 }
 
@@ -443,6 +537,8 @@ function deleteTexture(params) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][textureIdIndex] === params.texture_id) {
       sheet.deleteRow(i + 1);
+      // キャッシュを無効化
+      clearCache(CACHE_KEY_TEXTURES);
       return { deleted: true };
     }
   }

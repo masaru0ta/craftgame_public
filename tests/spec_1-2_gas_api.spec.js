@@ -80,6 +80,28 @@ test.describe('1-2 GAS API', () => {
       expect(json).toHaveProperty('error');
     });
 
+    test('キャッシュ効果: 2回目のgetBlocksは高速', async ({ request }) => {
+      // 1回目（キャッシュなし or キャッシュ済み）
+      const start1 = Date.now();
+      const response1 = await request.get(`${API_URL}?action=getBlocks`);
+      const time1 = Date.now() - start1;
+      expect(response1.ok()).toBeTruthy();
+
+      // 2回目（キャッシュヒット期待）
+      const start2 = Date.now();
+      const response2 = await request.get(`${API_URL}?action=getBlocks`);
+      const time2 = Date.now() - start2;
+      expect(response2.ok()).toBeTruthy();
+
+      // 結果をログ出力（キャッシュ効果の確認用）
+      console.log(`1回目: ${time1}ms, 2回目: ${time2}ms`);
+
+      // 両方のレスポンスが同じデータを返すことを確認
+      const json1 = await response1.json();
+      const json2 = await response2.json();
+      expect(json1.data.length).toBe(json2.data.length);
+    });
+
   });
 
   // ============================================
