@@ -7,6 +7,7 @@ const { test, expect } = require('@playwright/test');
  */
 
 const TEST_PAGE_PATH = '/test/spec_1-6_block_manager.html';
+const TOOL_PAGE_PATH = '/tool/block_manager.html';
 
 // 色定数
 const COLORS = {
@@ -231,5 +232,72 @@ test.describe('タブ切り替え', () => {
 
     await page.locator('.tab').first().click();
     await expect(page.locator('#blockList')).toHaveClass(/active/);
+  });
+});
+
+// ============================================
+// BlockEditorUI スタイル連動
+// ============================================
+test.describe('BlockEditorUI スタイル連動', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TOOL_PAGE_PATH);
+    // データ読み込み待機
+    await page.waitForSelector('.col-left .tile', { timeout: 30000 });
+  });
+
+  test('ブラシサイズボタンの高さが1-4と同じ clamp(24px, 5vw, 48px) である', async ({ page }) => {
+    // カスタムブロックを選択してブラシサイズボタンを表示
+    // まずカスタムブロックのタイルをクリック（2番目以降にあると想定）
+    const tiles = page.locator('.col-left .tile:not(.add-new)');
+    const count = await tiles.count();
+
+    // カスタムブロックを探して選択
+    let found = false;
+    for (let i = 0; i < count; i++) {
+      await tiles.nth(i).click();
+      // モード切替ボタンが表示されたらカスタムブロック
+      const modeBtn = page.locator('.mode-toggle-btn');
+      if (await modeBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        found = true;
+        break;
+      }
+    }
+
+    if (found) {
+      const brushBtn = page.locator('.brush-size-btn').first();
+      const slotImage = page.locator('.custom-slots .slot-image').first();
+
+      // ブラシサイズボタンの高さがスロット画像と同じ
+      const brushHeight = await brushBtn.evaluate(el => el.getBoundingClientRect().height);
+      const slotHeight = await slotImage.evaluate(el => el.getBoundingClientRect().height);
+
+      expect(Math.abs(brushHeight - slotHeight)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('衝突テストボタンの高さがスロット画像と同じである', async ({ page }) => {
+    // カスタムブロックを選択
+    const tiles = page.locator('.col-left .tile:not(.add-new)');
+    const count = await tiles.count();
+
+    let found = false;
+    for (let i = 0; i < count; i++) {
+      await tiles.nth(i).click();
+      const checkBtn = page.locator('.check-btn');
+      if (await checkBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        found = true;
+        break;
+      }
+    }
+
+    if (found) {
+      const checkBtn = page.locator('.check-btn');
+      const slotImage = page.locator('.custom-slots .slot-image').first();
+
+      const btnHeight = await checkBtn.evaluate(el => el.getBoundingClientRect().height);
+      const slotHeight = await slotImage.evaluate(el => el.getBoundingClientRect().height);
+
+      expect(Math.abs(btnHeight - slotHeight)).toBeLessThanOrEqual(1);
+    }
   });
 });

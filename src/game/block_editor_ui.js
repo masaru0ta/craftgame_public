@@ -361,17 +361,31 @@ class BlockEditorUI {
     this.modeToggleBtn.style.display = 'none';
     leftGroup.appendChild(this.modeToggleBtn);
 
-    // ブラシサイズボタン（カスタムブロック用、初期非表示）
+    // ブラシサイズグループ（カスタムブロック用、初期非表示）
+    this.brushGroup = document.createElement('div');
+    this.brushGroup.className = 'brush-group';
+    this.brushGroup.style.display = 'none';
+
+    const brushButtons = document.createElement('div');
+    brushButtons.className = 'brush-buttons';
+
     [4, 2, 1].forEach(size => {
       const btn = document.createElement('button');
       btn.className = 'brush-size-btn';
       btn.textContent = `${size}`;
       btn.dataset.size = size;
-      btn.style.display = 'none';
       if (size === 2) btn.classList.add('active');
-      centerGroup.appendChild(btn);
+      brushButtons.appendChild(btn);
       this.brushSizeButtons.push(btn);
     });
+
+    const brushLabel = document.createElement('span');
+    brushLabel.className = 'brush-label';
+    brushLabel.textContent = 'ブラシサイズ';
+
+    this.brushGroup.appendChild(brushButtons);
+    this.brushGroup.appendChild(brushLabel);
+    centerGroup.appendChild(this.brushGroup);
 
     // BGボタン
     const bgBtn = document.createElement('button');
@@ -562,9 +576,7 @@ class BlockEditorUI {
       customSlots.style.display = 'flex';
 
       this.modeToggleBtn.style.display = 'block';
-      this.brushSizeButtons.forEach(btn => {
-        btn.style.display = 'block';
-      });
+      this.brushGroup.style.display = 'flex';
 
       // 衝突テストボタンを表示
       this.checkBtn.style.display = 'block';
@@ -578,9 +590,7 @@ class BlockEditorUI {
       customSlots.style.display = 'none';
 
       this.modeToggleBtn.style.display = 'none';
-      this.brushSizeButtons.forEach(btn => {
-        btn.style.display = 'none';
-      });
+      this.brushGroup.style.display = 'none';
 
       // 衝突テストボタンを非表示
       this.checkBtn.style.display = 'none';

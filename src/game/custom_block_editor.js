@@ -197,6 +197,7 @@ class CustomBlockEditor {
   setBrushSize(size) {
     if ([1, 2, 4].includes(size)) {
       this.brushSize = size;
+      this._updateHighlightGeometry();
     }
   }
 
@@ -205,6 +206,14 @@ class CustomBlockEditor {
    * @returns {number} ブラシサイズ
    */
   getBrushSize() {
+    return this.brushSize;
+  }
+
+  /**
+   * 現在のハイライトサイズを取得（ブラシサイズと連動）
+   * @returns {number} ハイライトサイズ
+   */
+  getHighlightSize() {
     return this.brushSize;
   }
 
@@ -514,8 +523,11 @@ class CustomBlockEditor {
    * @private
    */
   _setupHighlight() {
+    const voxelSize = CustomBlockEditor.VOXEL_SIZE;
+    const size = voxelSize * this.brushSize;
+
     // 面ハイライト（緑）
-    const faceGeometry = new this.THREE.PlaneGeometry(0.125, 0.125);
+    const faceGeometry = new this.THREE.PlaneGeometry(size, size);
     const faceMaterial = new this.THREE.MeshBasicMaterial({
       color: 0x00ff00,
       transparent: true,
@@ -527,14 +539,14 @@ class CustomBlockEditor {
     this.scene.add(this.highlightFace);
 
     // 辺ハイライト（赤）
-    const edgesGeometry = new this.THREE.EdgesGeometry(new this.THREE.BoxGeometry(0.125, 0.125, 0.125));
+    const edgesGeometry = new this.THREE.EdgesGeometry(new this.THREE.BoxGeometry(size, size, size));
     const edgesMaterial = new this.THREE.LineBasicMaterial({ color: 0xff0000 });
     this.highlightEdges = new this.THREE.LineSegments(edgesGeometry, edgesMaterial);
     this.highlightEdges.visible = false;
     this.scene.add(this.highlightEdges);
 
     // 床面グリッドハイライト
-    const gridHighlightGeometry = new this.THREE.PlaneGeometry(0.125, 0.125);
+    const gridHighlightGeometry = new this.THREE.PlaneGeometry(size, size);
     const gridHighlightMaterial = new this.THREE.MeshBasicMaterial({
       color: 0x00ff00,
       transparent: true,
@@ -545,6 +557,33 @@ class CustomBlockEditor {
     this.gridHighlight.rotation.x = -Math.PI / 2;
     this.gridHighlight.visible = false;
     this.scene.add(this.gridHighlight);
+  }
+
+  /**
+   * ハイライトジオメトリをブラシサイズに合わせて更新
+   * @private
+   */
+  _updateHighlightGeometry() {
+    if (!this.highlightFace || !this.highlightEdges || !this.gridHighlight) {
+      return;
+    }
+
+    const voxelSize = CustomBlockEditor.VOXEL_SIZE;
+    const size = voxelSize * this.brushSize;
+
+    // 面ハイライトのジオメトリを更新
+    this.highlightFace.geometry.dispose();
+    this.highlightFace.geometry = new this.THREE.PlaneGeometry(size, size);
+
+    // 辺ハイライトのジオメトリを更新
+    this.highlightEdges.geometry.dispose();
+    this.highlightEdges.geometry = new this.THREE.EdgesGeometry(
+      new this.THREE.BoxGeometry(size, size, size)
+    );
+
+    // 床面グリッドハイライトのジオメトリを更新
+    this.gridHighlight.geometry.dispose();
+    this.gridHighlight.geometry = new this.THREE.PlaneGeometry(size, size);
   }
 
   /**
@@ -838,26 +877,47 @@ class CustomBlockEditor {
         const hitObject = hit.object;
         const hitFace = hit.face;
 
+        const voxelSize = CustomBlockEditor.VOXEL_SIZE;
+        const brushSize = this.brushSize;
+        const brushVoxelSize = voxelSize * brushSize;
+        const centerOffset = (brushSize - 1) * voxelSize / 2;
+
+        // ヒットしたボクセルの座標を取得
+        const hitCoord = this._positionToVoxelCoord(hitObject.position);
+
+        // ブラシサイズに応じてスナップした座標を計算
+        const snappedX = Math.floor(hitCoord.x / brushSize) * brushSize;
+        const snappedY = Math.floor(hitCoord.y / brushSize) * brushSize;
+        const snappedZ = Math.floor(hitCoord.z / brushSize) * brushSize;
+
+        // スナップした位置のワールド座標を計算
+        const snappedPos = new this.THREE.Vector3(
+          snappedX * voxelSize - this._voxelOffset + centerOffset,
+          snappedY * voxelSize - this._voxelOffset + centerOffset,
+          snappedZ * voxelSize - this._voxelOffset + centerOffset
+        );
+
         // 辺ハイライト
-        this.highlightEdges.position.copy(hitObject.position);
+        this.highlightEdges.position.copy(snappedPos);
         this.highlightEdges.visible = true;
 
         // 面ハイライト - 設置可能な場合のみ表示
         const normal = hitFace.normal.clone();
         normal.transformDirection(hitObject.matrixWorld);
 
-        // ヒットしたボクセルの座標を取得
-        const hitCoord = this._positionToVoxelCoord(hitObject.position);
-
         // 法線方向に隣接する位置
-        const targetX = hitCoord.x + Math.round(normal.x);
-        const targetY = hitCoord.y + Math.round(normal.y);
-        const targetZ = hitCoord.z + Math.round(normal.z);
+        const targetX = snappedX + Math.round(normal.x) * brushSize;
+        const targetY = snappedY + Math.round(normal.y) * brushSize;
+        const targetZ = snappedZ + Math.round(normal.z) * brushSize;
 
-        // 設置可能かチェック（8x8x8の範囲内）
-        if (this._isValidCoord(targetX, targetY, targetZ)) {
-          this.highlightFace.position.copy(hitObject.position);
-          this.highlightFace.position.add(normal.multiplyScalar(CustomBlockEditor.VOXEL_SIZE / 2 + 0.001));
+        // 設置可能かチェック（8x8x8の範囲内、ブラシサイズ分の領域が必要）
+        const validTarget = targetX >= 0 && targetX + brushSize <= CustomBlockEditor.GRID_SIZE &&
+                           targetY >= 0 && targetY + brushSize <= CustomBlockEditor.GRID_SIZE &&
+                           targetZ >= 0 && targetZ + brushSize <= CustomBlockEditor.GRID_SIZE;
+
+        if (validTarget) {
+          this.highlightFace.position.copy(snappedPos);
+          this.highlightFace.position.add(normal.clone().multiplyScalar(brushVoxelSize / 2 + 0.001));
           this.highlightFace.lookAt(this.highlightFace.position.clone().add(normal));
           this.highlightFace.visible = true;
         } else {
@@ -874,16 +934,22 @@ class CustomBlockEditor {
 
     if (this._intersectionPoint) {
       const voxelSize = CustomBlockEditor.VOXEL_SIZE;
+      const brushSize = this.brushSize;
+      const brushVoxelSize = voxelSize * brushSize;
 
-      // グリッドにスナップ
-      const gridX = Math.floor((this._intersectionPoint.x + 0.5) / voxelSize);
-      const gridZ = Math.floor((this._intersectionPoint.z + 0.5) / voxelSize);
+      // ブラシサイズに応じたグリッドにスナップ
+      const gridX = Math.floor((this._intersectionPoint.x + 0.5) / brushVoxelSize) * brushSize;
+      const gridZ = Math.floor((this._intersectionPoint.z + 0.5) / brushVoxelSize) * brushSize;
 
-      if (gridX >= 0 && gridX < CustomBlockEditor.GRID_SIZE && gridZ >= 0 && gridZ < CustomBlockEditor.GRID_SIZE) {
+      // ハイライトの中心位置を計算（ブラシサイズの中央）
+      const centerOffset = (brushSize - 1) * voxelSize / 2;
+
+      if (gridX >= 0 && gridX + brushSize <= CustomBlockEditor.GRID_SIZE &&
+          gridZ >= 0 && gridZ + brushSize <= CustomBlockEditor.GRID_SIZE) {
         this.gridHighlight.position.set(
-          gridX * voxelSize - this._voxelOffset,
+          gridX * voxelSize - this._voxelOffset + centerOffset,
           -0.5 + 0.001,
-          gridZ * voxelSize - this._voxelOffset
+          gridZ * voxelSize - this._voxelOffset + centerOffset
         );
         this.gridHighlight.visible = true;
       } else {

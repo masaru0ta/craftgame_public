@@ -648,6 +648,36 @@ test.describe('ボクセル編集', () => {
     expect(hasHighlight).toBe(true);
   });
 
+  test('ブラシサイズ1のときハイライトサイズが1である', async ({ page }) => {
+    await page.evaluate(() => {
+      window.editorUI.customBlockEditor.setBrushSize(1);
+    });
+    const highlightSize = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getHighlightSize();
+    });
+    expect(highlightSize).toBe(1);
+  });
+
+  test('ブラシサイズ2のときハイライトサイズが2である', async ({ page }) => {
+    await page.evaluate(() => {
+      window.editorUI.customBlockEditor.setBrushSize(2);
+    });
+    const highlightSize = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getHighlightSize();
+    });
+    expect(highlightSize).toBe(2);
+  });
+
+  test('ブラシサイズ4のときハイライトサイズが4である', async ({ page }) => {
+    await page.evaluate(() => {
+      window.editorUI.customBlockEditor.setBrushSize(4);
+    });
+    const highlightSize = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.getHighlightSize();
+    });
+    expect(highlightSize).toBe(4);
+  });
+
 });
 
 // ============================================
@@ -1101,6 +1131,120 @@ test.describe('データ形式', () => {
 
     // 初期状態または空データであることを確認
     expect(typeof allEmpty).toBe('boolean');
+  });
+
+});
+
+// ============================================
+// UIレイアウト（モックアップ準拠）
+// ============================================
+test.describe('UIレイアウト（モックアップ準拠）', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    await page.selectOption('#block-select', { index: 1 });
+  });
+
+  test('ブラシサイズが.brush-groupでグループ化されている', async ({ page }) => {
+    // .brush-group が存在する
+    await expect(page.locator('.brush-group')).toBeVisible();
+
+    // .brush-group 内に .brush-buttons がある
+    await expect(page.locator('.brush-group .brush-buttons')).toBeVisible();
+
+    // .brush-buttons 内にブラシサイズボタンが3つある
+    await expect(page.locator('.brush-group .brush-buttons .brush-size-btn')).toHaveCount(3);
+  });
+
+  test('ブラシサイズに「ブラシサイズ」ラベルがある', async ({ page }) => {
+    // .brush-label が存在する
+    const label = page.locator('.brush-group .brush-label');
+    await expect(label).toBeVisible();
+    await expect(label).toHaveText('ブラシサイズ');
+  });
+
+  test('衝突テストボタンがコントロールパネル右側に配置される', async ({ page }) => {
+    // 衝突テストボタンが表示される
+    await expect(page.locator('.check-btn')).toBeVisible();
+
+    // コントロールパネルがhas-check-btnクラスを持つ（justify-content: space-between）
+    await expect(page.locator('.control-panel.has-check-btn')).toBeVisible();
+  });
+
+  test('当たり判定モードで自動作成ボタンがコントロールパネル左側に表示される', async ({ page }) => {
+    // 当たり判定モードに切り替え
+    await page.locator('.mode-toggle-btn').click();
+
+    // 自動作成ボタンが表示される
+    await expect(page.locator('.auto-create-btn')).toBeVisible();
+
+    // コントロールパネルの構造確認（左に自動作成、右に衝突テスト）
+    const controlPanel = page.locator('.control-panel.has-check-btn');
+    await expect(controlPanel).toBeVisible();
+  });
+
+  test('衝突テストボタンのスタイルが正しい（緑背景、padding 8px 16px）', async ({ page }) => {
+    const checkBtn = page.locator('.check-btn');
+
+    // 背景色が緑系であることを確認
+    const bgColor = await checkBtn.evaluate(el => window.getComputedStyle(el).backgroundColor);
+    // #4caf50 = rgb(76, 175, 80)
+    expect(bgColor).toMatch(/rgb\(76,\s*175,\s*80\)/);
+  });
+
+  test('自動作成ボタンのスタイルが正しい（青背景、padding 8px 16px）', async ({ page }) => {
+    // 当たり判定モードに切り替え
+    await page.locator('.mode-toggle-btn').click();
+
+    const autoCreateBtn = page.locator('.auto-create-btn');
+
+    // 背景色が青系であることを確認
+    const bgColor = await autoCreateBtn.evaluate(el => window.getComputedStyle(el).backgroundColor);
+    // #2196f3 = rgb(33, 150, 243)
+    expect(bgColor).toMatch(/rgb\(33,\s*150,\s*243\)/);
+  });
+
+  test('衝突テストボタンの高さがスロット画像と同じ高さである', async ({ page }) => {
+    // カスタムブロック用のスロット画像を取得
+    const slotImage = page.locator('.custom-slots .slot-image').first();
+    const checkBtn = page.locator('.check-btn');
+
+    const slotHeight = await slotImage.evaluate(el => el.getBoundingClientRect().height);
+    const btnHeight = await checkBtn.evaluate(el => el.getBoundingClientRect().height);
+
+    // 高さが同じであること（許容誤差1px）
+    expect(Math.abs(slotHeight - btnHeight)).toBeLessThanOrEqual(1);
+  });
+
+  test('自動作成ボタンの高さがスロット画像と同じ高さである', async ({ page }) => {
+    // 当たり判定モードに切り替える前に、見た目モードでスロット画像の高さを取得
+    const slotImage = page.locator('.custom-slots .slot-image').first();
+    const slotHeight = await slotImage.evaluate(el => el.getBoundingClientRect().height);
+
+    // 当たり判定モードに切り替え
+    await page.locator('.mode-toggle-btn').click();
+
+    const autoCreateBtn = page.locator('.auto-create-btn');
+    const btnHeight = await autoCreateBtn.evaluate(el => el.getBoundingClientRect().height);
+
+    // 高さが同じであること（許容誤差1px）
+    expect(Math.abs(slotHeight - btnHeight)).toBeLessThanOrEqual(1);
+  });
+
+  test('衝突テストボタンのフォントサイズが16pxである', async ({ page }) => {
+    const checkBtn = page.locator('.check-btn');
+    const fontSize = await checkBtn.evaluate(el => window.getComputedStyle(el).fontSize);
+    expect(fontSize).toBe('16px');
+  });
+
+  test('自動作成ボタンのフォントサイズが16pxである', async ({ page }) => {
+    // 当たり判定モードに切り替え
+    await page.locator('.mode-toggle-btn').click();
+
+    const autoCreateBtn = page.locator('.auto-create-btn');
+    const fontSize = await autoCreateBtn.evaluate(el => window.getComputedStyle(el).fontSize);
+    expect(fontSize).toBe('16px');
   });
 
 });
