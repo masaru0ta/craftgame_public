@@ -10,8 +10,78 @@
 </head>
 <body>
   <div class="tabs">
+    <div class="tab data-tab" data-tab="data">データ選択</div>
     <div class="tab active" data-tab="blocks">ブロック一覧</div>
     <div class="tab" data-tab="textures">テクスチャ一覧</div>
+  </div>
+
+  <!-- データ選択 -->
+  <div class="main" id="dataSelect">
+    <div class="column col-data-left">
+      <h3>データファイル一覧</h3>
+      <div class="data-file-list" id="dataFileList"></div>
+      <div class="add-file-item" id="addDataFileBtn">
+        <span style="font-size:20px;">+</span>
+        <span>新しいデータファイルを追加</span>
+      </div>
+    </div>
+    <div class="column col-data-right">
+      <!-- 詳細表示（編集モード） -->
+      <div class="detail-panel" id="detailPanel">
+        <h3 id="detailTitle">データファイル詳細</h3>
+        <div class="form-group">
+          <label>ファイル名<span class="required">*</span></label>
+          <input type="text" id="detailName">
+          <div class="error-message" id="nameError">ファイル名を入力してください</div>
+        </div>
+        <div class="form-group">
+          <label>スプレッドシートID<span class="required">*</span></label>
+          <input type="text" id="detailSpreadsheetId">
+          <div class="error-message" id="idError">スプレッドシートIDを入力してください</div>
+        </div>
+        <div class="form-group">
+          <label>作成日時</label>
+          <input type="text" id="detailCreatedAt" readonly>
+        </div>
+        <div class="btn-row btn-row-between">
+          <button class="btn-danger" id="deleteBtn">削除</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-secondary" id="copyBtn">コピー作成</button>
+            <button class="btn-primary" id="useBtn">このデータを使用</button>
+            <button class="btn-secondary" id="saveBtn">保存</button>
+          </div>
+        </div>
+        <div class="notice">
+          <strong>注意</strong>
+          スプレッドシートには1-1で定義されたシート構造（ブロック状態、テクスチャ）が必要です。
+          また、スプレッドシートへのアクセス権限が必要です。
+        </div>
+      </div>
+
+      <!-- 新規追加モード -->
+      <div class="detail-panel" id="addPanel" style="display:none;">
+        <h3>新しいデータファイルを追加</h3>
+        <div class="form-group">
+          <label>ファイル名<span class="required">*</span></label>
+          <input type="text" id="newName" placeholder="例: my_data">
+          <div class="error-message" id="newNameError">ファイル名を入力してください</div>
+        </div>
+        <div class="form-group">
+          <label>スプレッドシートID<span class="required">*</span></label>
+          <input type="text" id="newSpreadsheetId" placeholder="例: 1opkXxb8BRxQKGD7WKwbEvElWfd9UvIvx8wIDdm36GiM">
+          <div class="error-message" id="newIdError">スプレッドシートIDを入力してください</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-secondary" id="cancelAddBtn">キャンセル</button>
+          <button class="btn-primary" id="confirmAddBtn">追加</button>
+        </div>
+        <div class="notice">
+          <strong>注意</strong>
+          スプレッドシートには1-1で定義されたシート構造（ブロック状態、テクスチャ）が必要です。
+          また、スプレッドシートへのアクセス権限が必要です。
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ブロック一覧 -->

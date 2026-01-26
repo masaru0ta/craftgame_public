@@ -3,12 +3,44 @@
  * スプレッドシートのデータを読み書きするAPI
  */
 
-// スプレッドシートID
-const SPREADSHEET_ID = '1opkXxb8BRxQKGD7WKwbEvElWfd9UvIvx8wIDdm36GiM';
+// デフォルトスプレッドシートID（データファイルが未設定時に使用）
+const DEFAULT_SPREADSHEET_ID = '1opkXxb8BRxQKGD7WKwbEvElWfd9UvIvx8wIDdm36GiM';
 
 // シート名
 const SHEET_BLOCKS = 'ブロック状態';
 const SHEET_TEXTURES = 'テクスチャ';
+
+// データファイル管理用PropertiesServiceキー
+const PROP_DATA_FILES = 'dataFiles';
+const PROP_ACTIVE_DATA_FILE_ID = 'activeDataFileId';
+
+/**
+ * 使用中のスプレッドシートIDを取得
+ * @returns {string} スプレッドシートID
+ */
+function getActiveSpreadsheetId() {
+  const props = PropertiesService.getScriptProperties();
+  const activeId = props.getProperty(PROP_ACTIVE_DATA_FILE_ID);
+
+  if (!activeId) {
+    return DEFAULT_SPREADSHEET_ID;
+  }
+
+  const filesJson = props.getProperty(PROP_DATA_FILES);
+  if (!filesJson) {
+    return DEFAULT_SPREADSHEET_ID;
+  }
+
+  const files = JSON.parse(filesJson);
+  const activeFile = files.find(f => f.id === activeId);
+
+  return activeFile ? activeFile.spreadsheetId : DEFAULT_SPREADSHEET_ID;
+}
+
+// 後方互換性のためSPREADSHEET_IDを動的に取得する関数として定義
+function get_SPREADSHEET_ID() {
+  return getActiveSpreadsheetId();
+}
 
 // キャッシュ設定
 const CACHE_KEY_BLOCKS = 'blocks';
@@ -90,6 +122,25 @@ function doGet(e) {
       case 'deleteTexture':
         result = deleteTexture(data);
         break;
+      // データファイル管理
+      case 'getDataFiles':
+        result = getDataFiles();
+        break;
+      case 'setActiveDataFile':
+        result = setActiveDataFile(data);
+        break;
+      case 'createDataFile':
+        result = createDataFile(data);
+        break;
+      case 'updateDataFile':
+        result = updateDataFile(data);
+        break;
+      case 'deleteDataFile':
+        result = deleteDataFile(data);
+        break;
+      case 'copyDataFile':
+        result = copyDataFile(data);
+        break;
       default:
         return createErrorResponse('不正なアクション: ' + action);
     }
@@ -149,7 +200,7 @@ function getBlocks() {
   }
 
   // スプレッドシートから取得
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = SpreadsheetApp.openById(get_SPREADSHEET_ID());
   const blocks = getBlocksFromSheet(ss.getSheetByName(SHEET_BLOCKS));
 
   // キャッシュに保存
@@ -224,7 +275,7 @@ function getTextures() {
   }
 
   // スプレッドシートから取得
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = SpreadsheetApp.openById(get_SPREADSHEET_ID());
   const textures = getTexturesFromSheet(ss.getSheetByName(SHEET_TEXTURES));
 
   // キャッシュに保存
@@ -279,7 +330,7 @@ function getTexturesFromSheet(sheet) {
  * @returns {Object} ブロックとテクスチャのデータ
  */
 function getAll() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = SpreadsheetApp.openById(get_SPREADSHEET_ID());
   return {
     blocks: getBlocksFromSheet(ss.getSheetByName(SHEET_BLOCKS)),
     textures: getTexturesFromSheet(ss.getSheetByName(SHEET_TEXTURES))
@@ -344,7 +395,7 @@ function createBlock(blockData) {
     throw new Error('shape_type must be "normal" or "custom"');
   }
 
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_BLOCKS);
+  const sheet = SpreadsheetApp.openById(get_SPREADSHEET_ID()).getSheetByName(SHEET_BLOCKS);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
 
@@ -405,7 +456,7 @@ function saveBlock(blockData) {
     throw new Error('block_id is required');
   }
 
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_BLOCKS);
+  const sheet = SpreadsheetApp.openById(get_SPREADSHEET_ID()).getSheetByName(SHEET_BLOCKS);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
 
@@ -448,7 +499,7 @@ function saveBlock(blockData) {
  * @returns {Object} 結果
  */
 function deleteBlock(params) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_BLOCKS);
+  const sheet = SpreadsheetApp.openById(get_SPREADSHEET_ID()).getSheetByName(SHEET_BLOCKS);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
 
@@ -472,7 +523,7 @@ function deleteBlock(params) {
  * @returns {Object} 結果
  */
 function saveTexture(textureData) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_TEXTURES);
+  const sheet = SpreadsheetApp.openById(get_SPREADSHEET_ID()).getSheetByName(SHEET_TEXTURES);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
 
@@ -528,7 +579,7 @@ function saveTexture(textureData) {
  * @returns {Object} 結果
  */
 function deleteTexture(params) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_TEXTURES);
+  const sheet = SpreadsheetApp.openById(get_SPREADSHEET_ID()).getSheetByName(SHEET_TEXTURES);
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
 
@@ -544,4 +595,202 @@ function deleteTexture(params) {
   }
 
   throw new Error('texture_id not found');
+}
+
+// ========================================
+// データファイル管理
+// ========================================
+
+/**
+ * UUIDを生成
+ * @returns {string} UUID
+ */
+function generateUUID() {
+  return Utilities.getUuid();
+}
+
+/**
+ * データファイル一覧を取得
+ * @returns {Object} { files, activeId }
+ */
+function getDataFiles() {
+  const props = PropertiesService.getScriptProperties();
+  const filesJson = props.getProperty(PROP_DATA_FILES);
+  const activeId = props.getProperty(PROP_ACTIVE_DATA_FILE_ID);
+
+  const files = filesJson ? JSON.parse(filesJson) : [];
+
+  return {
+    files: files,
+    activeId: activeId || null
+  };
+}
+
+/**
+ * 使用中データファイルを設定
+ * @param {Object} data - { id }
+ * @returns {Object} 結果
+ */
+function setActiveDataFile(data) {
+  if (!data || !data.id) {
+    throw new Error('id is required');
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const filesJson = props.getProperty(PROP_DATA_FILES);
+  const files = filesJson ? JSON.parse(filesJson) : [];
+
+  // ファイルの存在確認
+  const file = files.find(f => f.id === data.id);
+  if (!file) {
+    throw new Error('Data file not found');
+  }
+
+  props.setProperty(PROP_ACTIVE_DATA_FILE_ID, data.id);
+
+  // キャッシュを無効化（スプレッドシートが変わるため）
+  clearCache(CACHE_KEY_BLOCKS);
+  clearCache(CACHE_KEY_TEXTURES);
+
+  return { success: true };
+}
+
+/**
+ * データファイルを作成
+ * @param {Object} data - { name, spreadsheetId }
+ * @returns {Object} 作成されたファイル
+ */
+function createDataFile(data) {
+  if (!data || !data.name) {
+    throw new Error('name is required');
+  }
+  if (!data.spreadsheetId) {
+    throw new Error('spreadsheetId is required');
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const filesJson = props.getProperty(PROP_DATA_FILES);
+  const files = filesJson ? JSON.parse(filesJson) : [];
+
+  const newFile = {
+    id: generateUUID(),
+    name: data.name,
+    spreadsheetId: data.spreadsheetId,
+    createdAt: Date.now()
+  };
+
+  files.push(newFile);
+  props.setProperty(PROP_DATA_FILES, JSON.stringify(files));
+
+  return newFile;
+}
+
+/**
+ * データファイルを更新
+ * @param {Object} data - { id, name, spreadsheetId }
+ * @returns {Object} 結果
+ */
+function updateDataFile(data) {
+  if (!data || !data.id) {
+    throw new Error('id is required');
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const filesJson = props.getProperty(PROP_DATA_FILES);
+  const files = filesJson ? JSON.parse(filesJson) : [];
+
+  const fileIndex = files.findIndex(f => f.id === data.id);
+  if (fileIndex < 0) {
+    throw new Error('Data file not found');
+  }
+
+  // 更新
+  if (data.name) {
+    files[fileIndex].name = data.name;
+  }
+  if (data.spreadsheetId) {
+    files[fileIndex].spreadsheetId = data.spreadsheetId;
+  }
+
+  props.setProperty(PROP_DATA_FILES, JSON.stringify(files));
+
+  // アクティブファイルのスプレッドシートが変わった場合はキャッシュを無効化
+  const activeId = props.getProperty(PROP_ACTIVE_DATA_FILE_ID);
+  if (activeId === data.id) {
+    clearCache(CACHE_KEY_BLOCKS);
+    clearCache(CACHE_KEY_TEXTURES);
+  }
+
+  return { success: true };
+}
+
+/**
+ * データファイルを削除
+ * @param {Object} data - { id }
+ * @returns {Object} 結果
+ */
+function deleteDataFile(data) {
+  if (!data || !data.id) {
+    throw new Error('id is required');
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const activeId = props.getProperty(PROP_ACTIVE_DATA_FILE_ID);
+
+  // 使用中ファイルは削除不可
+  if (activeId === data.id) {
+    throw new Error('Cannot delete active data file');
+  }
+
+  const filesJson = props.getProperty(PROP_DATA_FILES);
+  const files = filesJson ? JSON.parse(filesJson) : [];
+
+  const newFiles = files.filter(f => f.id !== data.id);
+  props.setProperty(PROP_DATA_FILES, JSON.stringify(newFiles));
+
+  return { deleted: true };
+}
+
+/**
+ * データファイルをコピー（スプレッドシートもコピー）
+ * @param {Object} data - { id }
+ * @returns {Object} 作成されたファイル
+ */
+function copyDataFile(data) {
+  if (!data || !data.id) {
+    throw new Error('id is required');
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const filesJson = props.getProperty(PROP_DATA_FILES);
+  const files = filesJson ? JSON.parse(filesJson) : [];
+
+  const sourceFile = files.find(f => f.id === data.id);
+  if (!sourceFile) {
+    throw new Error('Data file not found');
+  }
+
+  const newName = sourceFile.name + '_copy';
+
+  try {
+    // SpreadsheetApp.copy()を使用してコピー（Driveスコープ不要）
+    const sourceSpreadsheet = SpreadsheetApp.openById(sourceFile.spreadsheetId);
+    const copiedSpreadsheet = sourceSpreadsheet.copy(newName);
+    const copiedSpreadsheetId = copiedSpreadsheet.getId();
+
+    // データファイルを作成
+    const newFile = {
+      id: generateUUID(),
+      name: newName,
+      spreadsheetId: copiedSpreadsheetId,
+      createdAt: Date.now()
+    };
+
+    files.push(newFile);
+    props.setProperty(PROP_DATA_FILES, JSON.stringify(files));
+
+    return newFile;
+  } catch (e) {
+    throw new Error('スプレッドシートのコピーに失敗しました: ' + e.message);
+  }
 }

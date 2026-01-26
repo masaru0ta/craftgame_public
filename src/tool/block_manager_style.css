@@ -109,3 +109,141 @@ button { padding: 8px 20px; border: none; border-radius: 4px; font-size: 14px; c
 .col-right .preview-3d {
   flex: 6;
 }
+
+/* データ選択タブ */
+.tab.data-tab { border-right: 1px solid #555; }
+
+/* データ選択画面用レイアウト */
+.col-data-left { flex: 4; border-right: 1px solid #ddd; }
+.col-data-right { flex: 6; background: #fafafa; padding: 24px; }
+
+/* データファイル一覧 */
+.data-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.data-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 2px solid #eee;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.data-file-item:hover { border-color: #ccc; background: #fafafa; }
+.data-file-item.selected {
+  border-color: #4285f4;
+  background: #e3f2fd;
+}
+.data-file-icon {
+  width: 44px;
+  height: 44px;
+  background: #e8f5e9;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.data-file-item.selected .data-file-icon {
+  background: #c8e6c9;
+}
+.data-file-info {
+  flex: 1;
+  min-width: 0;
+}
+.data-file-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 2px;
+}
+.data-file-spreadsheet-id {
+  font-size: 11px;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.data-file-meta {
+  font-size: 10px;
+  color: #aaa;
+  margin-top: 2px;
+}
+.data-file-status {
+  padding: 4px 8px;
+  background: #4285f4;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* 追加ボタン */
+.add-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  border: 2px dashed #aaa;
+  border-radius: 8px;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.add-file-item:hover {
+  border-color: #4285f4;
+  color: #4285f4;
+  background: #f8f9ff;
+}
+
+/* 詳細パネル */
+.detail-panel {
+  max-width: 500px;
+}
+.detail-panel h3 {
+  font-size: 18px;
+  color: #333;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #4285f4;
+}
+.detail-panel .form-group {
+  margin-bottom: 16px;
+}
+.detail-panel .form-group label {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.detail-panel input {
+  padding: 10px 12px;
+}
+
+/* 注意書き */
+.notice {
+  padding: 12px 16px;
+  background: #fff3e0;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #e65100;
+  margin-top: 20px;
+}
+.notice strong { display: block; margin-bottom: 4px; }
+
+/* エラーメッセージ */
+.error-message {
+  color: #d93025;
+  font-size: 12px;
+  margin-top: 4px;
+  display: none;
+}
+.error-message.show { display: block; }

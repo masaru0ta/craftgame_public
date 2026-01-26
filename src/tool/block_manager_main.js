@@ -10,6 +10,9 @@ const GAS_API_URL = window.GAS_API_URL || 'https://script.google.com/macros/s/AK
 const state = {
   blocks: [],
   textures: [],
+  dataFiles: [],
+  activeDataFileId: null,
+  selectedDataFileId: null,
   selectedBlockId: null,
   selectedTextureId: null,
   isModified: false,
@@ -112,6 +115,23 @@ function cacheElements() {
   elements.pickerOverlay = document.getElementById('pickerOverlay');
   elements.pickerGrid = document.getElementById('pickerGrid');
   elements.textureFileInput = document.getElementById('textureFileInput');
+
+  // データ選択画面
+  elements.dataFileList = document.getElementById('dataFileList');
+  elements.addDataFileBtn = document.getElementById('addDataFileBtn');
+  elements.detailPanel = document.getElementById('detailPanel');
+  elements.addPanel = document.getElementById('addPanel');
+  elements.detailName = document.getElementById('detailName');
+  elements.detailSpreadsheetId = document.getElementById('detailSpreadsheetId');
+  elements.detailCreatedAt = document.getElementById('detailCreatedAt');
+  elements.deleteBtn = document.getElementById('deleteBtn');
+  elements.copyBtn = document.getElementById('copyBtn');
+  elements.useBtn = document.getElementById('useBtn');
+  elements.saveBtn = document.getElementById('saveBtn');
+  elements.newName = document.getElementById('newName');
+  elements.newSpreadsheetId = document.getElementById('newSpreadsheetId');
+  elements.cancelAddBtn = document.getElementById('cancelAddBtn');
+  elements.confirmAddBtn = document.getElementById('confirmAddBtn');
 }
 
 /**
@@ -170,6 +190,15 @@ function setupEventListeners() {
 
   // テクスチャファイル選択
   elements.textureFileInput.addEventListener('change', handleTextureFileSelect);
+
+  // データ選択画面
+  elements.addDataFileBtn.addEventListener('click', showAddDataFileMode);
+  elements.cancelAddBtn.addEventListener('click', cancelAddDataFile);
+  elements.confirmAddBtn.addEventListener('click', confirmAddDataFile);
+  elements.deleteBtn.addEventListener('click', deleteDataFile);
+  elements.copyBtn.addEventListener('click', copyDataFile);
+  elements.useBtn.addEventListener('click', useDataFile);
+  elements.saveBtn.addEventListener('click', saveDataFile);
 }
 
 /**
@@ -177,6 +206,9 @@ function setupEventListeners() {
  */
 async function loadData() {
   try {
+    // データファイル一覧を読み込み
+    await loadDataFiles();
+
     const data = await state.api.getAll();
     state.blocks = data.blocks.sort((a, b) => a.block_id - b.block_id);
     state.textures = data.textures.sort((a, b) => a.texture_id - b.texture_id);
@@ -198,12 +230,36 @@ async function loadData() {
 }
 
 /**
+ * データファイル一覧を読み込み
+ */
+async function loadDataFiles() {
+  try {
+    const result = await state.api.getDataFiles();
+    state.dataFiles = result.files || [];
+    state.activeDataFileId = result.activeId || null;
+
+    renderDataFileList();
+
+    // 先頭を選択
+    if (state.dataFiles.length > 0) {
+      selectDataFile(state.dataFiles[0].id);
+    }
+  } catch (error) {
+    console.error('データファイル読み込みエラー:', error);
+    // データファイルAPIがない場合は空で初期化
+    state.dataFiles = [];
+    state.activeDataFileId = null;
+  }
+}
+
+/**
  * タブ切り替え
  */
 function switchTab(tabName) {
   elements.tabs.forEach(tab => {
     tab.classList.toggle('active', tab.dataset.tab === tabName);
   });
+  document.getElementById('dataSelect').classList.toggle('active', tabName === 'data');
   document.getElementById('blockList').classList.toggle('active', tabName === 'blocks');
   document.getElementById('textureList').classList.toggle('active', tabName === 'textures');
 }
@@ -845,6 +901,326 @@ function fileToBase64(file) {
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+// ========================================
+// データファイル管理
+// ========================================
+
+/**
+ * データファイル一覧を描画
+ */
+function renderDataFileList() {
+  if (!elements.dataFileList) return;
+  elements.dataFileList.innerHTML = '';
+
+  state.dataFiles.forEach(file => {
+    const item = createDataFileItem(file);
+    elements.dataFileList.appendChild(item);
+  });
+}
+
+/**
+ * データファイル項目を作成
+ */
+function createDataFileItem(file) {
+  const item = document.createElement('div');
+  item.className = 'data-file-item';
+  item.dataset.fileId = file.id;
+
+  if (file.id === state.selectedDataFileId) {
+    item.classList.add('selected');
+  }
+
+  const createdDate = file.createdAt
+    ? new Date(file.createdAt).toLocaleDateString('ja-JP')
+    : '';
+
+  item.innerHTML = `
+    <div class="data-file-icon">📊</div>
+    <div class="data-file-info">
+      <div class="data-file-name">${escapeHtml(file.name)}</div>
+      <div class="data-file-spreadsheet-id">${escapeHtml(file.spreadsheetId)}</div>
+      <div class="data-file-meta">作成: ${createdDate}</div>
+    </div>
+    ${file.id === state.activeDataFileId ? '<div class="data-file-status">使用中</div>' : ''}
+  `;
+
+  item.addEventListener('click', () => selectDataFile(file.id));
+  return item;
+}
+
+/**
+ * データファイルを選択
+ */
+function selectDataFile(fileId) {
+  state.selectedDataFileId = fileId;
+
+  // 一覧の選択状態を更新
+  elements.dataFileList.querySelectorAll('.data-file-item').forEach(item => {
+    item.classList.toggle('selected', item.dataset.fileId === fileId);
+  });
+
+  // 詳細パネルを表示
+  showDetailPanel(fileId);
+}
+
+/**
+ * 詳細パネルを表示
+ */
+function showDetailPanel(fileId) {
+  const file = state.dataFiles.find(f => f.id === fileId);
+  if (!file) return;
+
+  elements.detailPanel.style.display = 'block';
+  elements.addPanel.style.display = 'none';
+
+  elements.detailName.value = file.name || '';
+  elements.detailSpreadsheetId.value = file.spreadsheetId || '';
+  elements.detailCreatedAt.value = file.createdAt
+    ? new Date(file.createdAt).toLocaleString('ja-JP')
+    : '';
+
+  // 使用中ファイルの場合
+  const isActive = file.id === state.activeDataFileId;
+  elements.useBtn.style.display = isActive ? 'none' : 'inline-block';
+  elements.deleteBtn.disabled = isActive;
+  elements.deleteBtn.style.opacity = isActive ? '0.5' : '1';
+
+  // エラーメッセージをクリア
+  hideDataFileErrors();
+}
+
+/**
+ * 新規追加モードを表示
+ */
+function showAddDataFileMode() {
+  // 選択状態をクリア
+  elements.dataFileList.querySelectorAll('.data-file-item').forEach(item => {
+    item.classList.remove('selected');
+  });
+  state.selectedDataFileId = null;
+
+  elements.detailPanel.style.display = 'none';
+  elements.addPanel.style.display = 'block';
+
+  elements.newName.value = '';
+  elements.newSpreadsheetId.value = '';
+  elements.newName.focus();
+
+  // エラーメッセージをクリア
+  hideDataFileErrors();
+}
+
+/**
+ * 新規追加をキャンセル
+ */
+function cancelAddDataFile() {
+  elements.addPanel.style.display = 'none';
+  elements.detailPanel.style.display = 'block';
+
+  // 最初のファイルを選択
+  if (state.dataFiles.length > 0) {
+    selectDataFile(state.dataFiles[0].id);
+  }
+}
+
+/**
+ * 新規追加を確定
+ */
+async function confirmAddDataFile() {
+  const name = elements.newName.value.trim();
+  const spreadsheetId = elements.newSpreadsheetId.value.trim();
+
+  // バリデーション
+  let valid = true;
+  if (!name) {
+    document.getElementById('newNameError').classList.add('show');
+    valid = false;
+  } else {
+    document.getElementById('newNameError').classList.remove('show');
+  }
+
+  if (!spreadsheetId) {
+    document.getElementById('newIdError').classList.add('show');
+    valid = false;
+  } else {
+    document.getElementById('newIdError').classList.remove('show');
+  }
+
+  if (!valid) return;
+
+  try {
+    const result = await state.api.createDataFile({ name, spreadsheetId });
+
+    // ローカル状態に追加
+    state.dataFiles.push(result);
+    renderDataFileList();
+    selectDataFile(result.id);
+  } catch (error) {
+    console.error('データファイル作成エラー:', error);
+    alert('データファイルの作成に失敗しました。');
+  }
+}
+
+/**
+ * データファイルを保存（更新）
+ */
+async function saveDataFile() {
+  const file = state.dataFiles.find(f => f.id === state.selectedDataFileId);
+  if (!file) return;
+
+  const name = elements.detailName.value.trim();
+  const spreadsheetId = elements.detailSpreadsheetId.value.trim();
+
+  // バリデーション
+  let valid = true;
+  if (!name) {
+    document.getElementById('nameError').classList.add('show');
+    valid = false;
+  } else {
+    document.getElementById('nameError').classList.remove('show');
+  }
+
+  if (!spreadsheetId) {
+    document.getElementById('idError').classList.add('show');
+    valid = false;
+  } else {
+    document.getElementById('idError').classList.remove('show');
+  }
+
+  if (!valid) return;
+
+  try {
+    await state.api.updateDataFile({
+      id: file.id,
+      name,
+      spreadsheetId
+    });
+
+    // ローカル状態を更新
+    file.name = name;
+    file.spreadsheetId = spreadsheetId;
+
+    renderDataFileList();
+    selectDataFile(file.id);
+    alert('保存しました');
+  } catch (error) {
+    console.error('データファイル更新エラー:', error);
+    alert('保存に失敗しました。');
+  }
+}
+
+/**
+ * データファイルを削除
+ */
+async function deleteDataFile() {
+  const file = state.dataFiles.find(f => f.id === state.selectedDataFileId);
+  if (!file) return;
+
+  if (file.id === state.activeDataFileId) {
+    alert('使用中のデータファイルは削除できません。');
+    return;
+  }
+
+  if (!confirm(`データファイル「${file.name}」を削除しますか？`)) {
+    return;
+  }
+
+  try {
+    await state.api.deleteDataFile({ id: file.id });
+
+    // ローカル状態から削除
+    const index = state.dataFiles.findIndex(f => f.id === file.id);
+    if (index >= 0) {
+      state.dataFiles.splice(index, 1);
+    }
+
+    renderDataFileList();
+
+    // 先頭のファイルを選択
+    if (state.dataFiles.length > 0) {
+      selectDataFile(state.dataFiles[0].id);
+    }
+  } catch (error) {
+    console.error('データファイル削除エラー:', error);
+    alert('削除に失敗しました。');
+  }
+}
+
+/**
+ * データファイルをコピー
+ */
+async function copyDataFile() {
+  const file = state.dataFiles.find(f => f.id === state.selectedDataFileId);
+  if (!file) return;
+
+  try {
+    const result = await state.api.copyDataFile({ id: file.id });
+
+    // ローカル状態に追加
+    state.dataFiles.push(result);
+    renderDataFileList();
+    selectDataFile(result.id);
+  } catch (error) {
+    console.error('データファイルコピーエラー:', error);
+    alert('コピーに失敗しました。');
+  }
+}
+
+/**
+ * データファイルを使用中に設定
+ */
+async function useDataFile() {
+  const file = state.dataFiles.find(f => f.id === state.selectedDataFileId);
+  if (!file) return;
+
+  if (!confirm(`データファイル「${file.name}」を使用しますか？\n※ブロック一覧・テクスチャ一覧のデータが切り替わります`)) {
+    return;
+  }
+
+  try {
+    await state.api.setActiveDataFile({ id: file.id });
+
+    // ローカル状態を更新
+    state.activeDataFileId = file.id;
+
+    renderDataFileList();
+    selectDataFile(file.id);
+
+    // ブロック・テクスチャを再読み込み
+    const data = await state.api.getAll();
+    state.blocks = data.blocks.sort((a, b) => a.block_id - b.block_id);
+    state.textures = data.textures.sort((a, b) => a.texture_id - b.texture_id);
+
+    // サムネイルキャッシュをクリア
+    state.thumbnailCache = {};
+
+    renderBlockGrid();
+    renderTextureGrid();
+
+    if (state.blocks.length > 0) {
+      selectBlock(state.blocks[0].block_id);
+    }
+    if (state.textures.length > 0) {
+      selectTexture(state.textures[0].texture_id);
+    }
+
+    alert('データファイルを切り替えました');
+  } catch (error) {
+    console.error('データファイル切替エラー:', error);
+    alert('切り替えに失敗しました。');
+  }
+}
+
+/**
+ * データファイル関連のエラーメッセージを非表示
+ */
+function hideDataFileErrors() {
+  ['nameError', 'idError', 'newNameError', 'newIdError'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('show');
   });
 }
 

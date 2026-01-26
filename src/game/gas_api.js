@@ -115,4 +115,78 @@ class GasApi {
   async deleteTexture(textureId) {
     return this.post('deleteTexture', { texture_id: textureId });
   }
+
+  // ========================================
+  // データファイル管理 API
+  // ========================================
+
+  /**
+   * GETリクエストでデータを送信（CORS対策）
+   * @param {string} action - APIアクション名
+   * @param {Object} data - リクエストデータ
+   * @returns {Promise<Object>} レスポンスデータ
+   */
+  async getWithData(action, data) {
+    const encodedData = encodeURIComponent(JSON.stringify(data));
+    const url = `${this.baseUrl}?action=${action}&data=${encodedData}`;
+    const response = await fetch(url);
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || 'API request failed');
+    }
+    return result.data;
+  }
+
+  /**
+   * データファイル一覧を取得
+   * @returns {Promise<Object>} { files, activeId }
+   */
+  async getDataFiles() {
+    return this.get('getDataFiles');
+  }
+
+  /**
+   * 使用中データファイルを設定
+   * @param {Object} params - { id }
+   * @returns {Promise<Object>} 結果
+   */
+  async setActiveDataFile(params) {
+    return this.getWithData('setActiveDataFile', params);
+  }
+
+  /**
+   * データファイルを作成
+   * @param {Object} params - { name, spreadsheetId }
+   * @returns {Promise<Object>} 作成されたファイル
+   */
+  async createDataFile(params) {
+    return this.getWithData('createDataFile', params);
+  }
+
+  /**
+   * データファイルを更新
+   * @param {Object} params - { id, name, spreadsheetId }
+   * @returns {Promise<Object>} 結果
+   */
+  async updateDataFile(params) {
+    return this.getWithData('updateDataFile', params);
+  }
+
+  /**
+   * データファイルを削除
+   * @param {Object} params - { id }
+   * @returns {Promise<Object>} 結果
+   */
+  async deleteDataFile(params) {
+    return this.getWithData('deleteDataFile', params);
+  }
+
+  /**
+   * データファイルをコピー
+   * @param {Object} params - { id }
+   * @returns {Promise<Object>} 作成されたファイル
+   */
+  async copyDataFile(params) {
+    return this.getWithData('copyDataFile', params);
+  }
 }

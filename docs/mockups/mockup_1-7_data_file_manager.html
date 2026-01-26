@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>データファイル管理 - モック</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; background: #f0f0f0; height: 100vh; display: flex; flex-direction: column; }
+
+    /* タブ */
+    .tabs { display: flex; background: #333; }
+    .tab { padding: 12px 24px; color: #aaa; cursor: pointer; border-bottom: 3px solid transparent; }
+    .tab:hover { color: #fff; background: #444; }
+    .tab.active { color: #fff; border-bottom-color: #4285f4; background: #444; }
+    .tab.data-tab { border-right: 1px solid #555; }
+
+    /* レイアウト */
+    .main { flex: 1; display: none; overflow: hidden; }
+    .main.active { display: flex; }
+    .column { background: #fff; overflow-y: auto; padding: 16px; }
+    .col-left { flex: 3; border-right: 1px solid #ddd; }
+    .col-mid { flex: 2; border-right: 1px solid #ddd; }
+    .col-right { flex: 5; background: #fafafa; }
+    .col-7 { flex: 7; }
+    .col-3 { flex: 3; }
+
+    /* データ選択画面用レイアウト */
+    .col-data-left { flex: 4; border-right: 1px solid #ddd; }
+    .col-data-right { flex: 6; background: #fafafa; padding: 24px; }
+
+    /* タイル・グリッド共通 */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; }
+    .tile { padding: 8px; border: 2px solid transparent; border-radius: 6px; cursor: pointer; text-align: center; transition: all 0.15s; }
+    .tile:hover { background: #f5f5f5; border-color: #ddd; }
+    .tile.selected { background: #e3f2fd; border-color: #4285f4; }
+    .tile.add-new { border: 2px dashed #aaa; }
+    .tile.add-new:hover { border-color: #4285f4; background: #e8f0fe; }
+    .tile-img { width: 48px; height: 48px; margin: 0 auto 4px; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+    .tile-name { font-size: 11px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tile-id { font-size: 10px; color: #888; }
+
+    /* フォーム */
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    .form-group .required { color: #d93025; }
+    input, textarea, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    input:focus, textarea:focus { outline: none; border-color: #4285f4; box-shadow: 0 0 0 2px rgba(66,133,244,0.2); }
+    input[readonly] { background: #f5f5f5; color: #666; cursor: not-allowed; }
+    .color-row { display: flex; gap: 8px; align-items: center; }
+    .color-row input[type="color"] { width: 40px; height: 34px; padding: 2px; cursor: pointer; }
+    .color-row input[type="text"] { flex: 1; }
+
+    /* ボタン */
+    .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; padding-top: 16px; border-top: 1px solid #ddd; }
+    .btn-row-between { justify-content: space-between; }
+    button { padding: 8px 20px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; }
+    .btn-primary { background: #4285f4; color: #fff; }
+    .btn-primary:hover { background: #3367d6; }
+    .btn-secondary { background: #fff; color: #666; border: 1px solid #ddd; }
+    .btn-danger { background: #fff; color: #d93025; border: 1px solid #d93025; }
+
+    /* 3Dプレビュー枠 */
+    .preview-container { width: 100%; aspect-ratio: 3 / 4; background: #000; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+    .preview-toolbar { height: 12.5%; background: #1a1a1a; display: flex; align-items: center; padding: 0 8px; gap: 8px; }
+    .preview-3d { flex: 1; display: flex; align-items: center; justify-content: center; color: #666; }
+    .preview-control { height: 12.5%; background: #1a1a1a; display: flex; align-items: center; justify-content: center; padding: 0 8px; gap: 8px; }
+    .toolbar-btn { width: 32px; height: 32px; background: #333; border: 1px solid #555; border-radius: 4px; color: #fff; cursor: pointer; font-size: 11px; }
+    .toolbar-btn:hover { background: #444; }
+
+    /* プレビュー */
+    .preview-large { width: 100px; height: 100px; margin: 0 auto 16px; }
+
+    /* データファイル一覧 */
+    .data-file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .data-file-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border: 2px solid #eee;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .data-file-item:hover { border-color: #ccc; background: #fafafa; }
+    .data-file-item.selected {
+      border-color: #4285f4;
+      background: #e3f2fd;
+    }
+    .data-file-icon {
+      width: 44px;
+      height: 44px;
+      background: #e8f5e9;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .data-file-item.selected .data-file-icon {
+      background: #c8e6c9;
+    }
+    .data-file-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .data-file-name {
+      font-weight: 500;
+      font-size: 14px;
+      color: #333;
+      margin-bottom: 2px;
+    }
+    .data-file-spreadsheet-id {
+      font-size: 11px;
+      color: #888;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .data-file-meta {
+      font-size: 10px;
+      color: #aaa;
+      margin-top: 2px;
+    }
+    .data-file-status {
+      padding: 4px 8px;
+      background: #4285f4;
+      color: #fff;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    /* 追加ボタン */
+    .add-file-item {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 16px;
+      border: 2px dashed #aaa;
+      border-radius: 8px;
+      background: transparent;
+      color: #666;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .add-file-item:hover {
+      border-color: #4285f4;
+      color: #4285f4;
+      background: #f8f9ff;
+    }
+
+    /* 詳細パネル */
+    .detail-panel {
+      max-width: 500px;
+    }
+    .detail-panel h3 {
+      font-size: 18px;
+      color: #333;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #4285f4;
+    }
+    .detail-panel .form-group {
+      margin-bottom: 16px;
+    }
+    .detail-panel .form-group label {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+    .detail-panel input {
+      padding: 10px 12px;
+    }
+
+    /* 注意書き */
+    .notice {
+      padding: 12px 16px;
+      background: #fff3e0;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #e65100;
+      margin-top: 20px;
+    }
+    .notice strong { display: block; margin-bottom: 4px; }
+
+    /* エラーメッセージ */
+    .error-message {
+      color: #d93025;
+      font-size: 12px;
+      margin-top: 4px;
+      display: none;
+    }
+    .error-message.show { display: block; }
+
+    /* 空状態 */
+    .empty-detail {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 300px;
+      color: #999;
+    }
+    .empty-detail .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="tabs">
+    <div class="tab data-tab active" onclick="switchTab('data')">データ選択</div>
+    <div class="tab" onclick="switchTab('blocks')">ブロック一覧</div>
+    <div class="tab" onclick="switchTab('textures')">テクスチャ一覧</div>
+  </div>
+
+  <!-- データ選択 -->
+  <div class="main active" id="dataSelect">
+    <div class="column col-data-left">
+      <h3 style="margin-bottom:16px;">データファイル一覧</h3>
+      <div class="data-file-list">
+        <div class="data-file-item selected" onclick="selectDataFile(this, 0)">
+          <div class="data-file-icon">📊</div>
+          <div class="data-file-info">
+            <div class="data-file-name">default_data</div>
+            <div class="data-file-spreadsheet-id">1opkXxb8BRxQKGD7WKwbEvElWfd9UvIvx8wIDdm36GiM</div>
+            <div class="data-file-meta">作成: 2024/01/10</div>
+          </div>
+          <div class="data-file-status">使用中</div>
+        </div>
+        <div class="data-file-item" onclick="selectDataFile(this, 1)">
+          <div class="data-file-icon">📊</div>
+          <div class="data-file-info">
+            <div class="data-file-name">test_data</div>
+            <div class="data-file-spreadsheet-id">1abc123def456ghi789jkl012mno345pqr678stu901vwx</div>
+            <div class="data-file-meta">作成: 2024/01/12</div>
+          </div>
+        </div>
+        <div class="data-file-item" onclick="selectDataFile(this, 2)">
+          <div class="data-file-icon">📊</div>
+          <div class="data-file-info">
+            <div class="data-file-name">backup_20240115</div>
+            <div class="data-file-spreadsheet-id">1xyz987wvu654tsr321qpo098nml765kji432hgf210edc</div>
+            <div class="data-file-meta">作成: 2024/01/15</div>
+          </div>
+        </div>
+        <div class="add-file-item" onclick="showAddMode()">
+          <span style="font-size:20px;">+</span>
+          <span>新しいデータファイルを追加</span>
+        </div>
+      </div>
+    </div>
+    <div class="column col-data-right">
+      <!-- 詳細表示（編集モード） -->
+      <div class="detail-panel" id="detailPanel">
+        <h3 id="detailTitle">データファイル詳細</h3>
+        <div class="form-group">
+          <label>ファイル名<span class="required">*</span></label>
+          <input type="text" id="detailName" value="default_data">
+          <div class="error-message" id="nameError">ファイル名を入力してください</div>
+        </div>
+        <div class="form-group">
+          <label>スプレッドシートID<span class="required">*</span></label>
+          <input type="text" id="detailSpreadsheetId" value="1opkXxb8BRxQKGD7WKwbEvElWfd9UvIvx8wIDdm36GiM">
+          <div class="error-message" id="idError">スプレッドシートIDを入力してください</div>
+        </div>
+        <div class="form-group">
+          <label>作成日時</label>
+          <input type="text" id="detailCreatedAt" value="2024/01/10 12:34:56" readonly>
+        </div>
+        <div class="btn-row btn-row-between">
+          <button class="btn-danger" id="deleteBtn" onclick="deleteFile()">削除</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-secondary" id="copyBtn" onclick="copyFile()">コピー作成</button>
+            <button class="btn-primary" id="useBtn" onclick="useFile()">このデータを使用</button>
+            <button class="btn-secondary" id="saveBtn" onclick="saveFile()">保存</button>
+          </div>
+        </div>
+        <div class="notice">
+          <strong>注意</strong>
+          スプレッドシートには1-1で定義されたシート構造（ブロック状態、テクスチャ）が必要です。
+          また、スプレッドシートへのアクセス権限が必要です。
+        </div>
+      </div>
+
+      <!-- 新規追加モード -->
+      <div class="detail-panel" id="addPanel" style="display:none;">
+        <h3>新しいデータファイルを追加</h3>
+        <div class="form-group">
+          <label>ファイル名<span class="required">*</span></label>
+          <input type="text" id="newName" placeholder="例: my_data">
+          <div class="error-message" id="newNameError">ファイル名を入力してください</div>
+        </div>
+        <div class="form-group">
+          <label>スプレッドシートID<span class="required">*</span></label>
+          <input type="text" id="newSpreadsheetId" placeholder="例: 1opkXxb8BRxQKGD7WKwbEvElWfd9UvIvx8wIDdm36GiM">
+          <div class="error-message" id="newIdError">スプレッドシートIDを入力してください</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="cancelAdd()">キャンセル</button>
+          <button class="btn-primary" onclick="confirmAdd()">追加</button>
+        </div>
+        <div class="notice">
+          <strong>注意</strong>
+          スプレッドシートには1-1で定義されたシート構造（ブロック状態、テクスチャ）が必要です。
+          また、スプレッドシートへのアクセス権限が必要です。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ブロック一覧 -->
+  <div class="main" id="blockList">
+    <div class="column col-left">
+      <div class="grid">
+        <div class="tile selected"><div class="tile-img" style="background:#9e9e9e;"></div><div class="tile-name">石</div></div>
+        <div class="tile"><div class="tile-img" style="background:#8d6e63;"></div><div class="tile-name">土</div></div>
+        <div class="tile"><div class="tile-img" style="background:#81c784;"></div><div class="tile-name">草ブロック</div></div>
+        <div class="tile"><div class="tile-img" style="background:#795548;"></div><div class="tile-name">オークの原木</div></div>
+        <div class="tile"><div class="tile-img" style="background:#c62828;"></div><div class="tile-name">レンガ</div></div>
+        <div class="tile"><div class="tile-img" style="background:#78909c;"></div><div class="tile-name">丸石</div></div>
+        <div class="tile add-new"><div class="tile-img" style="font-size:24px;color:#4285f4;">+</div><div class="tile-name">新規追加</div></div>
+      </div>
+    </div>
+    <div class="column col-mid">
+      <h3 style="margin-bottom:16px;">基本情報</h3>
+      <div class="form-group"><label>ブロックID<span class="required">*</span></label><input type="text" value="stone"></div>
+      <div class="form-group"><label>表示名<span class="required">*</span></label><input type="text" value="石"></div>
+      <div class="form-group">
+        <label>ブロックタイプ</label>
+        <select>
+          <option value="normal" selected>通常ブロック</option>
+          <option value="custom">カスタムブロック</option>
+        </select>
+      </div>
+      <div class="form-group"><label>ドロップアイテム</label><input type="text" value="cobblestone"></div>
+      <div class="form-group"><label>発光レベル (0-15)</label><input type="number" min="0" max="15" value="0"></div>
+      <div class="btn-row"><button class="btn-danger">削除</button><button class="btn-primary">保存</button></div>
+    </div>
+    <div class="column col-right">
+      <div class="preview-container">
+        <div class="preview-toolbar">
+          <div style="flex:1;"></div>
+          <button class="toolbar-btn" title="背景色切り替え">BG</button>
+        </div>
+        <div class="preview-3d">
+          <span>（3Dプレビュー）</span>
+        </div>
+        <div class="preview-control">
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;width:32px;height:32px;border-radius:4px;"></div><div style="color:#888;font-size:9px;">default</div></div>
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;width:32px;height:32px;border-radius:4px;"></div><div style="color:#888;font-size:9px;">top</div></div>
+          <div class="material-item" style="display:inline-block;"><div class="preview" style="background:#9e9e9e;width:32px;height:32px;border-radius:4px;"></div><div style="color:#888;font-size:9px;">bottom</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ一覧 -->
+  <div class="main" id="textureList">
+    <div class="column col-7">
+      <h3 style="margin-bottom:16px;">テクスチャ一覧</h3>
+      <div class="grid">
+        <div class="tile selected"><div class="tile-img" style="background:#9e9e9e;"></div><div class="tile-id">ID: 0</div><div class="tile-name">stone.png</div></div>
+        <div class="tile"><div class="tile-img" style="background:#8d6e63;"></div><div class="tile-id">ID: 1</div><div class="tile-name">dirt.png</div></div>
+        <div class="tile"><div class="tile-img" style="background:#81c784;"></div><div class="tile-id">ID: 2</div><div class="tile-name">grass_top.png</div></div>
+      </div>
+    </div>
+    <div class="column col-3">
+      <h3 style="margin-bottom:16px;">テクスチャ詳細</h3>
+      <div class="preview-large" style="background:#9e9e9e;border-radius:8px;"></div>
+      <div class="form-group"><label>テクスチャID</label><input type="number" value="0" readonly></div>
+      <div class="form-group"><label>ファイル名</label><input type="text" value="stone.png" readonly></div>
+      <div class="form-group">
+        <label>代表色（マップ表示用）</label>
+        <div class="color-row"><input type="color" value="#9e9e9e"><input type="text" value="#9e9e9e"></div>
+      </div>
+      <div class="btn-row btn-row-between"><button class="btn-danger">削除</button><button class="btn-primary">保存</button></div>
+    </div>
+  </div>
+
+  <script>
+    // サンプルデータ
+    const dataFiles = [
+      { name: 'default_data', spreadsheetId: '1opkXxb8BRxQKGD7WKwbEvElWfd9UvIvx8wIDdm36GiM', createdAt: '2024/01/10 12:34:56' },
+      { name: 'test_data', spreadsheetId: '1abc123def456ghi789jkl012mno345pqr678stu901vwx', createdAt: '2024/01/12 09:15:30' },
+      { name: 'backup_20240115', spreadsheetId: '1xyz987wvu654tsr321qpo098nml765kji432hgf210edc', createdAt: '2024/01/15 18:22:45' }
+    ];
+    let selectedIndex = 0;
+    let activeFileIndex = 0; // 使用中のファイル
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab').forEach((t, i) => {
+        if (tab === 'data') t.classList.toggle('active', i === 0);
+        else if (tab === 'blocks') t.classList.toggle('active', i === 1);
+        else t.classList.toggle('active', i === 2);
+      });
+      document.getElementById('dataSelect').classList.toggle('active', tab === 'data');
+      document.getElementById('blockList').classList.toggle('active', tab === 'blocks');
+      document.getElementById('textureList').classList.toggle('active', tab === 'textures');
+    }
+
+    function selectDataFile(el, index) {
+      selectedIndex = index;
+      document.querySelectorAll('.data-file-item').forEach(item => item.classList.remove('selected'));
+      el.classList.add('selected');
+
+      // 詳細パネル更新
+      document.getElementById('addPanel').style.display = 'none';
+      document.getElementById('detailPanel').style.display = 'block';
+      document.getElementById('detailTitle').textContent = 'データファイル詳細';
+      document.getElementById('detailName').value = dataFiles[index].name;
+      document.getElementById('detailSpreadsheetId').value = dataFiles[index].spreadsheetId;
+      document.getElementById('detailCreatedAt').value = dataFiles[index].createdAt;
+
+      // 使用中ボタンの状態
+      document.getElementById('useBtn').style.display = index === activeFileIndex ? 'none' : 'inline-block';
+      document.getElementById('deleteBtn').disabled = index === activeFileIndex;
+      document.getElementById('deleteBtn').style.opacity = index === activeFileIndex ? '0.5' : '1';
+    }
+
+    function showAddMode() {
+      document.querySelectorAll('.data-file-item').forEach(item => item.classList.remove('selected'));
+      document.getElementById('detailPanel').style.display = 'none';
+      document.getElementById('addPanel').style.display = 'block';
+      document.getElementById('newName').value = '';
+      document.getElementById('newSpreadsheetId').value = '';
+      document.getElementById('newName').focus();
+    }
+
+    function cancelAdd() {
+      document.getElementById('addPanel').style.display = 'none';
+      document.getElementById('detailPanel').style.display = 'block';
+      // 最初のアイテムを選択
+      const firstItem = document.querySelector('.data-file-item');
+      if (firstItem) {
+        selectDataFile(firstItem, 0);
+      }
+    }
+
+    function confirmAdd() {
+      const name = document.getElementById('newName').value.trim();
+      const spreadsheetId = document.getElementById('newSpreadsheetId').value.trim();
+      let valid = true;
+
+      if (!name) {
+        document.getElementById('newNameError').classList.add('show');
+        valid = false;
+      } else {
+        document.getElementById('newNameError').classList.remove('show');
+      }
+
+      if (!spreadsheetId) {
+        document.getElementById('newIdError').classList.add('show');
+        valid = false;
+      } else {
+        document.getElementById('newIdError').classList.remove('show');
+      }
+
+      if (valid) {
+        alert('データファイル「' + name + '」を追加しました（モックアップ）');
+        cancelAdd();
+      }
+    }
+
+    function copyFile() {
+      const original = dataFiles[selectedIndex];
+      const newName = original.name + '_copy';
+      alert('データファイル「' + newName + '」を作成しました（モックアップ）\n※実際の実装では、スプレッドシートも同じフォルダにコピーされます');
+    }
+
+    function useFile() {
+      const name = dataFiles[selectedIndex].name;
+      if (confirm('データファイル「' + name + '」を使用しますか？\n※ブロック一覧・テクスチャ一覧のデータが切り替わります')) {
+        // 前の使用中表示を削除
+        document.querySelectorAll('.data-file-status').forEach(el => el.remove());
+        // 新しい使用中表示を追加
+        activeFileIndex = selectedIndex;
+        const selectedItem = document.querySelector('.data-file-item.selected');
+        const status = document.createElement('div');
+        status.className = 'data-file-status';
+        status.textContent = '使用中';
+        selectedItem.appendChild(status);
+        // ボタン更新
+        document.getElementById('useBtn').style.display = 'none';
+        document.getElementById('deleteBtn').disabled = true;
+        document.getElementById('deleteBtn').style.opacity = '0.5';
+
+        alert('データファイルを切り替えました（モックアップ）');
+      }
+    }
+
+    function saveFile() {
+      const name = document.getElementById('detailName').value.trim();
+      const spreadsheetId = document.getElementById('detailSpreadsheetId').value.trim();
+      let valid = true;
+
+      if (!name) {
+        document.getElementById('nameError').classList.add('show');
+        valid = false;
+      } else {
+        document.getElementById('nameError').classList.remove('show');
+      }
+
+      if (!spreadsheetId) {
+        document.getElementById('idError').classList.add('show');
+        valid = false;
+      } else {
+        document.getElementById('idError').classList.remove('show');
+      }
+
+      if (valid) {
+        dataFiles[selectedIndex].name = name;
+        dataFiles[selectedIndex].spreadsheetId = spreadsheetId;
+        // リスト表示を更新
+        const selectedItem = document.querySelector('.data-file-item.selected');
+        selectedItem.querySelector('.data-file-name').textContent = name;
+        selectedItem.querySelector('.data-file-spreadsheet-id').textContent = spreadsheetId;
+        alert('保存しました（モックアップ）');
+      }
+    }
+
+    function deleteFile() {
+      if (selectedIndex === activeFileIndex) {
+        alert('使用中のデータファイルは削除できません');
+        return;
+      }
+      const name = dataFiles[selectedIndex].name;
+      if (confirm('データファイル「' + name + '」を削除しますか？')) {
+        document.querySelector('.data-file-item.selected').remove();
+        dataFiles.splice(selectedIndex, 1);
+        // インデックス調整
+        if (activeFileIndex > selectedIndex) activeFileIndex--;
+        selectedIndex = 0;
+        // 最初のアイテムを選択
+        const firstItem = document.querySelector('.data-file-item');
+        if (firstItem) {
+          selectDataFile(firstItem, 0);
+        }
+      }
+    }
+  </script>
+</body>
+</html>
