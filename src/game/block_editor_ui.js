@@ -83,10 +83,7 @@ class BlockEditorUI {
     this._switchEditor(shapeType);
 
     // テクスチャ画像データを設定
-    const textureImages = {};
-    this.textures.forEach(tex => {
-      textureImages[tex.file_name] = tex.image_base64;
-    });
+    const textureImages = this._buildTextureImages();
 
     if (shapeType === 'custom') {
       this.customBlockEditor.setTextureImages(textureImages);
@@ -106,10 +103,7 @@ class BlockEditorUI {
    */
   setTextures(textures) {
     this.textures = textures;
-    const textureImages = {};
-    this.textures.forEach(tex => {
-      textureImages[tex.file_name] = tex.image_base64;
-    });
+    const textureImages = this._buildTextureImages();
 
     if (this.standardBlockEditor) {
       this.standardBlockEditor.setTextureImages(textureImages);
@@ -318,6 +312,19 @@ class BlockEditorUI {
   // ========================================
   // プライベートメソッド
   // ========================================
+
+  /**
+   * テクスチャ画像データのマップを作成
+   * @private
+   * @returns {Object} { textureName: imageBase64 }
+   */
+  _buildTextureImages() {
+    const textureImages = {};
+    for (const tex of this.textures) {
+      textureImages[tex.file_name] = tex.image_base64;
+    }
+    return textureImages;
+  }
 
   /**
    * UIを生成

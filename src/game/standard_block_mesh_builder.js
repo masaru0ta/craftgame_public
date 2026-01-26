@@ -3,6 +3,9 @@
  * Three.jsを使用してブロックのメッシュを生成する
  */
 class StandardBlockMeshBuilder {
+  // 面の順序: right(+X), left(-X), top(+Y), bottom(-Y), front(+Z), back(-Z)
+  static FACE_ORDER = ['right', 'left', 'top', 'bottom', 'front', 'back'];
+
   /**
    * @param {Object} THREE - Three.jsライブラリ
    */
@@ -22,9 +25,7 @@ class StandardBlockMeshBuilder {
     const THREE = this.THREE;
     const geometry = new THREE.BoxGeometry(1, 1, 1);
 
-    // 面の順序: right(+X), left(-X), top(+Y), bottom(-Y), front(+Z), back(-Z)
-    const faceOrder = ['right', 'left', 'top', 'bottom', 'front', 'back'];
-    const materials = faceOrder.map(face => {
+    const materials = StandardBlockMeshBuilder.FACE_ORDER.map(face => {
       return this._createMaterial(face, textures, textureImages);
     });
 
@@ -66,6 +67,17 @@ class StandardBlockMeshBuilder {
   }
 
   /**
+   * 単一マテリアルを破棄
+   * @param {THREE.Material} mat - 破棄するマテリアル
+   * @private
+   */
+  _disposeMaterial(mat) {
+    if (!mat) return;
+    if (mat.map) mat.map.dispose();
+    mat.dispose();
+  }
+
+  /**
    * ブロックメッシュのテクスチャを更新
    * @param {THREE.Mesh} mesh - 更新対象のメッシュ
    * @param {string} face - 面の名前
@@ -74,8 +86,7 @@ class StandardBlockMeshBuilder {
    * @param {Object} textureImages - テクスチャ画像データ
    */
   updateFaceTexture(mesh, face, textureName, textures, textureImages) {
-    const faceOrder = ['right', 'left', 'top', 'bottom', 'front', 'back'];
-    const faceIndex = faceOrder.indexOf(face);
+    const faceIndex = StandardBlockMeshBuilder.FACE_ORDER.indexOf(face);
     if (faceIndex === -1) return;
 
     // 新しいテクスチャ設定を作成
@@ -89,11 +100,7 @@ class StandardBlockMeshBuilder {
     // マテリアルを更新
     const material = this._createMaterial(face, newTextures, textureImages);
     if (Array.isArray(mesh.material)) {
-      // 古いマテリアルを破棄
-      if (mesh.material[faceIndex].map) {
-        mesh.material[faceIndex].map.dispose();
-      }
-      mesh.material[faceIndex].dispose();
+      this._disposeMaterial(mesh.material[faceIndex]);
       mesh.material[faceIndex] = material;
     }
   }
@@ -105,22 +112,15 @@ class StandardBlockMeshBuilder {
    * @param {Object} textureImages - テクスチャ画像データ
    */
   updateAllTextures(mesh, textures, textureImages) {
-    const THREE = this.THREE;
-    const faceOrder = ['right', 'left', 'top', 'bottom', 'front', 'back'];
-
     // 古いマテリアルを破棄
     if (Array.isArray(mesh.material)) {
-      mesh.material.forEach(mat => {
-        if (mat.map) mat.map.dispose();
-        mat.dispose();
-      });
+      mesh.material.forEach(mat => this._disposeMaterial(mat));
     }
 
     // 新しいマテリアルを作成
-    const materials = faceOrder.map(face => {
+    mesh.material = StandardBlockMeshBuilder.FACE_ORDER.map(face => {
       return this._createMaterial(face, textures, textureImages);
     });
-    mesh.material = materials;
   }
 
   /**
@@ -132,13 +132,9 @@ class StandardBlockMeshBuilder {
       mesh.geometry.dispose();
     }
     if (Array.isArray(mesh.material)) {
-      mesh.material.forEach(mat => {
-        if (mat.map) mat.map.dispose();
-        mat.dispose();
-      });
-    } else if (mesh.material) {
-      if (mesh.material.map) mesh.material.map.dispose();
-      mesh.material.dispose();
+      mesh.material.forEach(mat => this._disposeMaterial(mat));
+    } else {
+      this._disposeMaterial(mesh.material);
     }
   }
 }

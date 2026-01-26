@@ -358,6 +358,24 @@ test.describe('StandardBlockEditor クラス', () => {
     expect(resizeSuccess).toBe(true);
   });
 
+  test('dispose() でリソースが解放される', async ({ page }) => {
+    await page.selectOption('#block-select', { index: 1 });
+
+    // dispose() を呼び出してエラーが出ないことを確認
+    const disposeSuccess = await page.evaluate(() => {
+      try {
+        window.editorUI.dispose();
+        return true;
+      } catch (e) {
+        return false;
+      }
+    });
+    expect(disposeSuccess).toBe(true);
+
+    // canvasが削除されている
+    await expect(page.locator('.preview-3d canvas')).toHaveCount(0);
+  });
+
 });
 
 // ============================================
@@ -389,6 +407,14 @@ test.describe('3Dプレビュー表示', () => {
     });
     // カメラ距離が約3であることを確認（誤差許容）
     expect(distance).toBeCloseTo(3, 0);
+  });
+
+  test('初期表示で垂直角度が20度になっている', async ({ page }) => {
+    const verticalAngle = await page.evaluate(() => {
+      return window.editorUI.standardBlockEditor.verticalAngle;
+    });
+    // 垂直角度が約20度であることを確認（誤差許容）
+    expect(verticalAngle).toBeCloseTo(20, 1);
   });
 
   test('床面に白い枠線が表示される', async ({ page }) => {
@@ -469,6 +495,29 @@ test.describe('カメラ操作', () => {
       return { x: camera.position.x, z: camera.position.z };
     });
     expect(newPos.x !== initialPos.x || newPos.z !== initialPos.z).toBe(true);
+  });
+
+  test('右にドラッグするとブロックが右に回転する', async ({ page }) => {
+    // 初期の水平角度を取得
+    const initialAngle = await page.evaluate(() => {
+      return window.editorUI.standardBlockEditor.horizontalAngle;
+    });
+
+    const canvas = page.locator('.preview-3d canvas');
+    const box = await canvas.boundingBox();
+
+    // 右にドラッグ
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 100, box.y + box.height / 2);
+    await page.mouse.up();
+
+    const newAngle = await page.evaluate(() => {
+      return window.editorUI.standardBlockEditor.horizontalAngle;
+    });
+
+    // 右ドラッグで角度が減少する（ブロックが右に回転＝カメラが左に移動）
+    expect(newAngle).toBeLessThan(initialAngle);
   });
 
   test('マウスを上にドラッグするとブロックを上から見下ろす角度になる', async ({ page }) => {

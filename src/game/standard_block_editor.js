@@ -111,13 +111,13 @@ class StandardBlockEditor {
 
     // テクスチャ設定を抽出
     this.textures = {};
-    if (blockData.tex_default) this.textures.default = blockData.tex_default;
-    if (blockData.tex_front) this.textures.front = blockData.tex_front;
-    if (blockData.tex_top) this.textures.top = blockData.tex_top;
-    if (blockData.tex_bottom) this.textures.bottom = blockData.tex_bottom;
-    if (blockData.tex_left) this.textures.left = blockData.tex_left;
-    if (blockData.tex_right) this.textures.right = blockData.tex_right;
-    if (blockData.tex_back) this.textures.back = blockData.tex_back;
+    const slots = ['default', 'front', 'top', 'bottom', 'left', 'right', 'back'];
+    for (const slot of slots) {
+      const key = slot === 'default' ? 'tex_default' : `tex_${slot}`;
+      if (blockData[key]) {
+        this.textures[slot] = blockData[key];
+      }
+    }
 
     // メッシュを作成
     this.blockMesh = this.meshBuilder.createBlockMesh(this.textures, this.textureImages);
