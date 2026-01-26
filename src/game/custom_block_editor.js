@@ -156,6 +156,9 @@ class CustomBlockEditor {
 
     // メッシュを再構築
     this._rebuildVoxelMesh();
+
+    // ミニプレビューも更新
+    this._rebuildMiniPreviewMesh();
   }
 
   /**

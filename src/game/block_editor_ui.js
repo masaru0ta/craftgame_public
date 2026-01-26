@@ -354,10 +354,10 @@ class BlockEditorUI {
     rightGroup.className = 'right-group';
 
     // モード切替ボタン（カスタムブロック用、初期非表示）
+    // テキストではなくミニプレビュー（canvas）を表示
     this.modeToggleBtn = document.createElement('button');
     this.modeToggleBtn.id = 'modeToggle'; // 仕様書 1-6 で定義されたセレクタ
     this.modeToggleBtn.className = 'mode-toggle-btn';
-    this.modeToggleBtn.textContent = 'look';
     this.modeToggleBtn.style.display = 'none';
     leftGroup.appendChild(this.modeToggleBtn);
 
@@ -513,6 +513,15 @@ class BlockEditorUI {
   _switchEditor(shapeType) {
     this.currentShapeType = shapeType;
 
+    // 衝突テストを停止
+    this.stopCollisionTest();
+
+    // 既存のCollisionCheckerを破棄（新しいシーンで再作成するため）
+    if (this.collisionChecker) {
+      this.collisionChecker.dispose();
+      this.collisionChecker = null;
+    }
+
     // 既存エディタを破棄
     if (this.standardBlockEditor) {
       this.standardBlockEditor.dispose();
@@ -545,13 +554,14 @@ class BlockEditorUI {
       this.customBlockEditor.init();
       this.currentEditor = this.customBlockEditor;
 
-      // CollisionCheckerを初期化
-      if (!this.collisionChecker) {
-        this.collisionChecker = new CollisionChecker({
-          scene: this.customBlockEditor.getScene(),
-          THREE: this.THREE
-        });
-      }
+      // ミニプレビューを初期化（モード切替ボタン内）
+      this.customBlockEditor.initMiniPreview(this.modeToggleBtn);
+
+      // CollisionCheckerを新しいシーンで初期化
+      this.collisionChecker = new CollisionChecker({
+        scene: this.customBlockEditor.getScene(),
+        THREE: this.THREE
+      });
     } else {
       this.standardBlockEditor = new StandardBlockEditor({
         container: this.preview3d,
@@ -879,13 +889,11 @@ class BlockEditorUI {
 
   /**
    * モード切替ボタンを更新
+   * ミニプレビューはCustomBlockEditor.setEditMode()内で自動更新される
    * @private
    */
   _updateModeToggleButton() {
     if (!this.customBlockEditor) return;
-
-    const mode = this.customBlockEditor.getEditMode();
-    this.modeToggleBtn.textContent = mode;
 
     // 自動作成ボタンの表示を更新
     this._updateAutoCreateButtonVisibility();

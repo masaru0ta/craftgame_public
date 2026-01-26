@@ -136,3 +136,79 @@ test.describe('結合テスト: テクスチャ削除API呼び出し', () => {
     expect(typeof parsed.texture_id).toBe('number');
   });
 });
+
+// ========================================
+// BlockEditorUI 統合テスト（バグ修正検証）
+// ========================================
+test.describe('結合テスト: カスタムブロック ミニプレビュー', () => {
+  test('カスタムブロック選択直後にミニプレビューが表示される', async ({ page }) => {
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 30000 });
+
+    // カスタムブロック（階段）を見つけてクリック
+    const customBlockTile = page.locator('.col-left .tile').filter({ hasText: '階段' });
+    await customBlockTile.click();
+
+    // カスタムブロックが選択されたことを確認
+    await expect(page.locator('#blockTypeSelect')).toHaveValue('custom');
+
+    // ミニプレビューのcanvasが表示されることを確認
+    await expect(page.locator('#modeToggle canvas')).toBeVisible({ timeout: 5000 });
+
+    // ミニプレビューメッシュに子要素（ボクセル）があることを確認
+    const meshChildrenCount = await page.evaluate(() => {
+      const editorUI = window.state && window.state.editorUI;
+      const customEditor = editorUI && editorUI.customBlockEditor;
+      if (!customEditor || !customEditor.miniPreviewMesh) return 0;
+      return customEditor.miniPreviewMesh.children.length;
+    });
+    expect(meshChildrenCount).toBeGreaterThan(0);
+  });
+});
+
+test.describe('結合テスト: 衝突テスト切り替え後の動作', () => {
+  test('カスタムブロック→通常ブロック→カスタムブロック切り替え後に衝突テストが動作する', async ({ page }) => {
+    await page.goto(TOOL_PAGE_PATH);
+    await page.waitForSelector('.col-left .tile', { timeout: 30000 });
+
+    // まずカスタムブロック（階段）を選択してCollisionCheckerを初期化
+    const customBlockTile = page.locator('.col-left .tile').filter({ hasText: '階段' });
+    await customBlockTile.click();
+    await expect(page.locator('#blockTypeSelect')).toHaveValue('custom');
+
+    // 通常ブロック（石ブロック）を選択（エディタが切り替わる）
+    const normalBlockTile = page.locator('.col-left .tile').filter({ hasText: '石ブロック' });
+    await normalBlockTile.click();
+    await expect(page.locator('#blockTypeSelect')).toHaveValue('normal');
+
+    // 再度カスタムブロック（階段）を選択（新しいシーンが作成される）
+    await customBlockTile.click();
+    await expect(page.locator('#blockTypeSelect')).toHaveValue('custom');
+
+    // 衝突テストボタンをクリック
+    await page.locator('.check-btn').click();
+
+    // ボタンがアクティブになることを確認
+    await expect(page.locator('.check-btn.active')).toBeVisible({ timeout: 3000 });
+
+    // CollisionCheckerのボールが生成され、正しいシーンに追加されていることを確認
+    const result = await page.evaluate(() => {
+      const editorUI = window.state && window.state.editorUI;
+      if (!editorUI || !editorUI.collisionChecker) {
+        return { error: 'CollisionChecker not found', ballCount: -1, sceneSame: false };
+      }
+      const customEditor = editorUI.customBlockEditor;
+      const currentScene = customEditor ? customEditor.scene : null;
+      const checkerScene = editorUI.collisionChecker.scene;
+      return {
+        ballCount: editorUI.collisionChecker.getBalls().length,
+        sceneSame: currentScene === checkerScene
+      };
+    });
+
+    // 30個のボールが生成されていることを確認
+    expect(result.ballCount).toBe(30);
+    // CollisionCheckerが正しいシーンを参照していることを確認
+    expect(result.sceneSame).toBe(true);
+  });
+});
