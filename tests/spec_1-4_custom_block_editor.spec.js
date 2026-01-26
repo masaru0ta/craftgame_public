@@ -2124,3 +2124,170 @@ test.describe('パーティクルエフェクト', () => {
   });
 
 });
+
+// ============================================
+// タッチ操作対応
+// ============================================
+test.describe('タッチ操作対応', () => {
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await waitForDataLoad(page);
+    // カスタムブロックを選択
+    await page.selectOption('#block-select', { index: 1 });
+    await page.waitForTimeout(500);
+  });
+
+  test('1本指タッチドラッグでカメラが回転する', async ({ page }) => {
+    // 初期カメラ角度を取得
+    const initialAngles = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      return {
+        horizontal: editor.horizontalAngle,
+        vertical: editor.verticalAngle
+      };
+    });
+
+    // キャンバスの位置を取得
+    const canvas = page.locator('.preview-3d canvas');
+    const box = await canvas.boundingBox();
+
+    // タッチドラッグをシミュレート（右方向にドラッグ）
+    const startX = box.x + box.width / 2;
+    const startY = box.y + box.height / 2;
+    const endX = startX + 100;
+    const endY = startY;
+
+    // タッチイベントをdispatch
+    await page.evaluate(({ startX, startY, endX, endY }) => {
+      const canvas = document.querySelector('.preview-3d canvas');
+
+      // touchstart
+      const touchStart = new TouchEvent('touchstart', {
+        bubbles: true,
+        cancelable: true,
+        touches: [new Touch({
+          identifier: 0,
+          target: canvas,
+          clientX: startX,
+          clientY: startY
+        })]
+      });
+      canvas.dispatchEvent(touchStart);
+
+      // touchmove
+      const touchMove = new TouchEvent('touchmove', {
+        bubbles: true,
+        cancelable: true,
+        touches: [new Touch({
+          identifier: 0,
+          target: canvas,
+          clientX: endX,
+          clientY: endY
+        })]
+      });
+      canvas.dispatchEvent(touchMove);
+
+      // touchend
+      const touchEnd = new TouchEvent('touchend', {
+        bubbles: true,
+        cancelable: true,
+        touches: [],
+        changedTouches: [new Touch({
+          identifier: 0,
+          target: canvas,
+          clientX: endX,
+          clientY: endY
+        })]
+      });
+      canvas.dispatchEvent(touchEnd);
+    }, { startX, startY, endX, endY });
+
+    // カメラ角度が変化したか確認
+    const newAngles = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      return {
+        horizontal: editor.horizontalAngle,
+        vertical: editor.verticalAngle
+      };
+    });
+
+    // 右にドラッグすると horizontalAngle が減少する
+    expect(newAngles.horizontal).toBeLessThan(initialAngles.horizontal);
+  });
+
+  test('2本指ピンチでズームする', async ({ page }) => {
+    // 初期カメラ距離を取得
+    const initialDistance = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.cameraDistance;
+    });
+
+    // キャンバスの位置を取得
+    const canvas = page.locator('.preview-3d canvas');
+    const box = await canvas.boundingBox();
+
+    const centerX = box.x + box.width / 2;
+    const centerY = box.y + box.height / 2;
+
+    // ピンチアウト（2本指を広げる）をシミュレート
+    await page.evaluate(({ centerX, centerY }) => {
+      const canvas = document.querySelector('.preview-3d canvas');
+
+      // touchstart - 2本指で開始（近い位置）
+      const touchStart = new TouchEvent('touchstart', {
+        bubbles: true,
+        cancelable: true,
+        touches: [
+          new Touch({ identifier: 0, target: canvas, clientX: centerX - 20, clientY: centerY }),
+          new Touch({ identifier: 1, target: canvas, clientX: centerX + 20, clientY: centerY })
+        ]
+      });
+      canvas.dispatchEvent(touchStart);
+
+      // touchmove - 2本指を広げる
+      const touchMove = new TouchEvent('touchmove', {
+        bubbles: true,
+        cancelable: true,
+        touches: [
+          new Touch({ identifier: 0, target: canvas, clientX: centerX - 80, clientY: centerY }),
+          new Touch({ identifier: 1, target: canvas, clientX: centerX + 80, clientY: centerY })
+        ]
+      });
+      canvas.dispatchEvent(touchMove);
+
+      // touchend
+      const touchEnd = new TouchEvent('touchend', {
+        bubbles: true,
+        cancelable: true,
+        touches: [],
+        changedTouches: [
+          new Touch({ identifier: 0, target: canvas, clientX: centerX - 80, clientY: centerY }),
+          new Touch({ identifier: 1, target: canvas, clientX: centerX + 80, clientY: centerY })
+        ]
+      });
+      canvas.dispatchEvent(touchEnd);
+    }, { centerX, centerY });
+
+    // カメラ距離が減少（ズームイン）したか確認
+    const newDistance = await page.evaluate(() => {
+      return window.editorUI.customBlockEditor.cameraDistance;
+    });
+
+    // ピンチアウトでズームイン（距離が減少）
+    expect(newDistance).toBeLessThan(initialDistance);
+  });
+
+  test('タッチイベントハンドラが登録されている', async ({ page }) => {
+    // タッチイベントリスナーが登録されているか確認
+    const hasListeners = await page.evaluate(() => {
+      const editor = window.editorUI.customBlockEditor;
+      // イベントハンドラの参照が存在するか
+      return typeof editor._onTouchStart === 'function' &&
+             typeof editor._onTouchMove === 'function' &&
+             typeof editor._onTouchEnd === 'function';
+    });
+
+    expect(hasListeners).toBe(true);
+  });
+
+});

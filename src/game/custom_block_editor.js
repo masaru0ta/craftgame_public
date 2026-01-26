@@ -933,6 +933,11 @@ class CustomBlockEditor {
     this._onContextMenu = this._handleContextMenu.bind(this);
     this._onClick = this._handleClick.bind(this);
 
+    // タッチイベントハンドラ
+    this._onTouchStart = this._handleTouchStart.bind(this);
+    this._onTouchMove = this._handleTouchMove.bind(this);
+    this._onTouchEnd = this._handleTouchEnd.bind(this);
+
     this.renderer.domElement.addEventListener('mousedown', this._onMouseDown);
     this.renderer.domElement.addEventListener('mousemove', this._onMouseMove);
     this.renderer.domElement.addEventListener('mouseup', this._onMouseUp);
@@ -940,6 +945,12 @@ class CustomBlockEditor {
     this.renderer.domElement.addEventListener('wheel', this._onWheel);
     this.renderer.domElement.addEventListener('contextmenu', this._onContextMenu);
     this.renderer.domElement.addEventListener('click', this._onClick);
+
+    // タッチイベント
+    this.renderer.domElement.addEventListener('touchstart', this._onTouchStart, { passive: false });
+    this.renderer.domElement.addEventListener('touchmove', this._onTouchMove, { passive: false });
+    this.renderer.domElement.addEventListener('touchend', this._onTouchEnd);
+    this.renderer.domElement.addEventListener('touchcancel', this._onTouchEnd);
   }
 
   /**
@@ -955,6 +966,12 @@ class CustomBlockEditor {
       this.renderer.domElement.removeEventListener('wheel', this._onWheel);
       this.renderer.domElement.removeEventListener('contextmenu', this._onContextMenu);
       this.renderer.domElement.removeEventListener('click', this._onClick);
+
+      // タッチイベント解除
+      this.renderer.domElement.removeEventListener('touchstart', this._onTouchStart);
+      this.renderer.domElement.removeEventListener('touchmove', this._onTouchMove);
+      this.renderer.domElement.removeEventListener('touchend', this._onTouchEnd);
+      this.renderer.domElement.removeEventListener('touchcancel', this._onTouchEnd);
     }
   }
 
@@ -1469,6 +1486,87 @@ class CustomBlockEditor {
     if (!targetCoord) return null;
 
     return { coord: targetCoord, direction: direction };
+  }
+
+  /**
+   * タッチスタートハンドラ
+   * @private
+   * @param {TouchEvent} event
+   */
+  _handleTouchStart(event) {
+    event.preventDefault();
+
+    if (event.touches.length === 1) {
+      // 1本指: ドラッグ開始（カメラ回転）
+      this.isDragging = true;
+      this.lastMouseX = event.touches[0].clientX;
+      this.lastMouseY = event.touches[0].clientY;
+      this.dragStartX = event.touches[0].clientX;
+      this.dragStartY = event.touches[0].clientY;
+    } else if (event.touches.length === 2) {
+      // 2本指: ピンチズーム開始
+      this.isDragging = false;
+      this._pinchStartDistance = this._getTouchDistance(event.touches);
+    }
+  }
+
+  /**
+   * タッチムーブハンドラ
+   * @private
+   * @param {TouchEvent} event
+   */
+  _handleTouchMove(event) {
+    event.preventDefault();
+
+    if (event.touches.length === 1 && this.isDragging) {
+      // 1本指: カメラ回転
+      const deltaX = event.touches[0].clientX - this.lastMouseX;
+      const deltaY = event.touches[0].clientY - this.lastMouseY;
+
+      // 右にドラッグすると horizontalAngle が減少（ブロックが右に回転）
+      this.horizontalAngle -= deltaX * 0.5;
+      this.verticalAngle += deltaY * 0.5;
+
+      // 垂直角度の制限（-90 〜 90度）
+      this.verticalAngle = Math.max(-90, Math.min(90, this.verticalAngle));
+
+      this._updateCameraPosition();
+
+      this.lastMouseX = event.touches[0].clientX;
+      this.lastMouseY = event.touches[0].clientY;
+    } else if (event.touches.length === 2) {
+      // 2本指: ピンチズーム
+      const currentDistance = this._getTouchDistance(event.touches);
+      if (this._pinchStartDistance) {
+        const scale = this._pinchStartDistance / currentDistance;
+        // ピンチアウト（指を広げる）でズームイン（距離減少）
+        this.cameraDistance = Math.max(1, Math.min(10, this.cameraDistance * scale));
+        this._pinchStartDistance = currentDistance;
+        this._updateCameraPosition();
+      }
+    }
+  }
+
+  /**
+   * タッチエンドハンドラ
+   * @private
+   * @param {TouchEvent} event
+   */
+  _handleTouchEnd(event) {
+    this.isDragging = false;
+    this._pinchStartDistance = null;
+  }
+
+  /**
+   * 2つのタッチポイント間の距離を計算
+   * @private
+   * @param {TouchList} touches
+   * @returns {number}
+   */
+  _getTouchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   /**
