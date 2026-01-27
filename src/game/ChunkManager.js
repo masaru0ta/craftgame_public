@@ -39,6 +39,9 @@ class ChunkManager {
         // 現在の視点位置（ワールド座標）
         this.viewX = 0;
         this.viewZ = 0;
+
+        // 同時実行防止フラグ
+        this.isUpdatingView = false;
     }
 
     /**
@@ -72,53 +75,66 @@ class ChunkManager {
      * 視点位置を更新し、必要なチャンクを管理
      */
     async updateViewPosition(worldX, worldZ) {
+        // 視点位置は常に更新（移動を滑らかにするため）
         this.viewX = worldX;
         this.viewZ = worldZ;
 
-        const center = this.worldToChunk(worldX, worldZ);
-        const halfRange = Math.floor(this.chunkRange / 2);
+        // チャンク処理中は重複実行を防止
+        if (this.isUpdatingView) return;
+        this.isUpdatingView = true;
 
-        // 必要なチャンクの座標リスト
-        const neededChunks = new Set();
-        for (let dx = -halfRange; dx <= halfRange; dx++) {
-            for (let dz = -halfRange; dz <= halfRange; dz++) {
-                const cx = center.chunkX + dx;
-                const cz = center.chunkZ + dz;
-                neededChunks.add(`${cx},${cz}`);
+        try {
+            // 処理開始時点の視点位置を使用
+            const currentX = this.viewX;
+            const currentZ = this.viewZ;
+
+            const center = this.worldToChunk(currentX, currentZ);
+            const halfRange = Math.floor(this.chunkRange / 2);
+
+            // 必要なチャンクの座標リスト
+            const neededChunks = new Set();
+            for (let dx = -halfRange; dx <= halfRange; dx++) {
+                for (let dz = -halfRange; dz <= halfRange; dz++) {
+                    const cx = center.chunkX + dx;
+                    const cz = center.chunkZ + dz;
+                    neededChunks.add(`${cx},${cz}`);
+                }
             }
-        }
 
-        // 範囲外のチャンクをアンロード
-        const chunksToUnload = [];
-        for (const key of this.chunks.keys()) {
-            if (!neededChunks.has(key)) {
-                chunksToUnload.push(key);
+            // 範囲外のチャンクをアンロード
+            const chunksToUnload = [];
+            for (const key of this.chunks.keys()) {
+                if (!neededChunks.has(key)) {
+                    chunksToUnload.push(key);
+                }
             }
-        }
 
-        if (chunksToUnload.length > 0) {
-            await this._unloadChunksBatch(chunksToUnload);
-        }
-
-        // 必要なチャンクをキューに追加（距離順）
-        const chunksToLoad = [];
-        for (const key of neededChunks) {
-            if (!this.chunks.has(key) && !this._isInQueue(key)) {
-                const [cx, cz] = key.split(',').map(Number);
-                const distance = Math.abs(cx - center.chunkX) + Math.abs(cz - center.chunkZ);
-                chunksToLoad.push({ key, chunkX: cx, chunkZ: cz, distance });
+            if (chunksToUnload.length > 0) {
+                await this._unloadChunksBatch(chunksToUnload);
             }
+
+            // 必要なチャンクをキューに追加（距離順）
+            const chunksToLoad = [];
+            for (const key of neededChunks) {
+                if (!this.chunks.has(key) && !this._isInQueue(key)) {
+                    const [cx, cz] = key.split(',').map(Number);
+                    const distance = Math.abs(cx - center.chunkX) + Math.abs(cz - center.chunkZ);
+                    chunksToLoad.push({ key, chunkX: cx, chunkZ: cz, distance });
+                }
+            }
+
+            // 距離でソート（近い順）
+            chunksToLoad.sort((a, b) => a.distance - b.distance);
+
+            for (const chunk of chunksToLoad) {
+                this._addToQueue(chunk.chunkX, chunk.chunkZ);
+            }
+
+            // 生成処理を開始
+            await this._processQueue();
+        } finally {
+            this.isUpdatingView = false;
         }
-
-        // 距離でソート（近い順）
-        chunksToLoad.sort((a, b) => a.distance - b.distance);
-
-        for (const chunk of chunksToLoad) {
-            this._addToQueue(chunk.chunkX, chunk.chunkZ);
-        }
-
-        // 生成処理を開始
-        await this._processQueue();
     }
 
     /**
