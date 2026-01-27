@@ -13,6 +13,7 @@ class ChunkManager {
         // 生成キュー
         this.generationQueue = [];
         this.isGenerating = false;
+        this.chunksPerFrame = 2; // 1フレームで生成するチャンク数の上限
 
         // コールバック
         this.onChunkGenerating = null;  // (chunkX, chunkZ) => void
@@ -59,6 +60,13 @@ class ChunkManager {
      */
     setChunkRange(n) {
         this.chunkRange = n;
+    }
+
+    /**
+     * 1フレームで生成するチャンク数の上限を設定
+     */
+    setChunksPerFrame(n) {
+        this.chunksPerFrame = n;
     }
 
     /**
@@ -155,7 +163,7 @@ class ChunkManager {
     }
 
     /**
-     * キューを処理（1つずつ順番に）
+     * キューを処理（1フレームでchunksPerFrame個まで）
      */
     async _processQueue() {
         if (this.isGenerating) return;
@@ -163,12 +171,19 @@ class ChunkManager {
 
         this.isGenerating = true;
 
-        while (this.generationQueue.length > 0) {
+        let processed = 0;
+        while (this.generationQueue.length > 0 && processed < this.chunksPerFrame) {
             const item = this.generationQueue.shift();
             await this._generateChunk(item.chunkX, item.chunkZ);
+            processed++;
         }
 
         this.isGenerating = false;
+
+        // キューが残っている場合は次のフレームで継続
+        if (this.generationQueue.length > 0) {
+            requestAnimationFrame(() => this._processQueue());
+        }
     }
 
     /**
@@ -205,7 +220,8 @@ class ChunkManager {
         }
 
         // メッシュ生成
-        const mesh = this.meshBuilder.build(chunkData, 'CULLED', this.useGreedy || false);
+        const mode = this.useCulling !== false ? 'CULLED' : 'FULL';
+        const mesh = this.meshBuilder.build(chunkData, mode, this.useGreedy || false);
         mesh.position.x = chunkX * ChunkData.SIZE_X;
         mesh.position.z = chunkZ * ChunkData.SIZE_Z;
 
@@ -403,6 +419,13 @@ class ChunkManager {
     }
 
     /**
+     * カリングの有効/無効を設定
+     */
+    setCulling(enabled) {
+        this.useCulling = enabled;
+    }
+
+    /**
      * ワイヤーフレームの有効/無効を設定
      */
     setWireframe(enabled) {
@@ -431,7 +454,8 @@ class ChunkManager {
             }
 
             // 新しいメッシュを生成
-            const mesh = this.meshBuilder.build(chunk.chunkData, 'CULLED', this.useGreedy || false);
+            const mode = this.useCulling !== false ? 'CULLED' : 'FULL';
+            const mesh = this.meshBuilder.build(chunk.chunkData, mode, this.useGreedy || false);
             mesh.position.x = chunkX * ChunkData.SIZE_X;
             mesh.position.z = chunkZ * ChunkData.SIZE_Z;
 

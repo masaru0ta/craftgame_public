@@ -39,13 +39,21 @@ class ChunkMeshBuilder {
      * @returns {THREE.Mesh}
      */
     build(chunkData, mode = 'CULLED', greedy = false, neighborChunks = null) {
+        // アトラスモードで生成
+        return this._buildWithAtlas(chunkData, mode, greedy, neighborChunks);
+    }
+
+    /**
+     * アトラスを使用したメッシュ生成（1マテリアル）
+     */
+    _buildWithAtlas(chunkData, mode, greedy, neighborChunks) {
         const positions = [];
         const normals = [];
         const uvs = [];
+        const atlasInfos = []; // 頂点属性: vec4(offsetX, offsetY, scaleX, scaleY)
         const indices = [];
-        const groups = [];
 
-        // ブロックID + 面名ごとにグループ化（各面に異なるマテリアルを適用するため）
+        // ブロックID + 面名ごとにグループ化（グリーディーメッシング用）
         const blockFacesMap = new Map(); // "blockStrId:faceName" -> faces[]
 
         // 全ブロックを走査
@@ -73,45 +81,22 @@ class ChunkMeshBuilder {
             }
         });
 
-        // グリーディー・メッシングまたは通常のメッシュ生成
+        // メッシュ生成
         let vertexOffset = 0;
-        const allMaterials = [];
-        let materialIndex = 0;
 
         for (const [key, groupData] of blockFacesMap) {
             const { blockStrId, faceName, faces } = groupData;
-            const materials = this.textureLoader.getMaterials(blockStrId);
-            if (!materials) continue;
-
-            const groupStart = indices.length;
 
             if (greedy) {
-                // グリーディー・メッシング
-                vertexOffset = this._buildGreedyMesh(
-                    faces, blockStrId, positions, normals, uvs, indices, vertexOffset
+                // グリーディー・メッシング（アトラスUV対応、タイリングシェーダー使用）
+                vertexOffset = this._buildGreedyMeshAtlas(
+                    faces, blockStrId, faceName, positions, normals, uvs, atlasInfos, indices, vertexOffset
                 );
             } else {
-                // 通常のメッシュ生成
-                vertexOffset = this._buildSimpleMesh(
-                    faces, blockStrId, positions, normals, uvs, indices, vertexOffset
+                // 通常のメッシュ生成（アトラスUV対応）
+                vertexOffset = this._buildSimpleMeshAtlas(
+                    faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset
                 );
-            }
-
-            const groupCount = indices.length - groupStart;
-            if (groupCount > 0) {
-                // この面に対応するマテリアルを取得
-                const faceIndex = ChunkMeshBuilder.FACE_INDEX[faceName];
-                const faceMaterial = materials[faceIndex];
-
-                if (faceMaterial) {
-                    allMaterials.push(faceMaterial);
-                    groups.push({
-                        start: groupStart,
-                        count: groupCount,
-                        materialIndex: materialIndex
-                    });
-                    materialIndex++;
-                }
             }
         }
 
@@ -122,21 +107,18 @@ class ChunkMeshBuilder {
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
             geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
             geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            geometry.setAttribute('atlasInfo', new THREE.Float32BufferAttribute(atlasInfos, 4));
             geometry.setIndex(indices);
         }
 
-        // グループを設定
-        for (const group of groups) {
-            geometry.addGroup(group.start, group.count, group.materialIndex);
-        }
-
-        // フォールバックマテリアル
+        // アトラスマテリアルを使用（1マテリアル）
+        const atlasMaterial = this.textureLoader.getAtlasMaterial();
         const fallbackMaterial = new THREE.MeshLambertMaterial({
             vertexColors: false,
             side: THREE.FrontSide
         });
 
-        const mesh = new THREE.Mesh(geometry, allMaterials.length > 0 ? allMaterials : fallbackMaterial);
+        const mesh = new THREE.Mesh(geometry, atlasMaterial || fallbackMaterial);
         mesh.name = `chunk_${chunkData.chunkX}_${chunkData.chunkZ}`;
 
         return mesh;
@@ -222,6 +204,40 @@ class ChunkMeshBuilder {
     }
 
     /**
+     * アトラスUV対応の通常メッシュ生成
+     */
+    _buildSimpleMeshAtlas(faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+        for (const face of faces) {
+            const corners = this._getFaceCorners(face.x, face.y, face.z, face.faceName, 1, 1);
+            const faceInfo = ChunkMeshBuilder.FACES[face.faceName];
+
+            // アトラスUV情報を取得
+            const atlasUV = this.textureLoader.getAtlasUV(blockStrId, face.faceName);
+
+            // 頂点追加
+            for (const corner of corners) {
+                positions.push(corner.x, corner.y, corner.z);
+                normals.push(...faceInfo.normal);
+                // atlasInfo: offsetX, offsetY, scaleX, scaleY
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+            }
+
+            // UV追加（0-1の範囲、タイリングなし）
+            this._addTilingUVs(uvs, face.faceName, 1, 1);
+
+            // インデックス追加（2つの三角形）
+            indices.push(
+                vertexOffset, vertexOffset + 1, vertexOffset + 2,
+                vertexOffset, vertexOffset + 2, vertexOffset + 3
+            );
+
+            vertexOffset += 4;
+        }
+
+        return vertexOffset;
+    }
+
+    /**
      * グリーディー・メッシング
      */
     _buildGreedyMesh(faces, blockStrId, positions, normals, uvs, indices, vertexOffset) {
@@ -243,6 +259,16 @@ class ChunkMeshBuilder {
         }
 
         return vertexOffset;
+    }
+
+    /**
+     * アトラスUV対応のグリーディー・メッシング
+     */
+    _buildGreedyMeshAtlas(faces, blockStrId, faceName, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+        return this._greedyMeshDirectionAtlas(
+            faces, faceName, blockStrId,
+            positions, normals, uvs, atlasInfos, indices, vertexOffset
+        );
     }
 
     /**
@@ -500,6 +526,276 @@ class ChunkMeshBuilder {
                     uScale, vScale, // 頂点1: 前右
                     uScale, 0,      // 頂点2: 後右
                     0, 0            // 頂点3: 後左
+                );
+                break;
+        }
+    }
+
+    /**
+     * アトラスUV座標を追加
+     * @param {number[]} uvs - UV配列
+     * @param {string} blockStrId - ブロックID
+     * @param {string} faceName - 面名
+     * @param {number} uTiles - Uタイル数（グリーディー時）
+     * @param {number} vTiles - Vタイル数（グリーディー時）
+     */
+    _addAtlasUVs(uvs, blockStrId, faceName, uTiles, vTiles) {
+        const atlasUV = this.textureLoader.getAtlasUV(blockStrId, faceName);
+        const { offsetX, offsetY, scaleX, scaleY } = atlasUV;
+
+        // アトラス内のUV座標を計算
+        // scaleXとscaleYは1テクスチャ分のサイズ
+        const u0 = offsetX;
+        const v0 = offsetY;
+        const u1 = offsetX + scaleX;
+        const v1 = offsetY + scaleY;
+
+        // 各面の頂点順序に合わせてUVを設定
+        switch (faceName) {
+            case 'front': // 頂点: 右下→左下→左上→右上
+                uvs.push(
+                    u1, v0,     // 頂点0: 右下
+                    u0, v0,     // 頂点1: 左下
+                    u0, v1,     // 頂点2: 左上
+                    u1, v1      // 頂点3: 右上
+                );
+                break;
+            case 'back': // 頂点: 左下→右下→右上→左上
+                uvs.push(
+                    u1, v0,     // 頂点0
+                    u0, v0,     // 頂点1
+                    u0, v1,     // 頂点2
+                    u1, v1      // 頂点3
+                );
+                break;
+            case 'right': // 頂点: 後下→前下→前上→後上
+                uvs.push(
+                    u1, v0,     // 頂点0
+                    u0, v0,     // 頂点1
+                    u0, v1,     // 頂点2
+                    u1, v1      // 頂点3
+                );
+                break;
+            case 'left': // 頂点: 前下→後下→後上→前上
+                uvs.push(
+                    u1, v0,     // 頂点0
+                    u0, v0,     // 頂点1
+                    u0, v1,     // 頂点2
+                    u1, v1      // 頂点3
+                );
+                break;
+            case 'top': // 頂点: 後左→後右→前右→前左
+                uvs.push(
+                    u0, v1,     // 頂点0
+                    u1, v1,     // 頂点1
+                    u1, v0,     // 頂点2
+                    u0, v0      // 頂点3
+                );
+                break;
+            case 'bottom': // 頂点: 前左→前右→後右→後左
+                uvs.push(
+                    u0, v1,     // 頂点0
+                    u1, v1,     // 頂点1
+                    u1, v0,     // 頂点2
+                    u0, v0      // 頂点3
+                );
+                break;
+        }
+    }
+
+    /**
+     * アトラスUV対応のグリーディー・メッシング（単一方向）
+     * カスタムシェーダーでfract()を使ってタイリングを実現
+     * マージした面を1つのクワッドとして描画（頂点数削減）
+     */
+    _greedyMeshDirectionAtlas(faces, faceName, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+        const faceInfo = ChunkMeshBuilder.FACES[faceName];
+
+        // アトラスUV情報を取得
+        const atlasUV = this.textureLoader.getAtlasUV(blockStrId, faceName);
+
+        // 面の座標をスライスごとにグループ化
+        const slices = new Map(); // depth -> Set of "u,v"
+
+        for (const face of faces) {
+            let depth, u, v;
+
+            switch (faceName) {
+                case 'top':
+                case 'bottom':
+                    depth = face.y;
+                    u = face.x;
+                    v = face.z;
+                    break;
+                case 'front':
+                case 'back':
+                    depth = face.z;
+                    u = face.x;
+                    v = face.y;
+                    break;
+                case 'left':
+                case 'right':
+                    depth = face.x;
+                    u = face.y;
+                    v = face.z;
+                    break;
+            }
+
+            if (!slices.has(depth)) {
+                slices.set(depth, new Map());
+            }
+            slices.get(depth).set(`${u},${v}`, { u, v, merged: false });
+        }
+
+        // 各スライスでグリーディー・メッシング
+        for (const [depth, cells] of slices) {
+            // 矩形を検出してマージ
+            for (const [key, cell] of cells) {
+                if (cell.merged) continue;
+
+                // この点から始まる最大の矩形を見つける
+                let width = 1;
+                let height = 1;
+
+                // 横方向に拡張
+                while (cells.has(`${cell.u + width},${cell.v}`)) {
+                    const next = cells.get(`${cell.u + width},${cell.v}`);
+                    if (next.merged) break;
+                    width++;
+                }
+
+                // 縦方向に拡張
+                outer: while (true) {
+                    for (let w = 0; w < width; w++) {
+                        const checkKey = `${cell.u + w},${cell.v + height}`;
+                        if (!cells.has(checkKey) || cells.get(checkKey).merged) {
+                            break outer;
+                        }
+                    }
+                    height++;
+                }
+
+                // 矩形内のセルをマージ済みにする
+                for (let dv = 0; dv < height; dv++) {
+                    for (let du = 0; du < width; du++) {
+                        const mergeKey = `${cell.u + du},${cell.v + dv}`;
+                        if (cells.has(mergeKey)) {
+                            cells.get(mergeKey).merged = true;
+                        }
+                    }
+                }
+
+                // メッシュを生成（1つのクワッドとして）
+                let x, y, z, meshWidth, meshHeight;
+
+                switch (faceName) {
+                    case 'top':
+                    case 'bottom':
+                        x = cell.u;
+                        y = depth;
+                        z = cell.v;
+                        meshWidth = width;
+                        meshHeight = height;
+                        break;
+                    case 'front':
+                    case 'back':
+                        x = cell.u;
+                        y = cell.v;
+                        z = depth;
+                        meshWidth = width;
+                        meshHeight = height;
+                        break;
+                    case 'left':
+                    case 'right':
+                        x = depth;
+                        y = cell.u;
+                        z = cell.v;
+                        meshWidth = width;
+                        meshHeight = height;
+                        break;
+                }
+
+                // 頂点を追加（マージした面全体で1クワッド）
+                const corners = this._getFaceCorners(x, y, z, faceName, meshWidth, meshHeight);
+                for (const corner of corners) {
+                    positions.push(corner.x, corner.y, corner.z);
+                    normals.push(...faceInfo.normal);
+                    // atlasInfo: offsetX, offsetY, scaleX, scaleY
+                    atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                }
+
+                // タイリングUV追加（タイル数分のUV座標: 0-width, 0-height）
+                // シェーダーで fract() を使ってタイリング
+                if (faceName === 'left' || faceName === 'right') {
+                    this._addTilingUVs(uvs, faceName, meshHeight, meshWidth);
+                } else {
+                    this._addTilingUVs(uvs, faceName, meshWidth, meshHeight);
+                }
+
+                // インデックス追加
+                indices.push(
+                    vertexOffset, vertexOffset + 1, vertexOffset + 2,
+                    vertexOffset, vertexOffset + 2, vertexOffset + 3
+                );
+
+                vertexOffset += 4;
+            }
+        }
+
+        return vertexOffset;
+    }
+
+    /**
+     * タイリング用UV座標を追加（0-N の範囲でシェーダーが fract() でタイリング）
+     */
+    _addTilingUVs(uvs, faceName, uScale, vScale) {
+        switch (faceName) {
+            case 'front':
+                uvs.push(
+                    uScale, 0,
+                    0, 0,
+                    0, vScale,
+                    uScale, vScale
+                );
+                break;
+            case 'back':
+                uvs.push(
+                    uScale, 0,
+                    0, 0,
+                    0, vScale,
+                    uScale, vScale
+                );
+                break;
+            case 'right':
+                uvs.push(
+                    uScale, 0,
+                    0, 0,
+                    0, vScale,
+                    uScale, vScale
+                );
+                break;
+            case 'left':
+                uvs.push(
+                    uScale, 0,
+                    0, 0,
+                    0, vScale,
+                    uScale, vScale
+                );
+                break;
+            case 'top':
+                uvs.push(
+                    0, vScale,
+                    uScale, vScale,
+                    uScale, 0,
+                    0, 0
+                );
+                break;
+            case 'bottom':
+                uvs.push(
+                    0, vScale,
+                    uScale, vScale,
+                    uScale, 0,
+                    0, 0
                 );
                 break;
         }

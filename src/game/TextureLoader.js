@@ -25,6 +25,12 @@ class TextureLoader {
         this.textures = [];      // テクスチャリスト
         this._textureCache = new Map();   // テクスチャキャッシュ (file_name -> THREE.Texture)
         this._materialCache = new Map();  // マテリアルキャッシュ (block_str_id -> THREE.Material[6])
+
+        // アトラス関連
+        this._atlasTexture = null;        // アトラステクスチャ
+        this._atlasMaterial = null;       // アトラスマテリアル
+        this._atlasUVMap = new Map();     // "blockStrId:faceName" -> { offsetX, offsetY, scaleX, scaleY }
+        this._atlasSize = 0;              // アトラスのサイズ（テクスチャ数）
     }
 
     /**
@@ -54,6 +60,9 @@ class TextureLoader {
 
             // マテリアルを生成
             this._createMaterials();
+
+            // アトラスを生成
+            this._createAtlas();
 
             this.isLoaded = true;
         } catch (error) {
@@ -209,6 +218,247 @@ class TextureLoader {
      */
     getBlockDef(blockStrId) {
         return this.blocks.find(b => b.block_str_id === blockStrId) || null;
+    }
+
+    /**
+     * アトラステクスチャを生成
+     */
+    _createAtlas() {
+        // 使用するテクスチャを収集（ブロック定義から使用されているテクスチャのみ）
+        const usedTextures = new Set();
+        const texNameToBlock = new Map(); // テクスチャ名 -> 使用するブロックと面の情報
+
+        for (const block of this.blocks) {
+            if (block.block_str_id === 'air') continue;
+
+            for (const face of TextureLoader.FACE_ORDER) {
+                const texName = block[`tex_${face}`] || block.tex_default;
+                if (texName && this._textureCache.has(texName)) {
+                    usedTextures.add(texName);
+                    const key = `${block.block_str_id}:${face}`;
+                    texNameToBlock.set(key, texName);
+                }
+            }
+        }
+
+        // テクスチャが無い場合はフォールバック
+        if (usedTextures.size === 0) {
+            this._createFallbackAtlas();
+            return;
+        }
+
+        // アトラスのグリッドサイズを決定（正方形）
+        const texCount = usedTextures.size;
+        const gridSize = Math.ceil(Math.sqrt(texCount));
+        this._atlasSize = gridSize;
+
+        // テクスチャサイズを取得（最初のテクスチャから）
+        const firstTexName = usedTextures.values().next().value;
+        const firstTex = this._textureCache.get(firstTexName);
+        const texSize = firstTex.image ? firstTex.image.width : 16;
+
+        // アトラスキャンバスを作成
+        const atlasWidth = gridSize * texSize;
+        const atlasHeight = gridSize * texSize;
+        const canvas = document.createElement('canvas');
+        canvas.width = atlasWidth;
+        canvas.height = atlasHeight;
+        const ctx = canvas.getContext('2d');
+
+        // テクスチャをキャンバスに配置
+        const texNameToIndex = new Map();
+        let index = 0;
+        for (const texName of usedTextures) {
+            const tex = this._textureCache.get(texName);
+            if (tex && tex.image) {
+                const gridX = index % gridSize;
+                const gridY = Math.floor(index / gridSize);
+                ctx.drawImage(tex.image, gridX * texSize, gridY * texSize);
+                texNameToIndex.set(texName, { gridX, gridY });
+            }
+            index++;
+        }
+
+        // Three.jsテクスチャを作成
+        this._atlasTexture = new THREE.Texture(canvas);
+        this._atlasTexture.needsUpdate = true;
+        this._atlasTexture.magFilter = THREE.NearestFilter;
+        this._atlasTexture.minFilter = THREE.NearestFilter;
+        this._atlasTexture.wrapS = THREE.RepeatWrapping;
+        this._atlasTexture.wrapT = THREE.RepeatWrapping;
+
+        // アトラスマテリアルを作成（カスタムシェーダーでタイリング対応）
+        this._atlasMaterial = this._createAtlasShaderMaterial(this._atlasTexture, gridSize);
+
+        // UVマップを生成
+        const uvScale = 1 / gridSize;
+        for (const block of this.blocks) {
+            if (block.block_str_id === 'air') continue;
+
+            for (const face of TextureLoader.FACE_ORDER) {
+                const texName = block[`tex_${face}`] || block.tex_default;
+                const key = `${block.block_str_id}:${face}`;
+
+                if (texName && texNameToIndex.has(texName)) {
+                    const { gridX, gridY } = texNameToIndex.get(texName);
+                    this._atlasUVMap.set(key, {
+                        offsetX: gridX * uvScale,
+                        offsetY: 1 - (gridY + 1) * uvScale, // Yは上下反転
+                        scaleX: uvScale,
+                        scaleY: uvScale
+                    });
+                } else {
+                    // フォールバック（最初のテクスチャ位置を使用）
+                    this._atlasUVMap.set(key, {
+                        offsetX: 0,
+                        offsetY: 1 - uvScale,
+                        scaleX: uvScale,
+                        scaleY: uvScale
+                    });
+                }
+            }
+        }
+
+        // フォールバックブロック用のUVも追加
+        for (const [blockId, color] of Object.entries(TextureLoader.FALLBACK_COLORS)) {
+            if (!color) continue;
+            for (const face of TextureLoader.FACE_ORDER) {
+                const key = `${blockId}:${face}`;
+                if (!this._atlasUVMap.has(key)) {
+                    this._atlasUVMap.set(key, {
+                        offsetX: 0,
+                        offsetY: 1 - uvScale,
+                        scaleX: uvScale,
+                        scaleY: uvScale
+                    });
+                }
+            }
+        }
+    }
+
+    /**
+     * フォールバックアトラスを作成（テクスチャが無い場合）
+     */
+    _createFallbackAtlas() {
+        // 単色の小さいアトラスを作成
+        const canvas = document.createElement('canvas');
+        canvas.width = 16;
+        canvas.height = 16;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FF00FF';
+        ctx.fillRect(0, 0, 16, 16);
+
+        this._atlasTexture = new THREE.Texture(canvas);
+        this._atlasTexture.needsUpdate = true;
+        this._atlasTexture.magFilter = THREE.NearestFilter;
+        this._atlasTexture.minFilter = THREE.NearestFilter;
+
+        this._atlasMaterial = new THREE.MeshLambertMaterial({
+            map: this._atlasTexture
+        });
+
+        this._atlasSize = 1;
+
+        // フォールバックUV（全体を使用）
+        for (const [blockId, color] of Object.entries(TextureLoader.FALLBACK_COLORS)) {
+            if (!color) continue;
+            for (const face of TextureLoader.FACE_ORDER) {
+                const key = `${blockId}:${face}`;
+                this._atlasUVMap.set(key, {
+                    offsetX: 0,
+                    offsetY: 0,
+                    scaleX: 1,
+                    scaleY: 1
+                });
+            }
+        }
+    }
+
+    /**
+     * アトラス用シェーダーマテリアルを作成
+     * UV座標のfract()でアトラス内タイリングを実現
+     * Lambertライティング対応
+     */
+    _createAtlasShaderMaterial(atlasTexture, gridSize) {
+        const vertexShader = `
+            attribute vec4 atlasInfo; // x: offsetX, y: offsetY, z: scaleX, w: scaleY
+            varying vec2 vUv;
+            varying vec4 vAtlasInfo;
+            varying vec3 vNormal;
+            varying vec3 vViewPosition;
+
+            void main() {
+                vUv = uv;
+                vAtlasInfo = atlasInfo;
+                vNormal = normalize(normalMatrix * normal);
+                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                vViewPosition = -mvPosition.xyz;
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `;
+
+        const fragmentShader = `
+            uniform sampler2D atlasTexture;
+            uniform vec3 ambientLightColor;
+            uniform vec3 directionalLightColor;
+            uniform vec3 directionalLightDirection;
+
+            varying vec2 vUv;
+            varying vec4 vAtlasInfo;
+            varying vec3 vNormal;
+            varying vec3 vViewPosition;
+
+            void main() {
+                // UV座標をタイリング（fract()で0-1に正規化）
+                vec2 tiledUv = fract(vUv);
+                // アトラス内の位置に変換
+                vec2 atlasUv = tiledUv * vAtlasInfo.zw + vAtlasInfo.xy;
+                vec4 texColor = texture2D(atlasTexture, atlasUv);
+
+                // Lambertライティング
+                vec3 normal = normalize(vNormal);
+                float dotNL = max(dot(normal, directionalLightDirection), 0.0);
+                vec3 irradiance = ambientLightColor + directionalLightColor * dotNL;
+
+                gl_FragColor = vec4(texColor.rgb * irradiance, texColor.a);
+            }
+        `;
+
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                atlasTexture: { value: atlasTexture },
+                ambientLightColor: { value: new THREE.Color(0.4, 0.4, 0.4) },
+                directionalLightColor: { value: new THREE.Color(1.0, 1.0, 1.0) },
+                directionalLightDirection: { value: new THREE.Vector3(0.5, 1.0, 0.3).normalize() }
+            },
+            vertexShader: vertexShader,
+            fragmentShader: fragmentShader,
+            side: THREE.FrontSide
+        });
+    }
+
+    /**
+     * アトラスマテリアルを取得
+     * @returns {THREE.Material}
+     */
+    getAtlasMaterial() {
+        return this._atlasMaterial;
+    }
+
+    /**
+     * アトラスUV情報を取得
+     * @param {string} blockStrId - ブロックID
+     * @param {string} faceName - 面名
+     * @returns {{ offsetX: number, offsetY: number, scaleX: number, scaleY: number }}
+     */
+    getAtlasUV(blockStrId, faceName) {
+        const key = `${blockStrId}:${faceName}`;
+        return this._atlasUVMap.get(key) || {
+            offsetX: 0,
+            offsetY: 0,
+            scaleX: 1 / (this._atlasSize || 1),
+            scaleY: 1 / (this._atlasSize || 1)
+        };
     }
 }
 

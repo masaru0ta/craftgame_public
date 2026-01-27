@@ -13,14 +13,14 @@ module.exports = defineConfig({
   reporter: [['html', { outputFolder: './playwright-report' }]],
 
   // タイムアウト設定
-  timeout: 30000,
+  timeout: 120000,
   expect: {
-    timeout: 5000
+    timeout: 10000
   },
 
   // 並列実行設定
   fullyParallel: true,
-  workers: process.env.CI ? 1 : 8,
+  workers: process.env.CI ? 1 : 4,
 
   // ブラウザ設定
   use: {

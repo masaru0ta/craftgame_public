@@ -443,6 +443,314 @@ test.describe('TEST-2-2-2-1: パレット + 可変ビットバイナリ方式', 
 });
 
 // ========================================
+// TEST-2-2-2-2: 1フレームあたりのチャンク生成制限
+// ========================================
+test.describe('TEST-2-2-2-2: 1フレームあたりのチャンク生成制限', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await page.waitForFunction(() => window.gameApp && window.gameApp.isReady, { timeout: 30000 });
+  });
+
+  test('ChunkManagerにchunksPerFrameプロパティが存在する', async ({ page }) => {
+    const exists = await page.evaluate(() => {
+      return typeof window.gameApp.chunkManager.chunksPerFrame === 'number';
+    });
+    expect(exists).toBe(true);
+  });
+
+  test('chunksPerFrameのデフォルト値は2', async ({ page }) => {
+    const value = await page.evaluate(() => {
+      return window.gameApp.chunkManager.chunksPerFrame;
+    });
+    expect(value).toBe(2);
+  });
+
+  test('setChunksPerFrameで値を変更できる', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const cm = window.gameApp.chunkManager;
+      cm.setChunksPerFrame(5);
+      return cm.chunksPerFrame;
+    });
+    expect(result).toBe(5);
+  });
+
+  test('生成数/Fの入力欄が存在する', async ({ page }) => {
+    const input = page.locator('#input-chunks-per-frame');
+    await expect(input).toBeVisible();
+  });
+
+  test('生成数/Fのデフォルト値は2', async ({ page }) => {
+    const value = await page.locator('#input-chunks-per-frame').inputValue();
+    expect(value).toBe('2');
+  });
+
+  test('生成数/Fを変更するとchunksPerFrameが更新される', async ({ page }) => {
+    const input = page.locator('#input-chunks-per-frame');
+    await input.fill('5');
+    await input.blur();
+
+    const value = await page.evaluate(() => window.gameApp.chunkManager.chunksPerFrame);
+    expect(value).toBe(5);
+  });
+
+  test('processQueueは1回の呼び出しでchunksPerFrame個までしか処理しない', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const cm = window.gameApp.chunkManager;
+
+      // 処理中でないことを確認（最大5秒待機）
+      for (let i = 0; i < 50 && cm.isGenerating; i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+
+      // 設定を1に変更
+      cm.setChunksPerFrame(1);
+
+      // キューをクリア
+      cm.generationQueue = [];
+
+      // キューに複数のチャンクを追加（存在しないチャンク座標）
+      cm._addToQueue(100, 100);
+      cm._addToQueue(100, 101);
+      cm._addToQueue(100, 102);
+
+      const queueLengthBefore = cm.generationQueue.length;
+
+      // 1回だけ処理を実行
+      await cm._processQueue();
+
+      const queueLengthAfter = cm.generationQueue.length;
+      const chunksGenerated = queueLengthBefore - queueLengthAfter;
+
+      return {
+        queueLengthBefore,
+        queueLengthAfter,
+        chunksGenerated
+      };
+    });
+
+    // 1回の処理で1つだけ処理される
+    expect(result.queueLengthBefore).toBe(3);
+    expect(result.chunksGenerated).toBe(1);
+    expect(result.queueLengthAfter).toBe(2);
+  });
+});
+
+// ========================================
+// TEST-2-2-2-3: テクスチャアトラス
+// ========================================
+test.describe('TEST-2-2-2-3: テクスチャアトラス', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await page.waitForFunction(() => window.gameApp && window.gameApp.isReady, { timeout: 30000 });
+  });
+
+  test('TextureLoaderにgetAtlasMaterialメソッドが存在する', async ({ page }) => {
+    const exists = await page.evaluate(() => {
+      return typeof window.gameApp.textureLoader.getAtlasMaterial === 'function';
+    });
+    expect(exists).toBe(true);
+  });
+
+  test('TextureLoaderにgetAtlasUVメソッドが存在する', async ({ page }) => {
+    const exists = await page.evaluate(() => {
+      return typeof window.gameApp.textureLoader.getAtlasUV === 'function';
+    });
+    expect(exists).toBe(true);
+  });
+
+  test('getAtlasMaterialはTHREE.Materialを返す', async ({ page }) => {
+    const isMaterial = await page.evaluate(() => {
+      const material = window.gameApp.textureLoader.getAtlasMaterial();
+      return material && material.isMaterial === true;
+    });
+    expect(isMaterial).toBe(true);
+  });
+
+  test('getAtlasUVはUVオフセットとスケールを返す', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const uv = window.gameApp.textureLoader.getAtlasUV('grass', 'top');
+      return {
+        hasOffsetX: typeof uv.offsetX === 'number',
+        hasOffsetY: typeof uv.offsetY === 'number',
+        hasScaleX: typeof uv.scaleX === 'number',
+        hasScaleY: typeof uv.scaleY === 'number'
+      };
+    });
+    expect(result.hasOffsetX).toBe(true);
+    expect(result.hasOffsetY).toBe(true);
+    expect(result.hasScaleX).toBe(true);
+    expect(result.hasScaleY).toBe(true);
+  });
+
+  test('1チャンクあたり1ドローコール以下になる', async ({ page }) => {
+    // 全チャンク生成完了を待つ
+    await page.waitForFunction(
+      () => window.gameApp.chunkManager.getLoadedChunkCount() >= 81,
+      { timeout: 120000 }
+    );
+
+    const result = await page.evaluate(() => {
+      const chunkCount = window.gameApp.chunkManager.getLoadedChunkCount();
+      const drawCalls = window.gameApp.renderer.info.render.calls;
+      return { chunkCount, drawCalls };
+    });
+
+    // ドローコール数 <= チャンク数 + 若干のオーバーヘッド
+    expect(result.drawCalls).toBeLessThanOrEqual(result.chunkCount + 10);
+  });
+
+  test('グリーディーメッシングでテクスチャがタイリングされる', async ({ page }) => {
+    // 全チャンク生成完了を待つ（グリーディーONがデフォルト）
+    await page.waitForFunction(
+      () => window.gameApp.chunkManager.getLoadedChunkCount() >= 81,
+      { timeout: 120000 }
+    );
+
+    // グリーディーメッシングが有効であることを確認
+    const greedyEnabled = await page.evaluate(() => window.gameApp.greedyEnabled);
+    expect(greedyEnabled).toBe(true);
+
+    // チャンクのUV座標を確認（グリーディーでマージされた面のUV範囲をチェック）
+    const uvTest = await page.evaluate(() => {
+      // チャンク(0,0)のメッシュを取得
+      const chunkMesh = window.gameApp.worldContainer.children.find(
+        child => child.name === 'chunk_0_0'
+      );
+      if (!chunkMesh || !chunkMesh.geometry) return { found: false };
+
+      const uvAttr = chunkMesh.geometry.getAttribute('uv');
+      if (!uvAttr) return { found: false, hasUv: false };
+
+      // UV座標の最大値を確認（タイリングされていれば、同じアトラス領域内のUV座標が複数回使用される）
+      // タイリングが正しければ、隣接する頂点で同じアトラス領域を参照する
+      const uvArray = uvAttr.array;
+
+      // UV座標のセットを収集
+      const uvPairs = [];
+      for (let i = 0; i < uvAttr.count; i++) {
+        uvPairs.push({
+          u: uvArray[i * 2],
+          v: uvArray[i * 2 + 1]
+        });
+      }
+
+      // 同じUV座標が複数回出現するか（タイリングの証拠）
+      const uvCounts = new Map();
+      for (const uv of uvPairs) {
+        const key = `${uv.u.toFixed(4)},${uv.v.toFixed(4)}`;
+        uvCounts.set(key, (uvCounts.get(key) || 0) + 1);
+      }
+
+      // 重複するUV座標の数をカウント
+      let duplicateCount = 0;
+      for (const count of uvCounts.values()) {
+        if (count > 1) duplicateCount++;
+      }
+
+      return {
+        found: true,
+        hasUv: true,
+        uvCount: uvAttr.count,
+        uniqueUvCount: uvCounts.size,
+        duplicateCount
+      };
+    });
+
+    expect(uvTest.found).toBe(true);
+    expect(uvTest.hasUv).toBe(true);
+    // タイリングされていれば、同じUV座標が複数の頂点で使用される（重複が発生する）
+    expect(uvTest.duplicateCount).toBeGreaterThan(0);
+  });
+
+  test('グリーディーメッシングでマージされた面のテクスチャが引き伸ばされない', async ({ page }) => {
+    // 全チャンク生成完了を待つ
+    await page.waitForFunction(
+      () => window.gameApp.chunkManager.getLoadedChunkCount() >= 81,
+      { timeout: 120000 }
+    );
+
+    // グリーディーでマージされた面で、面のサイズとUV範囲の整合性を確認
+    const tilingTest = await page.evaluate(() => {
+      const chunkMesh = window.gameApp.worldContainer.children.find(
+        child => child.name === 'chunk_0_0'
+      );
+      if (!chunkMesh || !chunkMesh.geometry) return { found: false };
+
+      const uvAttr = chunkMesh.geometry.getAttribute('uv');
+      const posAttr = chunkMesh.geometry.getAttribute('position');
+      if (!uvAttr || !posAttr) return { found: false };
+
+      const atlasScale = window.gameApp.textureLoader._atlasSize || 1;
+      const singleTexScale = 1 / atlasScale;
+
+      let stretchedQuads = 0;
+      let totalQuads = 0;
+
+      // 頂点は4つずつクワッドを形成
+      for (let i = 0; i < uvAttr.count; i += 4) {
+        if (i + 3 >= uvAttr.count) break;
+
+        const uvs = [];
+        const positions = [];
+        for (let j = 0; j < 4; j++) {
+          uvs.push({
+            u: uvAttr.array[(i + j) * 2],
+            v: uvAttr.array[(i + j) * 2 + 1]
+          });
+          positions.push({
+            x: posAttr.array[(i + j) * 3],
+            y: posAttr.array[(i + j) * 3 + 1],
+            z: posAttr.array[(i + j) * 3 + 2]
+          });
+        }
+
+        // このクワッドのUV範囲を計算
+        const uRange = Math.max(...uvs.map(uv => uv.u)) - Math.min(...uvs.map(uv => uv.u));
+        const vRange = Math.max(...uvs.map(uv => uv.v)) - Math.min(...uvs.map(uv => uv.v));
+
+        // 位置から面のサイズを計算（ブロック単位）
+        const xRange = Math.max(...positions.map(p => p.x)) - Math.min(...positions.map(p => p.x));
+        const yRange = Math.max(...positions.map(p => p.y)) - Math.min(...positions.map(p => p.y));
+        const zRange = Math.max(...positions.map(p => p.z)) - Math.min(...positions.map(p => p.z));
+
+        // 2つの最大値が面のサイズ（ブロック数）
+        const ranges = [xRange, yRange, zRange].sort((a, b) => b - a);
+        const faceWidth = ranges[0];
+        const faceHeight = ranges[1];
+
+        totalQuads++;
+
+        // 面のサイズが1より大きい場合、UV範囲も対応して大きくなるべき
+        // 許容誤差 0.01
+        if (faceWidth > 1.5 || faceHeight > 1.5) {
+          // 面が複数ブロックにまたがるのにUVが1テクスチャ分しかない場合は引き伸ばされている
+          const expectedUvRange = singleTexScale; // 1ブロックあたりのUVサイズ
+          const actualMaxUvRange = Math.max(uRange, vRange);
+
+          // 引き伸ばされている = 面のサイズに対してUVが小さすぎる
+          if (actualMaxUvRange < expectedUvRange * 1.5 && (faceWidth > 1.5 || faceHeight > 1.5)) {
+            stretchedQuads++;
+          }
+        }
+      }
+
+      return {
+        found: true,
+        totalQuads,
+        stretchedQuads,
+        atlasScale,
+        singleTexScale
+      };
+    });
+
+    expect(tilingTest.found).toBe(true);
+    expect(tilingTest.totalQuads).toBeGreaterThan(0);
+    // 引き伸ばされたクワッドが存在しないこと
+    expect(tilingTest.stretchedQuads).toBe(0);
+  });
+});
+
+// ========================================
 // TEST-2-2-3: 連続移動テスト
 // ========================================
 test.describe('TEST-2-2-3: 連続移動テスト', () => {
@@ -724,6 +1032,58 @@ test.describe('TEST-2-2-4: 手動操作', () => {
     const finalLoadedCount = await page.evaluate(() => window.gameApp.chunkManager.getLoadedChunkCount());
     expect(finalLoadedCount).toBeGreaterThanOrEqual(initialLoadedCount - 2);
     expect(finalLoadedCount).toBeLessThanOrEqual(initialLoadedCount + 2);
+  });
+
+  test('手動移動速度は速度プルダウンの設定に従う', async ({ page }) => {
+    // 初期速度（低速=32）を確認
+    const initialSpeed = await page.evaluate(() => window.gameApp.currentMoveSpeed);
+    expect(initialSpeed).toBe(32);
+
+    // 速度を高速に変更
+    await page.selectOption('#select-move-speed', 'fast');
+    await page.waitForTimeout(100);
+
+    // 手動移動速度が高速（128）に変わることを確認
+    const fastSpeed = await page.evaluate(() => window.gameApp.currentMoveSpeed);
+    expect(fastSpeed).toBe(128);
+
+    // 速度を中速に変更
+    await page.selectOption('#select-move-speed', 'medium');
+    await page.waitForTimeout(100);
+
+    // 手動移動速度が中速（64）に変わることを確認
+    const mediumSpeed = await page.evaluate(() => window.gameApp.currentMoveSpeed);
+    expect(mediumSpeed).toBe(64);
+  });
+
+  test('速度変更後の手動移動で移動距離が変わる', async ({ page }) => {
+    // 低速で移動
+    const startPos1 = await page.evaluate(() => window.gameApp.viewX);
+    await page.evaluate(() => { window.gameApp.keys.d = true; });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => { window.gameApp.keys.d = false; });
+    const endPos1 = await page.evaluate(() => window.gameApp.viewX);
+    const distance1 = endPos1 - startPos1;
+
+    // リセット
+    await page.click('#btn-reset');
+    await page.waitForTimeout(500);
+
+    // 高速に変更
+    await page.selectOption('#select-move-speed', 'fast');
+    await page.waitForTimeout(100);
+
+    // 高速で同じ時間移動
+    const startPos2 = await page.evaluate(() => window.gameApp.viewX);
+    await page.evaluate(() => { window.gameApp.keys.d = true; });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => { window.gameApp.keys.d = false; });
+    const endPos2 = await page.evaluate(() => window.gameApp.viewX);
+    const distance2 = endPos2 - startPos2;
+
+    // 高速の方が移動距離が大きい（128/32=4倍）
+    // タイミングのばらつきを考慮して2倍以上であればOK
+    expect(distance2).toBeGreaterThan(distance1 * 2);
   });
 });
 
@@ -1270,8 +1630,218 @@ test.describe('TEST-2-2-12: 大規模チャンク保存パフォーマンス', (
   });
 });
 
-// TEST-2-2-13: 大規模チャンクでの同時実行制御
-test.describe('TEST-2-2-13: 大規模チャンクでの同時実行制御', () => {
+// TEST-2-2-13: カリングON/OFFボタン
+test.describe('TEST-2-2-13: カリングON/OFFボタン', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await page.waitForFunction(() => window.gameApp && window.gameApp.isReady, { timeout: 30000 });
+    // 全チャンク生成完了を待つ (9x9=81)
+    await page.waitForFunction(
+      () => window.gameApp.chunkManager.getLoadedChunkCount() >= 81,
+      { timeout: 60000 }
+    );
+  });
+
+  test('カリングボタンが存在する', async ({ page }) => {
+    const btn = page.locator('#btn-culling');
+    await expect(btn).toBeVisible();
+  });
+
+  test('カリングはデフォルトでON', async ({ page }) => {
+    const btn = page.locator('#btn-culling');
+    const text = await btn.textContent();
+    expect(text).toContain('ON');
+    await expect(btn).toHaveClass(/active/);
+  });
+
+  test('カリングボタンをクリックするとOFFになる', async ({ page }) => {
+    const btn = page.locator('#btn-culling');
+    await btn.click();
+    await page.waitForTimeout(100);
+
+    const text = await btn.textContent();
+    expect(text).toContain('OFF');
+    await expect(btn).not.toHaveClass(/active/);
+  });
+
+  test('カリングOFF時にポリゴン数が増加する', async ({ page }) => {
+    test.setTimeout(60000);
+
+    const initialTriangles = await page.locator('#debug-triangles').textContent();
+    const initialCount = parseInt(initialTriangles.replace(/,/g, ''));
+
+    const btn = page.locator('#btn-culling');
+    await btn.click();
+
+    // リビルド完了を待つ
+    await page.waitForTimeout(5000);
+
+    const changedTriangles = await page.locator('#debug-triangles').textContent();
+    const changedCount = parseInt(changedTriangles.replace(/,/g, ''));
+
+    // カリングOFFでポリゴン数が増加する
+    expect(changedCount).toBeGreaterThan(initialCount);
+  });
+});
+
+// TEST-2-2-14: グリーディーメッシングのデフォルト設定
+test.describe('TEST-2-2-14: グリーディーメッシングのデフォルト設定', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await page.waitForFunction(() => window.gameApp && window.gameApp.isReady, { timeout: 30000 });
+    // 全チャンク生成完了を待つ (9x9=81)
+    await page.waitForFunction(
+      () => window.gameApp.chunkManager.getLoadedChunkCount() >= 81,
+      { timeout: 60000 }
+    );
+  });
+
+  test('グリーディーメッシングはデフォルトでON', async ({ page }) => {
+    const btn = page.locator('#btn-greedy');
+    const text = await btn.textContent();
+    expect(text).toContain('ON');
+    await expect(btn).toHaveClass(/active/);
+  });
+
+  test('greedyEnabledの初期値がtrue', async ({ page }) => {
+    const greedyEnabled = await page.evaluate(() => window.gameApp.greedyEnabled);
+    expect(greedyEnabled).toBe(true);
+  });
+});
+
+// TEST-2-2-15: チャンク範囲表示（赤い四角線）
+test.describe('TEST-2-2-15: チャンク範囲表示（赤い四角線）', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await page.waitForFunction(() => window.gameApp && window.gameApp.isReady, { timeout: 30000 });
+    // 全チャンク生成完了を待つ (9x9=81)
+    await page.waitForFunction(
+      () => window.gameApp.chunkManager.getLoadedChunkCount() >= 81,
+      { timeout: 60000 }
+    );
+  });
+
+  test('チャンク範囲の境界線オブジェクトが存在する', async ({ page }) => {
+    const exists = await page.evaluate(() => {
+      return window.gameApp.chunkBoundaryLine !== null && window.gameApp.chunkBoundaryLine !== undefined;
+    });
+    expect(exists).toBe(true);
+  });
+
+  test('境界線の色が赤色である', async ({ page }) => {
+    const color = await page.evaluate(() => {
+      const line = window.gameApp.chunkBoundaryLine;
+      if (!line || !line.material) return null;
+      return '#' + line.material.color.getHexString();
+    });
+    expect(color).toBe('#ff0000');
+  });
+
+  test('境界線はNxN範囲の外周を表示する', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const app = window.gameApp;
+      const line = app.chunkBoundaryLine;
+      if (!line || !line.geometry) return null;
+
+      const positions = line.geometry.attributes.position.array;
+      const chunkRange = app.chunkRange;
+      const halfRange = Math.floor(chunkRange / 2);
+
+      // 境界線の範囲を計算
+      const minX = Math.min(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      const maxX = Math.max(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      const minZ = Math.min(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3 + 2]));
+      const maxZ = Math.max(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3 + 2]));
+
+      // 範囲の幅がチャンク範囲に一致するか確認
+      const expectedWidth = chunkRange * 16; // 16 = ChunkData.SIZE_X
+      const actualWidth = maxX - minX;
+      const actualDepth = Math.abs(maxZ - minZ);
+
+      return {
+        chunkRange,
+        expectedWidth,
+        actualWidth,
+        actualDepth,
+        isCorrectSize: Math.abs(actualWidth - expectedWidth) < 1 && Math.abs(actualDepth - expectedWidth) < 1
+      };
+    });
+    expect(result.isCorrectSize).toBe(true);
+  });
+
+  test('視点移動で境界線も追従する', async ({ page }) => {
+    // 初期の境界線中心座標を取得
+    const initialCenter = await page.evaluate(() => {
+      const line = window.gameApp.chunkBoundaryLine;
+      const positions = line.geometry.attributes.position.array;
+      const minX = Math.min(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      const maxX = Math.max(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      return (minX + maxX) / 2;
+    });
+
+    // 東へ長めに移動（1チャンク以上移動）
+    await page.evaluate(() => {
+      window.gameApp.keys.d = true;
+    });
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => {
+      window.gameApp.keys.d = false;
+    });
+    await page.waitForTimeout(200);
+
+    // 移動後の境界線中心座標を取得
+    const newCenter = await page.evaluate(() => {
+      const line = window.gameApp.chunkBoundaryLine;
+      const positions = line.geometry.attributes.position.array;
+      const minX = Math.min(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      const maxX = Math.max(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      return (minX + maxX) / 2;
+    });
+
+    // 境界線の中心が移動していることを確認（1チャンク以上移動しないと更新されない可能性）
+    expect(newCenter).toBeGreaterThan(initialCenter);
+  });
+
+  test('チャンク範囲変更で境界線のサイズが変わる', async ({ page }) => {
+    test.setTimeout(120000);
+
+    // 初期サイズを取得（9チャンク = 9*16 = 144）
+    const initialSize = await page.evaluate(() => {
+      const line = window.gameApp.chunkBoundaryLine;
+      const positions = line.geometry.attributes.position.array;
+      const minX = Math.min(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      const maxX = Math.max(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      return maxX - minX;
+    });
+
+    // チャンク範囲を変更（15チャンク = 15*16 = 240）
+    await page.selectOption('#select-chunk-range', '15');
+
+    // 境界線が更新されるまで待つ
+    await page.waitForFunction(() => {
+      const line = window.gameApp.chunkBoundaryLine;
+      const positions = line.geometry.attributes.position.array;
+      const minX = Math.min(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      const maxX = Math.max(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      return (maxX - minX) > 144; // 9*16より大きくなるまで待つ
+    }, { timeout: 30000 });
+
+    // 新しいサイズを取得
+    const newSize = await page.evaluate(() => {
+      const line = window.gameApp.chunkBoundaryLine;
+      const positions = line.geometry.attributes.position.array;
+      const minX = Math.min(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      const maxX = Math.max(...Array.from({ length: positions.length / 3 }, (_, i) => positions[i * 3]));
+      return maxX - minX;
+    });
+
+    // サイズが変わっていることを確認（15*16=240 > 9*16=144）
+    expect(newSize).toBeGreaterThan(initialSize);
+  });
+});
+
+// TEST-2-2-16: 大規模チャンクでの同時実行制御
+test.describe('TEST-2-2-16: 大規模チャンクでの同時実行制御', () => {
   test('ChunkManagerにupdateViewPosition同時実行防止フラグがある', async ({ page }) => {
     await page.goto(TEST_PAGE_PATH);
     await page.waitForFunction(() => window.gameApp && window.gameApp.isReady, { timeout: 30000 });

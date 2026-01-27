@@ -263,6 +263,7 @@ function switchTab(tabName) {
   document.getElementById('blockList').classList.toggle('active', tabName === 'blocks');
   document.getElementById('textureList').classList.toggle('active', tabName === 'textures');
   document.getElementById('chunkTest').classList.toggle('active', tabName === 'chunkTest');
+  document.getElementById('chunkManagerTest').classList.toggle('active', tabName === 'chunkManagerTest');
 }
 
 // ========================================
