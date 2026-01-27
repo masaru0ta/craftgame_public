@@ -367,8 +367,8 @@ class ChunkManager {
 
         const [chunkX, chunkZ] = key.split(',').map(Number);
 
-        // ストレージに保存
-        await this.storage.save(this.worldName, chunkX, chunkZ, chunk.chunkData);
+        // ストレージに保存（速度テストのため一時的に無効化）
+        // await this.storage.save(this.worldName, chunkX, chunkZ, chunk.chunkData);
 
         // メッシュをシーンから削除
         if (this.worldContainer && chunk.mesh) {
@@ -404,23 +404,23 @@ class ChunkManager {
         // 処理時間計測開始
         const startTime = performance.now();
 
-        // バッチ保存用データを収集
-        const chunksToSave = [];
-        for (const key of keys) {
-            const chunk = this.chunks.get(key);
-            if (!chunk) continue;
-
-            const [chunkX, chunkZ] = key.split(',').map(Number);
-            chunksToSave.push({
-                worldName: this.worldName,
-                chunkX,
-                chunkZ,
-                chunkData: chunk.chunkData
-            });
-        }
-
-        // バッチ保存（1つのトランザクション）
-        await this.storage.saveBatch(chunksToSave);
+        // バッチ保存用データを収集（速度テストのため一時的に無効化）
+        // const chunksToSave = [];
+        // for (const key of keys) {
+        //     const chunk = this.chunks.get(key);
+        //     if (!chunk) continue;
+        //
+        //     const [chunkX, chunkZ] = key.split(',').map(Number);
+        //     chunksToSave.push({
+        //         worldName: this.worldName,
+        //         chunkX,
+        //         chunkZ,
+        //         chunkData: chunk.chunkData
+        //     });
+        // }
+        //
+        // // バッチ保存（1つのトランザクション）
+        // await this.storage.saveBatch(chunksToSave);
 
         // メッシュ削除と登録解除
         for (const key of keys) {
