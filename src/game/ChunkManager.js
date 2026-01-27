@@ -43,6 +43,23 @@ class ChunkManager {
 
         // 同時実行防止フラグ
         this.isUpdatingView = false;
+
+        // LoD設定
+        this.lod0Range = 3;   // LoD 0の範囲（チャンク数）
+        this.lod1Range = 7;   // LoD 1の範囲（チャンク数）
+        this.lod2Range = 15;  // LoD 2の範囲（チャンク数）
+        // LoD 3はそれ以上
+
+        // LoD 2/3 メッシュ管理
+        this.lod2Meshes = new Map(); // "chunkX,chunkZ" -> mesh
+        this.lod3Meshes = new Map(); // "gridX,gridZ" -> mesh
+
+        // ブロック色情報（LoD 1用）
+        this.blockColors = {};
+        this.blockShapes = {};
+
+        // LoDデバッグモード
+        this.lodDebugMode = false;
     }
 
     /**
@@ -99,13 +116,30 @@ class ChunkManager {
             const center = this.worldToChunk(currentX, currentZ);
             const halfRange = Math.floor(this.chunkRange / 2);
 
-            // 必要なチャンクの座標リスト
+            // 必要なチャンクの座標リスト（LoD 0/1 のみ）
             const neededChunks = new Set();
+            // 必要な LoD 2 チャンク
+            const neededLoD2Chunks = new Set();
+            // 必要な LoD 3 グリッド
+            const neededLoD3Grids = new Set();
+
             for (let dx = -halfRange; dx <= halfRange; dx++) {
                 for (let dz = -halfRange; dz <= halfRange; dz++) {
                     const cx = center.chunkX + dx;
                     const cz = center.chunkZ + dz;
-                    neededChunks.add(`${cx},${cz}`);
+                    const lod = this.getChunkLoD(cx, cz);
+
+                    if (lod <= 1) {
+                        // LoD 0/1: 通常チャンクとして管理
+                        neededChunks.add(`${cx},${cz}`);
+                    } else if (lod === 2) {
+                        // LoD 2: 簡易メッシュ
+                        neededLoD2Chunks.add(`${cx},${cz}`);
+                    } else {
+                        // LoD 3: 4x4グリッドメッシュ
+                        const grid = LoDHelper.getLoD3Grid(cx, cz);
+                        neededLoD3Grids.add(`${grid.gridX},${grid.gridZ}`);
+                    }
                 }
             }
 
@@ -119,6 +153,43 @@ class ChunkManager {
 
             if (chunksToUnload.length > 0) {
                 await this._unloadChunksBatch(chunksToUnload);
+            }
+
+            // 範囲外の LoD 2 メッシュを削除
+            for (const key of this.lod2Meshes.keys()) {
+                if (!neededLoD2Chunks.has(key)) {
+                    const [cx, cz] = key.split(',').map(Number);
+                    this._removeLoD2Mesh(cx, cz);
+                }
+            }
+
+            // 範囲外の LoD 3 メッシュを削除
+            for (const key of this.lod3Meshes.keys()) {
+                if (!neededLoD3Grids.has(key)) {
+                    const [gx, gz] = key.split(',').map(Number);
+                    this._removeLoD3Mesh(gx, gz);
+                }
+            }
+
+            // LoD 0/1 チャンクのLoD変更を検出し、再生成が必要なものをリストアップ
+            const chunksToRebuild = [];
+            for (const key of neededChunks) {
+                const chunk = this.chunks.get(key);
+                if (chunk && chunk.mesh) {
+                    const [cx, cz] = key.split(',').map(Number);
+                    const newLoD = this.getChunkLoD(cx, cz);
+                    const currentLoD = chunk.mesh.userData.lodLevel;
+
+                    // LoDレベルが変わった場合は再生成が必要
+                    if (currentLoD !== newLoD) {
+                        chunksToRebuild.push({ key, chunkX: cx, chunkZ: cz, newLoD });
+                    }
+                }
+            }
+
+            // LoD変更があるチャンクのメッシュを再生成
+            for (const item of chunksToRebuild) {
+                await this._rebuildChunkMesh(item.chunkX, item.chunkZ, item.newLoD);
             }
 
             // 必要なチャンクをキューに追加（距離順）
@@ -136,6 +207,22 @@ class ChunkManager {
 
             for (const chunk of chunksToLoad) {
                 this._addToQueue(chunk.chunkX, chunk.chunkZ);
+            }
+
+            // LoD 2 メッシュを生成
+            for (const key of neededLoD2Chunks) {
+                if (!this.lod2Meshes.has(key)) {
+                    const [cx, cz] = key.split(',').map(Number);
+                    this._getOrCreateLoD2Mesh(cx, cz);
+                }
+            }
+
+            // LoD 3 メッシュを生成
+            for (const key of neededLoD3Grids) {
+                if (!this.lod3Meshes.has(key)) {
+                    const [gx, gz] = key.split(',').map(Number);
+                    this._getOrCreateLoD3Mesh(gx, gz);
+                }
             }
 
             // 生成処理を開始
@@ -215,15 +302,32 @@ class ChunkManager {
         } else {
             // 新規生成
             chunkData = new ChunkData(chunkX, chunkZ);
-            this.worldGenerator.generateTest(chunkData);
+            this.worldGenerator.generate(chunkData);
             this.stats.newGenerated++;
         }
 
-        // メッシュ生成
+        // LoDレベルを取得
+        const lodLevel = this.getChunkLoD(chunkX, chunkZ);
+
+        // メッシュ生成（LoDレベルに応じて）
+        let mesh;
         const mode = this.useCulling !== false ? 'CULLED' : 'FULL';
-        const mesh = this.meshBuilder.build(chunkData, mode, this.useGreedy || false);
+
+        if (lodLevel === 0) {
+            // LoD 0: フルテクスチャ
+            mesh = this.meshBuilder.build(chunkData, mode, this.useGreedy || false);
+        } else if (lodLevel === 1) {
+            // LoD 1: 頂点カラー
+            mesh = this.meshBuilder.buildLoD1(chunkData, this.blockColors, this.blockShapes, this.useGreedy || false);
+        } else {
+            // LoD 2/3: 高さマップメッシュはここでは生成しない（別途管理）
+            mesh = this.meshBuilder.build(chunkData, mode, this.useGreedy || false);
+        }
+
         mesh.position.x = chunkX * ChunkData.SIZE_X;
         mesh.position.z = chunkZ * ChunkData.SIZE_Z;
+        mesh.userData.lodLevel = lodLevel;
+        mesh.name = `chunk_${chunkX}_${chunkZ}`;
 
         // シーンに追加
         if (this.worldContainer) {
@@ -468,6 +572,57 @@ class ChunkManager {
     }
 
     /**
+     * 単一チャンクのメッシュを再生成（LoD変更時）
+     * @param {number} chunkX - チャンクX座標
+     * @param {number} chunkZ - チャンクZ座標
+     * @param {number} newLoD - 新しいLoDレベル
+     */
+    async _rebuildChunkMesh(chunkX, chunkZ, newLoD) {
+        const key = `${chunkX},${chunkZ}`;
+        const chunk = this.chunks.get(key);
+        if (!chunk) return;
+
+        // 古いメッシュを削除
+        if (this.worldContainer && chunk.mesh) {
+            this.worldContainer.remove(chunk.mesh);
+            if (chunk.mesh.geometry) chunk.mesh.geometry.dispose();
+            if (chunk.mesh.material) {
+                if (Array.isArray(chunk.mesh.material)) {
+                    chunk.mesh.material.forEach(m => m.dispose());
+                } else {
+                    chunk.mesh.material.dispose();
+                }
+            }
+        }
+
+        // 新しいLoDレベルでメッシュを生成
+        let mesh;
+        const mode = this.useCulling !== false ? 'CULLED' : 'FULL';
+
+        if (newLoD === 0) {
+            // LoD 0: フルテクスチャ
+            mesh = this.meshBuilder.build(chunk.chunkData, mode, this.useGreedy || false);
+        } else if (newLoD === 1) {
+            // LoD 1: 頂点カラー
+            mesh = this.meshBuilder.buildLoD1(chunk.chunkData, this.blockColors, this.blockShapes, this.useGreedy || false);
+        } else {
+            // LoD 2/3 はこのメソッドでは処理しない
+            return;
+        }
+
+        mesh.position.x = chunkX * ChunkData.SIZE_X;
+        mesh.position.z = chunkZ * ChunkData.SIZE_Z;
+        mesh.userData.lodLevel = newLoD;
+        mesh.name = `chunk_${chunkX}_${chunkZ}`;
+
+        if (this.worldContainer) {
+            this.worldContainer.add(mesh);
+        }
+
+        chunk.mesh = mesh;
+    }
+
+    /**
      * 全チャンクをアンロード
      */
     async unloadAll() {
@@ -485,10 +640,297 @@ class ChunkManager {
     }
 
     /**
+     * 全チャンクをクリア（メモリ上のみ、ストレージは別途クリア）
+     */
+    async clearAllChunks() {
+        // 全チャンクをアンロード
+        const keys = Array.from(this.chunks.keys());
+        for (const key of keys) {
+            const chunk = this.chunks.get(key);
+            if (chunk && chunk.mesh && this.worldContainer) {
+                this.worldContainer.remove(chunk.mesh);
+                if (chunk.mesh.geometry) chunk.mesh.geometry.dispose();
+                if (chunk.mesh.material) {
+                    if (Array.isArray(chunk.mesh.material)) {
+                        chunk.mesh.material.forEach(m => m.dispose());
+                    } else {
+                        chunk.mesh.material.dispose();
+                    }
+                }
+            }
+            this.chunks.delete(key);
+        }
+
+        // LoD 2/3 メッシュもクリア
+        for (const [key, mesh] of this.lod2Meshes) {
+            if (this.worldContainer) {
+                this.worldContainer.remove(mesh);
+            }
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        }
+        this.lod2Meshes.clear();
+
+        for (const [key, mesh] of this.lod3Meshes) {
+            if (this.worldContainer) {
+                this.worldContainer.remove(mesh);
+            }
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        }
+        this.lod3Meshes.clear();
+
+        // キューもクリア
+        this.generationQueue = [];
+    }
+
+    /**
      * 保存済みチャンク数を取得
      */
     async getStoredChunkCount() {
         return await this.storage.getStoredChunkCount(this.worldName);
+    }
+
+    // ========================================
+    // LoD関連メソッド
+    // ========================================
+
+    /**
+     * LoD閾値を設定
+     * @param {number} lod0Range - LoD 0の範囲（チャンク数）
+     * @param {number} lod1Range - LoD 1の範囲（チャンク数）
+     * @param {number} lod2Range - LoD 2の範囲（チャンク数）
+     */
+    setLoDRanges(lod0Range, lod1Range, lod2Range) {
+        this.lod0Range = lod0Range;
+        this.lod1Range = lod1Range;
+        this.lod2Range = lod2Range;
+    }
+
+    /**
+     * チャンクのLoDレベルを取得
+     * @param {number} chunkX - チャンクX座標
+     * @param {number} chunkZ - チャンクZ座標
+     * @returns {number} LoDレベル（0-3）
+     */
+    getChunkLoD(chunkX, chunkZ) {
+        const center = this.worldToChunk(this.viewX, this.viewZ);
+        // チェビシェフ距離（最大座標差）
+        const distance = Math.max(
+            Math.abs(chunkX - center.chunkX),
+            Math.abs(chunkZ - center.chunkZ)
+        );
+
+        if (distance <= this.lod0Range) return 0;
+        if (distance <= this.lod1Range) return 1;
+        if (distance <= this.lod2Range) return 2;
+        return 3;
+    }
+
+    /**
+     * ブロック色情報を設定（LoD 1用）
+     * @param {Object} colors - {"blockStrId": "#RRGGBB", ...}
+     * @param {Object} shapes - {"blockStrId": "normal"|"custom", ...}
+     */
+    setBlockInfo(colors, shapes) {
+        this.blockColors = colors;
+        this.blockShapes = shapes;
+    }
+
+    /**
+     * LoDデバッグモードを設定
+     * @param {boolean} enabled
+     */
+    setLoDDebugMode(enabled) {
+        this.lodDebugMode = enabled;
+    }
+
+    /**
+     * LoD別のチャンク数を取得
+     * @returns {{lod0: number, lod1: number, lod2: number, lod3: number}}
+     */
+    getLoDCounts() {
+        const counts = { lod0: 0, lod1: 0, lod2: 0, lod3: 0 };
+
+        // LoD 0/1 チャンク（chunks マップから）
+        for (const key of this.chunks.keys()) {
+            const [cx, cz] = key.split(',').map(Number);
+            const lod = this.getChunkLoD(cx, cz);
+            if (lod === 0) {
+                counts.lod0++;
+            } else if (lod === 1) {
+                counts.lod1++;
+            }
+        }
+
+        // LoD 2 メッシュ（1メッシュ = 1チャンク）
+        counts.lod2 = this.lod2Meshes.size;
+
+        // LoD 3 メッシュ（1メッシュ = 16チャンク分）
+        counts.lod3 = this.lod3Meshes.size * 16;
+
+        return counts;
+    }
+
+    /**
+     * LoD 2 メッシュを作成または取得
+     */
+    _getOrCreateLoD2Mesh(chunkX, chunkZ) {
+        const key = `${chunkX},${chunkZ}`;
+        if (this.lod2Meshes.has(key)) {
+            return this.lod2Meshes.get(key);
+        }
+
+        const mesh = LoDHelper.createLoD2Mesh(chunkX, chunkZ, this.worldGenerator);
+        mesh.userData.lodLevel = 2;
+
+        if (this.lodDebugMode) {
+            mesh.material.color.setStyle(LoDHelper.getDebugColor(2));
+        }
+
+        this.lod2Meshes.set(key, mesh);
+
+        if (this.worldContainer) {
+            this.worldContainer.add(mesh);
+        }
+
+        return mesh;
+    }
+
+    /**
+     * LoD 3 メッシュを作成または取得
+     */
+    _getOrCreateLoD3Mesh(gridX, gridZ) {
+        const key = `${gridX},${gridZ}`;
+        if (this.lod3Meshes.has(key)) {
+            return this.lod3Meshes.get(key);
+        }
+
+        const mesh = LoDHelper.createLoD3Mesh(gridX, gridZ, this.worldGenerator);
+        mesh.userData.lodLevel = 3;
+
+        if (this.lodDebugMode) {
+            mesh.material.color.setStyle(LoDHelper.getDebugColor(3));
+        }
+
+        this.lod3Meshes.set(key, mesh);
+
+        if (this.worldContainer) {
+            this.worldContainer.add(mesh);
+        }
+
+        return mesh;
+    }
+
+    /**
+     * LoD 2/3 メッシュを削除
+     */
+    _removeLoD2Mesh(chunkX, chunkZ) {
+        const key = `${chunkX},${chunkZ}`;
+        const mesh = this.lod2Meshes.get(key);
+        if (mesh) {
+            if (this.worldContainer) {
+                this.worldContainer.remove(mesh);
+            }
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+            this.lod2Meshes.delete(key);
+        }
+    }
+
+    _removeLoD3Mesh(gridX, gridZ) {
+        const key = `${gridX},${gridZ}`;
+        const mesh = this.lod3Meshes.get(key);
+        if (mesh) {
+            if (this.worldContainer) {
+                this.worldContainer.remove(mesh);
+            }
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+            this.lod3Meshes.delete(key);
+        }
+    }
+
+    /**
+     * 全LoD 2/3メッシュをクリア
+     */
+    clearLoDMeshes() {
+        for (const [key, mesh] of this.lod2Meshes) {
+            if (this.worldContainer) {
+                this.worldContainer.remove(mesh);
+            }
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        }
+        this.lod2Meshes.clear();
+
+        for (const [key, mesh] of this.lod3Meshes) {
+            if (this.worldContainer) {
+                this.worldContainer.remove(mesh);
+            }
+            if (mesh.geometry) mesh.geometry.dispose();
+            if (mesh.material) mesh.material.dispose();
+        }
+        this.lod3Meshes.clear();
+    }
+
+    /**
+     * LoDデバッグ色を適用/解除
+     */
+    applyLoDDebugColors() {
+        // 通常チャンク（LoD 0/1）
+        for (const [key, chunk] of this.chunks) {
+            const [cx, cz] = key.split(',').map(Number);
+            const lod = this.getChunkLoD(cx, cz);
+
+            if (chunk.mesh && chunk.mesh.material) {
+                if (this.lodDebugMode) {
+                    // デバッグ色を適用
+                    if (!chunk.mesh.material.isShaderMaterial) {
+                        // vertexColorsを無効にして単色表示
+                        chunk.mesh.material.vertexColors = false;
+                        chunk.mesh.material.color.setStyle(LoDHelper.getDebugColor(lod));
+                        chunk.mesh.material.needsUpdate = true;
+                    }
+                } else {
+                    // 元の表示に戻す
+                    if (!chunk.mesh.material.isShaderMaterial) {
+                        // LoD 1 は vertexColors を有効に
+                        if (lod === 1) {
+                            chunk.mesh.material.vertexColors = true;
+                        }
+                        chunk.mesh.material.color.setStyle('#FFFFFF');
+                        chunk.mesh.material.needsUpdate = true;
+                    }
+                }
+            }
+        }
+
+        // LoD 2メッシュ
+        for (const [key, mesh] of this.lod2Meshes) {
+            if (this.lodDebugMode) {
+                mesh.material.vertexColors = false;
+                mesh.material.color.setStyle(LoDHelper.getDebugColor(2));
+                mesh.material.needsUpdate = true;
+            } else {
+                mesh.material.vertexColors = true;
+                mesh.material.color.setStyle('#FFFFFF');
+                mesh.material.needsUpdate = true;
+            }
+        }
+
+        // LoD 3メッシュ
+        for (const [key, mesh] of this.lod3Meshes) {
+            if (this.lodDebugMode) {
+                mesh.material.vertexColors = false;
+                mesh.material.color.setStyle(LoDHelper.getDebugColor(3));
+                mesh.material.needsUpdate = true;
+            } else {
+                mesh.material.vertexColors = true;
+                mesh.material.color.setStyle('#FFFFFF');
+                mesh.material.needsUpdate = true;
+            }
+        }
     }
 }
 

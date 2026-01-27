@@ -800,6 +800,278 @@ class ChunkMeshBuilder {
                 break;
         }
     }
+
+    /**
+     * LoD 1用メッシュを生成（頂点カラー、カスタムブロック→標準形状）
+     * @param {ChunkData} chunkData - チャンクデータ
+     * @param {Object} blockColors - ブロックID→色のマップ {"stone": "#808080", ...}
+     * @param {Object} blockShapes - ブロックID→shape_typeのマップ {"stone": "normal", "custom1": "custom", ...}
+     * @param {boolean} greedy - グリーディーメッシング有効化
+     * @param {Map<string, ChunkData>} neighborChunks - 隣接チャンク (オプション)
+     * @returns {THREE.Mesh} 生成されたメッシュ
+     */
+    buildLoD1(chunkData, blockColors, blockShapes, greedy = true, neighborChunks = null) {
+        const positions = [];
+        const normals = [];
+        const colors = [];
+        const indices = [];
+
+        // ブロックID + 面名 + 色ごとにグループ化（グリーディーメッシング用）
+        const blockFacesMap = new Map();
+
+        // 全ブロックを走査
+        chunkData.forEachBlock((x, y, z, blockStrId) => {
+            if (blockStrId === 'air') return;
+
+            // ブロックの色を取得
+            const color = blockColors[blockStrId] || '#808080';
+
+            // 各面をチェック
+            for (const [faceName, faceInfo] of Object.entries(ChunkMeshBuilder.FACES)) {
+                // y=0の底面は常にカリング
+                if (faceName === 'bottom' && y === 0) continue;
+
+                // カリング判定
+                if (this._shouldCullFace(chunkData, x, y, z, faceName, neighborChunks)) {
+                    continue;
+                }
+
+                // 面を追加（色 + 面名でグループ化）
+                const key = `${color}:${faceName}`;
+                if (!blockFacesMap.has(key)) {
+                    blockFacesMap.set(key, { color, faceName, faces: [] });
+                }
+                blockFacesMap.get(key).faces.push({ x, y, z, faceName });
+            }
+        });
+
+        // メッシュ生成
+        let vertexOffset = 0;
+
+        for (const [key, groupData] of blockFacesMap) {
+            const { color, faceName, faces } = groupData;
+            const faceInfo = ChunkMeshBuilder.FACES[faceName];
+
+            if (greedy) {
+                // グリーディー・メッシング（色別）
+                vertexOffset = this._buildGreedyMeshLoD1(
+                    faces, color, faceName, faceInfo, positions, normals, colors, indices, vertexOffset
+                );
+            } else {
+                // 通常のメッシュ生成
+                for (const face of faces) {
+                    const corners = this._getFaceCorners(face.x, face.y, face.z, face.faceName, 1, 1);
+                    const rgb = this._hexToRgb(color);
+
+                    for (const corner of corners) {
+                        positions.push(corner.x, corner.y, corner.z);
+                        normals.push(...faceInfo.normal);
+                        colors.push(rgb.r, rgb.g, rgb.b);
+                    }
+
+                    indices.push(
+                        vertexOffset, vertexOffset + 1, vertexOffset + 2,
+                        vertexOffset, vertexOffset + 2, vertexOffset + 3
+                    );
+                    vertexOffset += 4;
+                }
+            }
+        }
+
+        // ジオメトリ生成
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.setIndex(indices);
+
+        // マテリアル（頂点カラー使用）
+        const material = new THREE.MeshLambertMaterial({
+            vertexColors: true,
+            side: THREE.FrontSide
+        });
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.name = `chunk_${chunkData.chunkX}_${chunkData.chunkZ}`;
+
+        return mesh;
+    }
+
+    /**
+     * LoD 1用グリーディーメッシング
+     */
+    _buildGreedyMeshLoD1(faces, color, faceName, faceInfo, positions, normals, colors, indices, vertexOffset) {
+        // 面を2Dグリッドに変換
+        const grid = this._facesToGrid(faces, faceName);
+
+        // グリッドから矩形を検出してマージ
+        const rectangles = this._findRectangles(grid, faces);
+
+        const rgb = this._hexToRgb(color);
+
+        // 各矩形をメッシュ化
+        for (const rect of rectangles) {
+            const { x, y, z, width, height, depth } = rect;
+
+            // 面ごとの座標変換
+            let meshX, meshY, meshZ, meshWidth, meshHeight;
+            switch (faceName) {
+                case 'top':
+                case 'bottom':
+                    meshX = x;
+                    meshY = depth;
+                    meshZ = y;
+                    meshWidth = width;
+                    meshHeight = height;
+                    break;
+                case 'front':
+                case 'back':
+                    meshX = x;
+                    meshY = y;
+                    meshZ = depth;
+                    meshWidth = width;
+                    meshHeight = height;
+                    break;
+                case 'left':
+                case 'right':
+                    meshX = depth;
+                    meshY = x;
+                    meshZ = y;
+                    meshWidth = width;
+                    meshHeight = height;
+                    break;
+            }
+
+            // 頂点を追加
+            const corners = this._getFaceCorners(meshX, meshY, meshZ, faceName, meshWidth, meshHeight);
+            for (const corner of corners) {
+                positions.push(corner.x, corner.y, corner.z);
+                normals.push(...faceInfo.normal);
+                colors.push(rgb.r, rgb.g, rgb.b);
+            }
+
+            // インデックス追加
+            indices.push(
+                vertexOffset, vertexOffset + 1, vertexOffset + 2,
+                vertexOffset, vertexOffset + 2, vertexOffset + 3
+            );
+            vertexOffset += 4;
+        }
+
+        return vertexOffset;
+    }
+
+    /**
+     * 面リストをグリッドに変換（グリーディーメッシング用）
+     */
+    _facesToGrid(faces, faceName) {
+        const grid = new Map();
+
+        for (const face of faces) {
+            let u, v, d;
+
+            switch (faceName) {
+                case 'top':
+                case 'bottom':
+                    u = face.x;
+                    v = face.z;
+                    d = face.y;
+                    break;
+                case 'front':
+                case 'back':
+                    u = face.x;
+                    v = face.y;
+                    d = face.z;
+                    break;
+                case 'left':
+                case 'right':
+                    u = face.y;
+                    v = face.z;
+                    d = face.x;
+                    break;
+            }
+
+            const key = `${d}`;
+            if (!grid.has(key)) {
+                grid.set(key, []);
+            }
+            grid.get(key).push({ u, v, depth: d });
+        }
+
+        return grid;
+    }
+
+    /**
+     * グリッドから矩形を検出
+     */
+    _findRectangles(grid, faces) {
+        const rectangles = [];
+
+        for (const [depthKey, cells] of grid) {
+            const depth = parseInt(depthKey);
+
+            // セルをマップ化
+            const cellSet = new Set(cells.map(c => `${c.u},${c.v}`));
+            const visited = new Set();
+
+            for (const cell of cells) {
+                const key = `${cell.u},${cell.v}`;
+                if (visited.has(key)) continue;
+
+                // 最大矩形を探索
+                let maxWidth = 1;
+                let maxHeight = 1;
+
+                // 横方向に拡張
+                while (cellSet.has(`${cell.u + maxWidth},${cell.v}`)) {
+                    maxWidth++;
+                }
+
+                // 縦方向に拡張（全幅で拡張可能な場合のみ）
+                outer: while (true) {
+                    for (let dx = 0; dx < maxWidth; dx++) {
+                        if (!cellSet.has(`${cell.u + dx},${cell.v + maxHeight}`)) {
+                            break outer;
+                        }
+                    }
+                    maxHeight++;
+                }
+
+                // 矩形内のセルを訪問済みにする
+                for (let dx = 0; dx < maxWidth; dx++) {
+                    for (let dy = 0; dy < maxHeight; dy++) {
+                        visited.add(`${cell.u + dx},${cell.v + dy}`);
+                    }
+                }
+
+                rectangles.push({
+                    x: cell.u,
+                    y: cell.v,
+                    z: depth,
+                    width: maxWidth,
+                    height: maxHeight,
+                    depth: depth
+                });
+            }
+        }
+
+        return rectangles;
+    }
+
+    /**
+     * 16進数カラーをRGBに変換
+     */
+    _hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        if (result) {
+            return {
+                r: parseInt(result[1], 16) / 255,
+                g: parseInt(result[2], 16) / 255,
+                b: parseInt(result[3], 16) / 255
+            };
+        }
+        return { r: 0.5, g: 0.5, b: 0.5 };
+    }
 }
 
 // グローバルスコープに公開
