@@ -96,8 +96,8 @@ class ChunkManager {
             }
         }
 
-        for (const key of chunksToUnload) {
-            await this._unloadChunk(key);
+        if (chunksToUnload.length > 0) {
+            await this._unloadChunksBatch(chunksToUnload);
         }
 
         // 必要なチャンクをキューに追加（距離順）
@@ -257,6 +257,68 @@ class ChunkManager {
         if (this.onChunkUnloaded) {
             this.onChunkUnloaded(chunkX, chunkZ);
         }
+    }
+
+    /**
+     * 複数チャンクをバッチでアンロード（1つのトランザクションで保存）
+     */
+    async _unloadChunksBatch(keys) {
+        if (keys.length === 0) return;
+
+        // 処理時間計測開始
+        const startTime = performance.now();
+
+        // バッチ保存用データを収集
+        const chunksToSave = [];
+        for (const key of keys) {
+            const chunk = this.chunks.get(key);
+            if (!chunk) continue;
+
+            const [chunkX, chunkZ] = key.split(',').map(Number);
+            chunksToSave.push({
+                worldName: this.worldName,
+                chunkX,
+                chunkZ,
+                chunkData: chunk.chunkData
+            });
+        }
+
+        // バッチ保存（1つのトランザクション）
+        await this.storage.saveBatch(chunksToSave);
+
+        // メッシュ削除と登録解除
+        for (const key of keys) {
+            const chunk = this.chunks.get(key);
+            if (!chunk) continue;
+
+            const [chunkX, chunkZ] = key.split(',').map(Number);
+
+            // メッシュをシーンから削除
+            if (this.worldContainer && chunk.mesh) {
+                this.worldContainer.remove(chunk.mesh);
+                if (chunk.mesh.geometry) chunk.mesh.geometry.dispose();
+                if (chunk.mesh.material) {
+                    if (Array.isArray(chunk.mesh.material)) {
+                        chunk.mesh.material.forEach(m => m.dispose());
+                    } else {
+                        chunk.mesh.material.dispose();
+                    }
+                }
+            }
+
+            // 登録解除
+            this.chunks.delete(key);
+
+            // コールバック
+            if (this.onChunkUnloaded) {
+                this.onChunkUnloaded(chunkX, chunkZ);
+            }
+        }
+
+        // 処理時間計測終了（1チャンクあたりの平均時間を記録）
+        const elapsed = performance.now() - startTime;
+        const avgTime = elapsed / keys.length;
+        this._recordTime(this.stats.unloadTimes, avgTime);
     }
 
     /**

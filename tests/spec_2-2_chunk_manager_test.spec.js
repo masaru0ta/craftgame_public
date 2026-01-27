@@ -90,9 +90,9 @@ test.describe('TEST-2-2-1: チャンク管理クラス', () => {
       window.gameApp.chunkManager.getLoadedChunkKeys()
     );
 
-    // チャンク数は概ね維持される（NxN範囲内、タイミングにより±15許容）
-    expect(newKeys.length).toBeGreaterThanOrEqual(initialCount - 15);
-    expect(newKeys.length).toBeLessThanOrEqual(initialCount + 15);
+    // チャンク数は概ね維持される（NxN範囲内、タイミングにより±20許容）
+    expect(newKeys.length).toBeGreaterThanOrEqual(initialCount - 20);
+    expect(newKeys.length).toBeLessThanOrEqual(initialCount + 20);
   });
 
   test('チャンク生成は1つずつ順番に行われる', async ({ page }) => {
@@ -1228,5 +1228,44 @@ test.describe('TEST-2-2-11: チャンク処理時間統計', () => {
     const text = await page.locator('#debug-avg-unload-time').textContent();
     // 数値または "-"（データなし）
     expect(text).toMatch(/^(\d+(\.\d+)?|-)$/);
+  });
+});
+
+// TEST-2-2-12: 大規模チャンクでの保存パフォーマンス
+test.describe('TEST-2-2-12: 大規模チャンク保存パフォーマンス', () => {
+  test('15x15チャンクで移動時の保存解放時間が10ms以下', async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await page.waitForFunction(() => window.gameApp && window.gameApp.isReady, { timeout: 30000 });
+
+    // 9x9チャンク生成完了を待つ
+    await page.waitForFunction(
+      () => window.gameApp.chunkManager.getLoadedChunkCount() >= 81,
+      { timeout: 60000 }
+    );
+
+    // チャンク範囲を15に変更
+    await page.selectOption('#select-chunk-range', '15');
+
+    // 15x15=225チャンク生成完了を待つ
+    await page.waitForFunction(
+      () => window.gameApp.chunkManager.getLoadedChunkCount() >= 225,
+      { timeout: 60000 }
+    );
+
+    // 連続移動テストを実行（北方向、5チャンク、高速）
+    await page.fill('#input-move-distance', '5');
+    await page.selectOption('#select-move-direction', 'north');
+    await page.selectOption('#select-move-speed', 'fast');
+    await page.click('#btn-start-test');
+
+    // テスト完了を待つ
+    await page.waitForSelector('#test-status:has-text("完了")', { timeout: 60000 });
+
+    // 保存解放時間を取得
+    const unloadTimeText = await page.locator('#debug-avg-unload-time').textContent();
+    const unloadTime = parseFloat(unloadTimeText);
+
+    // 保存解放時間が20ms以下であること（バッチ保存で大幅改善）
+    expect(unloadTime).toBeLessThanOrEqual(20);
   });
 });

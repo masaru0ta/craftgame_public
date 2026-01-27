@@ -87,6 +87,32 @@ class ChunkStorage {
     }
 
     /**
+     * 複数チャンクをバッチ保存（1つのトランザクションで処理）
+     * @param {Array<{worldName, chunkX, chunkZ, chunkData}>} chunks
+     */
+    async saveBatch(chunks) {
+        if (chunks.length === 0) return;
+
+        await this.open();
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+
+            // トランザクション完了時に resolve
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+
+            // 全チャンクを1つのトランザクションで保存
+            for (const chunk of chunks) {
+                const key = this._getKey(chunk.worldName, chunk.chunkX, chunk.chunkZ);
+                const serialized = this.serialize(chunk.chunkData);
+                store.put(serialized, key);
+            }
+        });
+    }
+
+    /**
      * チャンクを読み込む
      */
     async load(worldName, chunkX, chunkZ) {
