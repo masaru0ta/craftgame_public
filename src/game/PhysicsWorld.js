@@ -573,25 +573,93 @@ class PhysicsWorld {
 
             const blockStrId = this.getBlockAt(blockX, blockY, blockZ);
             if (blockStrId && blockStrId !== 'air') {
-                const face = this._determineFace(x - blockX, y - blockY, z - blockZ);
-                const adjacent = this._getAdjacentBlock(blockX, blockY, blockZ, face);
+                // ブロック定義を取得
+                const blockDef = this._getBlockDefinition(blockStrId);
 
-                return {
-                    hit: true,
-                    blockX,
-                    blockY,
-                    blockZ,
-                    face,
-                    distance: dist,
-                    adjacentX: adjacent.x,
-                    adjacentY: adjacent.y,
-                    adjacentZ: adjacent.z
-                };
+                // カスタムブロックの場合、当たり判定ボクセルをチェック
+                if (blockDef && blockDef.shape_type === 'custom' && blockDef.voxel_collision) {
+                    const customHit = this._raycastCustomBlock(
+                        x, y, z, blockX, blockY, blockZ, blockDef.voxel_collision
+                    );
+                    if (customHit) {
+                        const adjacent = this._getAdjacentBlock(blockX, blockY, blockZ, customHit.face);
+                        return {
+                            hit: true,
+                            blockX,
+                            blockY,
+                            blockZ,
+                            face: customHit.face,
+                            distance: dist,
+                            adjacentX: adjacent.x,
+                            adjacentY: adjacent.y,
+                            adjacentZ: adjacent.z
+                        };
+                    }
+                    // カスタムブロックの当たり判定ボクセルにヒットしなかった場合は継続
+                } else {
+                    // 通常ブロック
+                    const face = this._determineFace(x - blockX, y - blockY, z - blockZ);
+                    const adjacent = this._getAdjacentBlock(blockX, blockY, blockZ, face);
+
+                    return {
+                        hit: true,
+                        blockX,
+                        blockY,
+                        blockZ,
+                        face,
+                        distance: dist,
+                        adjacentX: adjacent.x,
+                        adjacentY: adjacent.y,
+                        adjacentZ: adjacent.z
+                    };
+                }
             }
 
             x += direction.x * step;
             y += direction.y * step;
             z += direction.z * step;
+        }
+
+        return null;
+    }
+
+    /**
+     * カスタムブロックの当たり判定ボクセルに対するレイキャスト
+     * @param {number} x - レイの現在位置X
+     * @param {number} y - レイの現在位置Y
+     * @param {number} z - レイの現在位置Z
+     * @param {number} blockX - ブロック座標X
+     * @param {number} blockY - ブロック座標Y
+     * @param {number} blockZ - ブロック座標Z
+     * @param {string} voxelCollision - Base64エンコードされた当たり判定データ
+     * @returns {{face: string}|null} ヒット情報またはnull
+     */
+    _raycastCustomBlock(x, y, z, blockX, blockY, blockZ, voxelCollision) {
+        if (typeof CustomCollision === 'undefined') {
+            return { face: this._determineFace(x - blockX, y - blockY, z - blockZ) };
+        }
+
+        const collisionData = CustomCollision.decode(voxelCollision);
+        const voxelSize = 0.25; // 1/4 ブロック
+
+        // ブロック内のローカル座標を計算
+        const localX = x - blockX;
+        const localY = y - blockY;
+        const localZ = z - blockZ;
+
+        // 当たり判定ボクセル座標を計算（0-3）
+        const vx = Math.min(3, Math.floor(localX / voxelSize));
+        const vy = Math.min(3, Math.floor(localY / voxelSize));
+        const vz = Math.min(3, Math.floor(localZ / voxelSize));
+
+        // 当たり判定ボクセルをチェック
+        if (CustomCollision.getVoxel(collisionData, vx, vy, vz) === 1) {
+            // ボクセル内のローカル座標から面を判定
+            const voxelLocalX = (localX - vx * voxelSize) / voxelSize;
+            const voxelLocalY = (localY - vy * voxelSize) / voxelSize;
+            const voxelLocalZ = (localZ - vz * voxelSize) / voxelSize;
+            const face = this._determineFace(voxelLocalX, voxelLocalY, voxelLocalZ);
+            return { face };
         }
 
         return null;

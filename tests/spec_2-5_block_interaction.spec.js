@@ -1170,3 +1170,138 @@ test.describe('TEST-2-5-12: パフォーマンス設定', () => {
     expect(result.greedyVertices).toBeLessThan(result.nonGreedyVertices);
   });
 });
+
+// ========================================
+// TEST-2-5-13: カスタムブロックの当たり判定
+// ========================================
+test.describe('TEST-2-5-13: カスタムブロックの当たり判定', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await page.waitForFunction(() => window.gameApp && window.gameApp.isReady, { timeout: 30000 });
+  });
+
+  test('カスタムブロックのレイキャストが当たり判定ボクセルに基づく', async ({ page }) => {
+    // テスト用にカスタムブロックを配置し、レイキャストをテスト
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+
+      // 下半分だけ当たり判定があるカスタムブロックを作成
+      // voxel_collision: 4x4x4、下半分（y=0,1）のみ1
+      const collisionData = CustomCollision.createEmpty();
+      for (let y = 0; y < 2; y++) {
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      // テスト用ブロック定義を作成
+      const testBlockDef = {
+        block_str_id: 'test_custom_half',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+
+      // textureLoaderにテスト用ブロックを追加
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      // 既存のブロックに追加（重複チェック）
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_custom_half');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      // プレイヤー位置付近にチャンクを取得（座標 8, 64, 8 付近）
+      const testX = 8, testY = 64, testZ = 10;
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor(testZ / 16);
+      const chunkKey = `${chunkX},${chunkZ}`;
+      let chunk = pw.chunkManager.chunks.get(chunkKey);
+
+      // チャンクにデータがない場合は作成
+      if (!chunk) {
+        return { error: 'Chunk object not found: ' + chunkKey };
+      }
+
+      // チャンクデータへのアクセス（chunk.chunkDataまたはchunk.data）
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        // ChunkDataを新規作成
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+        // 地面を生成
+        for (let y = 0; y < 64; y++) {
+          for (let z = 0; z < 16; z++) {
+            for (let x = 0; x < 16; x++) {
+              chunkData.setBlock(x, y, z, 'stone');
+            }
+          }
+        }
+      }
+
+      // チャンク内のローカル座標
+      const localX = ((testX % 16) + 16) % 16;
+      const localZ = ((testZ % 16) + 16) % 16;
+
+      // テスト用ブロックを配置
+      chunkData.setBlock(localX, testY, localZ, 'test_custom_half');
+
+      // レイキャストテスト1: 上半分を狙う（y=64.75、当たり判定なし部分）
+      const rayOriginTop = { x: testX + 0.5, y: testY + 0.75, z: testZ - 2 };
+      const rayDirection = { x: 0, y: 0, z: 1 };
+      const resultTop = pw.raycast(rayOriginTop, rayDirection, 10);
+
+      // レイキャストテスト2: 下半分を狙う（y=64.25、当たり判定あり部分）
+      const rayOriginBottom = { x: testX + 0.5, y: testY + 0.25, z: testZ - 2 };
+      const resultBottom = pw.raycast(rayOriginBottom, rayDirection, 10);
+
+      return {
+        testX,
+        testY,
+        testZ,
+        topHit: resultTop ? resultTop.hit : false,
+        topBlockX: resultTop ? resultTop.blockX : null,
+        topBlockZ: resultTop ? resultTop.blockZ : null,
+        bottomHit: resultBottom ? resultBottom.hit : false,
+        bottomBlockX: resultBottom ? resultBottom.blockX : null,
+        bottomBlockZ: resultBottom ? resultBottom.blockZ : null
+      };
+    });
+
+    // エラーチェック
+    expect(result.error).toBeUndefined();
+
+    // 下半分（当たり判定あり）はヒットする
+    expect(result.bottomHit).toBe(true);
+    expect(result.bottomBlockX).toBe(result.testX);
+    expect(result.bottomBlockZ).toBe(result.testZ);
+
+    // 上半分はこのブロックにヒットしないはず（通過するか別のブロックにヒット）
+    if (result.topHit && result.topBlockZ === result.testZ) {
+      expect(result.topBlockX).not.toBe(result.testX);
+    }
+  });
+
+  test('PhysicsWorld._raycastCustomBlock メソッドが存在する', async ({ page }) => {
+    const exists = await page.evaluate(() => {
+      return typeof window.gameApp.physicsWorld._raycastCustomBlock === 'function';
+    });
+    expect(exists).toBe(true);
+  });
+
+  test('当たり判定ボクセルサイズが0.25ブロックである', async ({ page }) => {
+    // CustomCollisionのGRID_SIZEが4であることを確認（1/4 = 0.25）
+    const gridSize = await page.evaluate(() => {
+      return CustomCollision.GRID_SIZE;
+    });
+    expect(gridSize).toBe(4);
+    // 0.25ブロックサイズ = 1 / gridSize
+    expect(1 / gridSize).toBe(0.25);
+  });
+});
