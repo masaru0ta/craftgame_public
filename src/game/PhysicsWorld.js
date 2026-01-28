@@ -18,6 +18,9 @@ class PhysicsWorld {
 
         // 接地判定の閾値
         this.groundCheckDistance = 0.01;
+
+        // ステップアップの最大高さ（0.5ブロック以下の段差を瞬時に乗り越える）
+        this.stepUpMaxHeight = 0.5;
     }
 
     /**
@@ -101,12 +104,21 @@ class PhysicsWorld {
         const collisions = this._getCollidingBlocks(aabb);
         const halfWidth = Player.WIDTH / 2;
 
+        // ステップアップ判定（接地中かつ非飛行時のみ）
+        if (player.isOnGround() && !player.isFlying()) {
+            const stepUpResult = this._tryStepUp(player, collisions);
+            if (stepUpResult.steppedUp) {
+                return; // ステップアップ成功、押し返し不要
+            }
+        }
+
         for (const blockAABB of collisions) {
             const playerAABB = player.getAABB();
 
             if (!this._aabbIntersects(playerAABB, blockAABB)) continue;
 
             const pos = player.getPosition();
+
             if (dx > 0) {
                 // 東へ移動中 - 壁に当たった
                 const newX = blockAABB.minX - halfWidth;
@@ -130,12 +142,21 @@ class PhysicsWorld {
         const collisions = this._getCollidingBlocks(aabb);
         const halfWidth = Player.WIDTH / 2;
 
+        // ステップアップ判定（接地中かつ非飛行時のみ）
+        if (player.isOnGround() && !player.isFlying()) {
+            const stepUpResult = this._tryStepUp(player, collisions);
+            if (stepUpResult.steppedUp) {
+                return; // ステップアップ成功、押し返し不要
+            }
+        }
+
         for (const blockAABB of collisions) {
             const playerAABB = player.getAABB();
 
             if (!this._aabbIntersects(playerAABB, blockAABB)) continue;
 
             const pos = player.getPosition();
+
             if (dz > 0) {
                 // 北へ移動中 - 壁に当たった
                 const newZ = blockAABB.minZ - halfWidth;
@@ -147,6 +168,84 @@ class PhysicsWorld {
             }
             player.setVelocity(player.getVelocity().x, player.getVelocity().y, 0);
         }
+    }
+
+    /**
+     * ステップアップを試行
+     * 衝突しているすべてのAABBの最高点を見つけ、ステップアップ可能ならジャンプ
+     * @param {Player} player
+     * @param {Array<Object>} collisions - 衝突候補のAABBリスト
+     * @returns {{steppedUp: boolean, targetY: number}}
+     */
+    _tryStepUp(player, collisions) {
+        const pos = player.getPosition();
+        const playerAABB = player.getAABB();
+
+        // 実際に衝突しているAABBの最高Y座標を見つける
+        let maxStepY = pos.y;
+        let hasCollision = false;
+
+        for (const blockAABB of collisions) {
+            if (!this._aabbIntersects(playerAABB, blockAABB)) continue;
+
+            hasCollision = true;
+            const stepHeight = blockAABB.maxY - pos.y;
+
+            // ステップアップ可能な範囲内の最高点を記録
+            if (stepHeight > 0 && stepHeight <= this.stepUpMaxHeight) {
+                if (blockAABB.maxY > maxStepY) {
+                    maxStepY = blockAABB.maxY;
+                }
+            }
+        }
+
+        // 衝突がない、またはステップアップ対象がない場合
+        if (!hasCollision || maxStepY <= pos.y) {
+            return { steppedUp: false, targetY: pos.y };
+        }
+
+        // 最高点にステップアップできるか確認
+        if (this._canStepUpTo(player, maxStepY)) {
+            player.setPosition(pos.x, maxStepY, pos.z);
+            return { steppedUp: true, targetY: maxStepY };
+        }
+
+        return { steppedUp: false, targetY: pos.y };
+    }
+
+    /**
+     * 指定の高さにステップアップできるか確認（頭上スペースチェック）
+     * @param {Player} player
+     * @param {number} targetY - 目標Y座標
+     * @returns {boolean} ステップアップ可能か
+     */
+    _canStepUpTo(player, targetY) {
+        const pos = player.getPosition();
+        const halfWidth = Player.WIDTH / 2;
+        const height = player.getHeight();
+
+        // ステップアップ後のAABBを計算
+        const stepAABB = {
+            minX: pos.x - halfWidth,
+            minY: targetY,
+            minZ: pos.z - halfWidth,
+            maxX: pos.x + halfWidth,
+            maxY: targetY + height,
+            maxZ: pos.z + halfWidth
+        };
+
+        // ステップアップ後に頭上に衝突するブロックがないか確認
+        const collisions = this._getCollidingBlocks(stepAABB);
+        for (const blockAABB of collisions) {
+            // ステップアップ先の床は除外（minYがtargetYのブロック）
+            if (Math.abs(blockAABB.maxY - targetY) < 0.01) continue;
+
+            if (this._aabbIntersects(stepAABB, blockAABB)) {
+                return false; // 頭上に障害物あり
+            }
+        }
+
+        return true;
     }
 
     /**

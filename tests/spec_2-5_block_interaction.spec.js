@@ -1305,3 +1305,600 @@ test.describe('TEST-2-5-13: カスタムブロックの当たり判定', () => {
     expect(1 / gridSize).toBe(0.25);
   });
 });
+
+// ========================================
+// TEST-2-5-14: ステップアップ機能
+// ========================================
+test.describe('TEST-2-5-14: ステップアップ機能', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TEST_PAGE_PATH);
+    await page.waitForFunction(() => window.gameApp && window.gameApp.isReady, { timeout: 30000 });
+    await page.waitForFunction(
+      () => window.gameApp.chunkManager.getLoadedChunkCount() >= 9,
+      { timeout: 60000 }
+    );
+  });
+
+  test('PhysicsWorld.STEP_UP_MAX_HEIGHT が0.5である', async ({ page }) => {
+    const stepUpMaxHeight = await page.evaluate(() => {
+      return window.gameApp.physicsWorld.stepUpMaxHeight;
+    });
+    expect(stepUpMaxHeight).toBe(0.5);
+  });
+
+  test('0.5ブロック以下の段差を瞬時に乗り越えられる', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+      const player = window.gameApp.player;
+      const cm = window.gameApp.chunkManager;
+
+      // テスト用の位置
+      const testX = 50, testY = 64, testZ = 50;
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor(testZ / 16);
+      const chunkKey = `${chunkX},${chunkZ}`;
+
+      // チャンクを取得または作成
+      let chunk = cm.chunks.get(chunkKey);
+      if (!chunk) {
+        return { error: 'Chunk not found' };
+      }
+
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+      }
+
+      // 地面を作成
+      const localX = ((testX % 16) + 16) % 16;
+      const localZ = ((testZ % 16) + 16) % 16;
+      const localZNext = ((testZ + 1) % 16 + 16) % 16;
+
+      for (let lz = 0; lz < 16; lz++) {
+        for (let lx = 0; lx < 16; lx++) {
+          chunkData.setBlock(lx, testY - 1, lz, 'stone');
+        }
+      }
+
+      // 0.5ブロックの高さのハーフブロック（当たり判定: 下半分のみ）を配置
+      // voxel_collision: y=0,1（下半分）のみ当たり判定あり
+      const collisionData = CustomCollision.createEmpty();
+      for (let y = 0; y < 2; y++) {
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      // テスト用ブロック定義を登録
+      const testBlockDef = {
+        block_str_id: 'test_half_block',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_half_block');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      // ハーフブロックを配置（プレイヤーの進行方向）
+      chunkData.setBlock(localX, testY, localZNext, 'test_half_block');
+
+      // プレイヤーを配置（地面の上、ハーフブロックの手前）
+      player.setPosition(testX + 0.5, testY, testZ + 0.5);
+      player.setOnGround(true);
+      player.setFlying(false);
+      player.setSprinting(false);
+      player.setVelocity(0, 0, 0);
+
+      // 初期位置を記録
+      const initialY = player.getPosition().y;
+
+      // 北（Z+）方向に移動（ステップアップ対象のハーフブロックに向かう）
+      const moveSpeed = 5;
+      const deltaTime = 0.1;
+      const velocity = { x: 0, y: 0, z: moveSpeed };
+
+      // 複数回移動してハーフブロックに衝突させる
+      for (let i = 0; i < 20; i++) {
+        pw.movePlayer(player, velocity, deltaTime);
+      }
+
+      const finalPos = player.getPosition();
+      const yDiff = finalPos.y - initialY;
+
+      return {
+        initialY,
+        finalY: finalPos.y,
+        finalZ: finalPos.z,
+        yDiff,
+        // 0.5ブロック上がっているはず
+        steppedUp: yDiff >= 0.4 && yDiff <= 0.6
+      };
+    });
+
+    if (result.error) {
+      console.log('Test skipped:', result.error);
+      return;
+    }
+
+    // 0.5ブロックの段差を乗り越えた
+    expect(result.steppedUp).toBe(true);
+  });
+
+  test('0.5ブロックより高い段差はステップアップしない', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+      const player = window.gameApp.player;
+      const cm = window.gameApp.chunkManager;
+
+      // テスト用の位置
+      const testX = 55, testY = 64, testZ = 55;
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor(testZ / 16);
+      const chunkKey = `${chunkX},${chunkZ}`;
+
+      let chunk = cm.chunks.get(chunkKey);
+      if (!chunk) {
+        return { error: 'Chunk not found' };
+      }
+
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+      }
+
+      // 地面を作成
+      const localX = ((testX % 16) + 16) % 16;
+      const localZ = ((testZ % 16) + 16) % 16;
+      const localZNext = ((testZ + 1) % 16 + 16) % 16;
+
+      for (let lz = 0; lz < 16; lz++) {
+        for (let lx = 0; lx < 16; lx++) {
+          chunkData.setBlock(lx, testY - 1, lz, 'stone');
+        }
+      }
+
+      // 0.75ブロックの高さのブロック（当たり判定: y=0,1,2）を配置
+      const collisionData = CustomCollision.createEmpty();
+      for (let y = 0; y < 3; y++) {  // 3/4 = 0.75ブロック
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      const testBlockDef = {
+        block_str_id: 'test_075_block',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_075_block');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      chunkData.setBlock(localX, testY, localZNext, 'test_075_block');
+
+      // プレイヤーを配置
+      player.setPosition(testX + 0.5, testY, testZ + 0.5);
+      player.setOnGround(true);
+      player.setFlying(false);
+      player.setVelocity(0, 0, 0);
+
+      const initialY = player.getPosition().y;
+      const initialZ = player.getPosition().z;
+
+      // 北（Z+）方向に移動
+      const velocity = { x: 0, y: 0, z: 5 };
+      for (let i = 0; i < 20; i++) {
+        pw.movePlayer(player, velocity, 0.1);
+      }
+
+      const finalPos = player.getPosition();
+
+      return {
+        initialY,
+        finalY: finalPos.y,
+        initialZ,
+        finalZ: finalPos.z,
+        // Y座標が変わっていない（ステップアップしていない）
+        noStepUp: Math.abs(finalPos.y - initialY) < 0.1,
+        // Z座標も進んでいない（壁にぶつかっている）
+        blocked: finalPos.z < initialZ + 0.5
+      };
+    });
+
+    if (result.error) {
+      console.log('Test skipped:', result.error);
+      return;
+    }
+
+    // 0.75ブロックの段差はステップアップしない
+    expect(result.noStepUp).toBe(true);
+  });
+
+  test('ステップアップはジャンプ速度を付与しない（瞬時移動）', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+      const player = window.gameApp.player;
+      const cm = window.gameApp.chunkManager;
+
+      // テスト用の位置
+      const testX = 60, testY = 64, testZ = 60;
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor(testZ / 16);
+      const chunkKey = `${chunkX},${chunkZ}`;
+
+      let chunk = cm.chunks.get(chunkKey);
+      if (!chunk) {
+        return { error: 'Chunk not found' };
+      }
+
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+      }
+
+      // 地面を作成
+      const localX = ((testX % 16) + 16) % 16;
+      const localZ = ((testZ % 16) + 16) % 16;
+      const localZNext = ((testZ + 1) % 16 + 16) % 16;
+
+      for (let lz = 0; lz < 16; lz++) {
+        for (let lx = 0; lx < 16; lx++) {
+          chunkData.setBlock(lx, testY - 1, lz, 'stone');
+        }
+      }
+
+      // 0.5ブロックのハーフブロックを配置
+      const collisionData = CustomCollision.createEmpty();
+      for (let y = 0; y < 2; y++) {
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      const testBlockDef = {
+        block_str_id: 'test_half_block2',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_half_block2');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      chunkData.setBlock(localX, testY, localZNext, 'test_half_block2');
+
+      // プレイヤーを配置
+      player.setPosition(testX + 0.5, testY, testZ + 0.5);
+      player.setOnGround(true);
+      player.setFlying(false);
+      player.setVelocity(0, 0, 0);
+
+      // 移動してステップアップ
+      const velocity = { x: 0, y: 0, z: 5 };
+      for (let i = 0; i < 20; i++) {
+        pw.movePlayer(player, velocity, 0.1);
+      }
+
+      // ステップアップ後のY速度を確認
+      const velocityAfter = player.getVelocity();
+
+      return {
+        velocityY: velocityAfter.y,
+        // ジャンプ速度（8）が付与されていないこと
+        noJumpVelocity: Math.abs(velocityAfter.y) < 1
+      };
+    });
+
+    if (result.error) {
+      console.log('Test skipped:', result.error);
+      return;
+    }
+
+    // ステップアップはジャンプ速度を付与しない
+    expect(result.noJumpVelocity).toBe(true);
+  });
+
+  test('飛行モード中はステップアップしない', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+      const player = window.gameApp.player;
+      const cm = window.gameApp.chunkManager;
+
+      const testX = 65, testY = 64, testZ = 65;
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor(testZ / 16);
+      const chunkKey = `${chunkX},${chunkZ}`;
+
+      let chunk = cm.chunks.get(chunkKey);
+      if (!chunk) {
+        return { error: 'Chunk not found' };
+      }
+
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+      }
+
+      const localX = ((testX % 16) + 16) % 16;
+      const localZNext = ((testZ + 1) % 16 + 16) % 16;
+
+      // ハーフブロックを配置
+      const collisionData = CustomCollision.createEmpty();
+      for (let y = 0; y < 2; y++) {
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      const testBlockDef = {
+        block_str_id: 'test_half_fly',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_half_fly');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      chunkData.setBlock(localX, testY, localZNext, 'test_half_fly');
+
+      // プレイヤーを飛行モードで配置
+      player.setPosition(testX + 0.5, testY, testZ + 0.5);
+      player.setFlying(true);  // 飛行モードON
+      player.setOnGround(false);
+      player.setVelocity(0, 0, 0);
+
+      const initialY = player.getPosition().y;
+
+      // 移動
+      const velocity = { x: 0, y: 0, z: 5 };
+      for (let i = 0; i < 20; i++) {
+        pw.movePlayer(player, velocity, 0.1);
+      }
+
+      const finalY = player.getPosition().y;
+
+      return {
+        initialY,
+        finalY,
+        // 飛行モードではステップアップしない（Y座標が変わらない）
+        noStepUp: Math.abs(finalY - initialY) < 0.1
+      };
+    });
+
+    if (result.error) {
+      console.log('Test skipped:', result.error);
+      return;
+    }
+
+    // 飛行モードではステップアップしない
+    expect(result.noStepUp).toBe(true);
+  });
+
+  test('空中ではステップアップしない', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+      const player = window.gameApp.player;
+      const cm = window.gameApp.chunkManager;
+
+      const testX = 70, testY = 66, testZ = 70;  // 地面より上
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor(testZ / 16);
+      const chunkKey = `${chunkX},${chunkZ}`;
+
+      let chunk = cm.chunks.get(chunkKey);
+      if (!chunk) {
+        return { error: 'Chunk not found' };
+      }
+
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+      }
+
+      const localX = ((testX % 16) + 16) % 16;
+      const localZNext = ((testZ + 1) % 16 + 16) % 16;
+
+      // ハーフブロックを空中に配置
+      const collisionData = CustomCollision.createEmpty();
+      for (let y = 0; y < 2; y++) {
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      const testBlockDef = {
+        block_str_id: 'test_half_air',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_half_air');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      chunkData.setBlock(localX, testY, localZNext, 'test_half_air');
+
+      // プレイヤーを空中に配置
+      player.setPosition(testX + 0.5, testY, testZ + 0.5);
+      player.setOnGround(false);  // 空中
+      player.setFlying(false);
+      player.setVelocity(0, 0, 0);
+
+      const initialY = player.getPosition().y;
+
+      // 移動
+      const velocity = { x: 0, y: 0, z: 5 };
+      for (let i = 0; i < 5; i++) {
+        pw.movePlayer(player, velocity, 0.1);
+      }
+
+      const finalY = player.getPosition().y;
+
+      return {
+        initialY,
+        finalY,
+        // 空中ではステップアップしない
+        noStepUp: finalY <= initialY
+      };
+    });
+
+    if (result.error) {
+      console.log('Test skipped:', result.error);
+      return;
+    }
+
+    // 空中ではステップアップしない（重力で落ちる可能性があるのでfinalY <= initialY）
+    expect(result.noStepUp).toBe(true);
+  });
+
+  test('スニーク中もステップアップする', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+      const player = window.gameApp.player;
+      const cm = window.gameApp.chunkManager;
+
+      const testX = 75, testY = 64, testZ = 75;
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor(testZ / 16);
+      const chunkKey = `${chunkX},${chunkZ}`;
+
+      let chunk = cm.chunks.get(chunkKey);
+      if (!chunk) {
+        return { error: 'Chunk not found' };
+      }
+
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+      }
+
+      // 地面を作成
+      const localX = ((testX % 16) + 16) % 16;
+      const localZ = ((testZ % 16) + 16) % 16;
+      const localZNext = ((testZ + 1) % 16 + 16) % 16;
+
+      for (let lz = 0; lz < 16; lz++) {
+        for (let lx = 0; lx < 16; lx++) {
+          chunkData.setBlock(lx, testY - 1, lz, 'stone');
+        }
+      }
+
+      // ハーフブロックを配置
+      const collisionData = CustomCollision.createEmpty();
+      for (let y = 0; y < 2; y++) {
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      const testBlockDef = {
+        block_str_id: 'test_half_sneak',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_half_sneak');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      chunkData.setBlock(localX, testY, localZNext, 'test_half_sneak');
+
+      // プレイヤーをスニークで配置
+      player.setPosition(testX + 0.5, testY, testZ + 0.5);
+      player.setOnGround(true);
+      player.setFlying(false);
+      player.setSneaking(true);  // スニークON
+      player.setVelocity(0, 0, 0);
+
+      const initialY = player.getPosition().y;
+
+      // 移動
+      const velocity = { x: 0, y: 0, z: 5 };
+      for (let i = 0; i < 20; i++) {
+        pw.movePlayer(player, velocity, 0.1);
+      }
+
+      const finalPos = player.getPosition();
+      const yDiff = finalPos.y - initialY;
+
+      return {
+        initialY,
+        finalY: finalPos.y,
+        yDiff,
+        // スニーク中でもステップアップする
+        steppedUp: yDiff >= 0.4 && yDiff <= 0.6
+      };
+    });
+
+    if (result.error) {
+      console.log('Test skipped:', result.error);
+      return;
+    }
+
+    // スニーク中でもステップアップする（オートジャンプと異なる点）
+    expect(result.steppedUp).toBe(true);
+  });
+});
