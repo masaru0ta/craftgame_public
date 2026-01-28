@@ -183,26 +183,23 @@
         <h3>LoD設定と表示テスト</h3>
 
         <div class="debug-section">
-            <h4>LoD範囲設定</h4>
+            <h4>LoD範囲設定（半径）</h4>
             <div class="control-row">
-                <label>LoD 0 範囲:</label>
+                <label>LoD 0 半径:</label>
                 <input type="number" id="input-lod0-range" class="debug-input" value="3" min="1" max="30">
                 <span style="color:#00FF00">■</span>
             </div>
             <div class="control-row">
-                <label>LoD 1 範囲:</label>
-                <input type="number" id="input-lod1-range" class="debug-input" value="7" min="1" max="50">
-                <span style="color:#FFFF00">■</span>
+                <label>総描画半径:</label>
+                <input type="number" id="input-total-range" class="debug-input" value="3" min="1" max="63">
             </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>フレーム処理設定</h4>
             <div class="control-row">
-                <label>LoD 2 範囲:</label>
-                <input type="number" id="input-lod2-range" class="debug-input" value="15" min="1" max="100">
-                <span style="color:#FFA500">■</span>
-            </div>
-            <div class="control-row">
-                <label>総描画範囲:</label>
-                <input type="number" id="input-total-range" class="debug-input" value="31" min="3" max="127">
-                <span style="color:#FF0000">■</span> (LoD3)
+                <label>処理上限/F:</label>
+                <input type="number" id="input-max-processing-per-frame" class="debug-input" value="1" min="1" max="20">
             </div>
         </div>
 
@@ -217,19 +214,11 @@
             <div class="lod-legend">
                 <div class="lod-legend-item">
                     <div class="lod-legend-color" style="background:#00FF00"></div>
-                    <span>LoD0</span>
+                    <span>LoD0（ゲーム）</span>
                 </div>
                 <div class="lod-legend-item">
                     <div class="lod-legend-color" style="background:#FFFF00"></div>
-                    <span>LoD1</span>
-                </div>
-                <div class="lod-legend-item">
-                    <div class="lod-legend-color" style="background:#FFA500"></div>
-                    <span>LoD2</span>
-                </div>
-                <div class="lod-legend-item">
-                    <div class="lod-legend-color" style="background:#FF0000"></div>
-                    <span>LoD3</span>
+                    <span>LoD1（風景）</span>
                 </div>
             </div>
         </div>
@@ -240,6 +229,7 @@
                 <label>FPS:</label>
                 <span id="debug-fps">0</span>
             </div>
+            <canvas id="fps-graph" width="280" height="80" style="background:#222; border-radius:4px; margin:5px 0;"></canvas>
             <div class="debug-row">
                 <label>ポリゴン数:</label>
                 <span id="debug-triangles">0</span>
@@ -257,8 +247,36 @@
                 <div id="debug-lod-counts" class="lod-counts">
                     <div class="lod-count-item"><span style="color:#00FF00">LoD0:</span> <span>0</span></div>
                     <div class="lod-count-item"><span style="color:#FFFF00">LoD1:</span> <span>0</span></div>
-                    <div class="lod-count-item"><span style="color:#FFA500">LoD2:</span> <span>0</span></div>
-                    <div class="lod-count-item"><span style="color:#FF0000">LoD3:</span> <span>0</span></div>
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <label style="color:#aaa">生成キュー:</label>
+                <div class="debug-row">
+                    <label>LoD0 キュー:</label>
+                    <span id="debug-lod0-queue">0</span>
+                </div>
+                <div class="debug-row">
+                    <label>LoD1 キュー:</label>
+                    <span id="debug-lod1-queue">0</span>
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <label style="color:#aaa">LoD処理時間(ms):</label>
+                <div class="debug-row">
+                    <label>LoD1生成:</label>
+                    <span id="debug-lod1-generate-time">-</span>
+                </div>
+                <div class="debug-row">
+                    <label>LoD1→0:</label>
+                    <span id="debug-lod1to0-time">-</span>
+                </div>
+                <div class="debug-row">
+                    <label>LoD0→1:</label>
+                    <span id="debug-lod0to1-time">-</span>
+                </div>
+                <div class="debug-row">
+                    <label>LoD1解放:</label>
+                    <span id="debug-lod1-unload-time">-</span>
                 </div>
             </div>
         </div>
@@ -336,6 +354,7 @@
     <!-- Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
 
     <!-- ゲームライブラリ -->
     <script src="../game/ChunkData.js"></script>

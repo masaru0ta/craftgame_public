@@ -4,16 +4,11 @@
  */
 class ChunkManager {
     constructor(options = {}) {
-        this.chunkRange = options.chunkRange || 3; // NxN（デフォルト3x3）
+        this.chunkRange = options.chunkRange || 3; // 描画半径（チャンク数）
         this.worldName = options.worldName || 'world1';
 
         // 読み込み済みチャンク: Map<"chunkX,chunkZ", { chunkData, mesh, state }>
         this.chunks = new Map();
-
-        // 生成キュー
-        this.generationQueue = [];
-        this.isGenerating = false;
-        this.chunksPerFrame = 2; // 1フレームで生成するチャンク数の上限
 
         // コールバック
         this.onChunkGenerating = null;  // (chunkX, chunkZ) => void
@@ -34,7 +29,12 @@ class ChunkManager {
             // 処理時間計測用
             newGenerateTimes: [],    // 新規生成時間（ms）
             loadGenerateTimes: [],   // 読込生成時間（ms）
-            unloadTimes: []          // 保存解放時間（ms）
+            unloadTimes: [],         // 保存解放時間（ms）
+            // LoD処理時間計測用（直近10件）
+            lod1GenerateTimes: [],   // LoD1生成時間
+            lod1to0Times: [],        // LoD1→0変換時間
+            lod0to1Times: [],        // LoD0→1変換時間
+            lod1UnloadTimes: []      // LoD1解放時間
         };
 
         // 現在の視点位置（ワールド座標）
@@ -44,15 +44,26 @@ class ChunkManager {
         // 同時実行防止フラグ
         this.isUpdatingView = false;
 
-        // LoD設定
+        // LoD設定（2段階のみ）
         this.lod0Range = 3;   // LoD 0の範囲（チャンク数）
-        this.lod1Range = 7;   // LoD 1の範囲（チャンク数）
-        this.lod2Range = 15;  // LoD 2の範囲（チャンク数）
-        // LoD 3はそれ以上
+        // LoD 0 範囲外は全て LoD 1
 
-        // LoD 2/3 メッシュ管理
-        this.lod2Meshes = new Map(); // "chunkX,chunkZ" -> mesh
-        this.lod3Meshes = new Map(); // "gridX,gridZ" -> mesh
+        // チャンクキュー（生成・LoD変更を統合）
+        this.chunkQueue = [];
+
+        // LoD再生成キュー（フレーム分散用）
+        this.lodRebuildQueue = [];
+
+        // アンロードキュー（フレーム分散用）
+        this.unloadQueue = [];
+
+        // 統合キュー処理
+        this.isProcessingQueues = false;
+        this.maxProcessingPerFrame = 1; // 1フレームで処理する最大数（全キュー合計）
+
+        // 前回のチャンク座標（差分処理用）
+        this.lastChunkX = null;
+        this.lastChunkZ = null;
 
         // ブロック色情報（LoD 1用）
         this.blockColors = {};
@@ -74,16 +85,22 @@ class ChunkManager {
 
     /**
      * チャンク範囲（N）を設定
+     * 設定変更時はキュー更新を強制
      */
     setChunkRange(n) {
         this.chunkRange = n;
+        // 設定変更時はキュー更新を強制
+        this.lastChunkX = null;
+        this.lastChunkZ = null;
     }
 
     /**
-     * 1フレームで生成するチャンク数の上限を設定
+     * 1フレームで処理する最大数（全キュー合計）を設定
+     * 優先度順: LoD再生成 > アンロード > 生成
+     * @param {number} n - 上限数
      */
-    setChunksPerFrame(n) {
-        this.chunksPerFrame = n;
+    setMaxProcessingPerFrame(n) {
+        this.maxProcessingPerFrame = n;
     }
 
     /**
@@ -114,32 +131,24 @@ class ChunkManager {
             const currentZ = this.viewZ;
 
             const center = this.worldToChunk(currentX, currentZ);
-            const halfRange = Math.floor(this.chunkRange / 2);
 
-            // 必要なチャンクの座標リスト（LoD 0/1 のみ）
+            // チャンク座標が変わっていなければキュー更新をスキップ
+            if (this.lastChunkX === center.chunkX && this.lastChunkZ === center.chunkZ) {
+                return;
+            }
+
+            // チャンク座標を更新
+            this.lastChunkX = center.chunkX;
+            this.lastChunkZ = center.chunkZ;
+
+            // 必要なチャンクの座標リスト（chunkRange は半径）
             const neededChunks = new Set();
-            // 必要な LoD 2 チャンク
-            const neededLoD2Chunks = new Set();
-            // 必要な LoD 3 グリッド
-            const neededLoD3Grids = new Set();
 
-            for (let dx = -halfRange; dx <= halfRange; dx++) {
-                for (let dz = -halfRange; dz <= halfRange; dz++) {
+            for (let dx = -this.chunkRange; dx <= this.chunkRange; dx++) {
+                for (let dz = -this.chunkRange; dz <= this.chunkRange; dz++) {
                     const cx = center.chunkX + dx;
                     const cz = center.chunkZ + dz;
-                    const lod = this.getChunkLoD(cx, cz);
-
-                    if (lod <= 1) {
-                        // LoD 0/1: 通常チャンクとして管理
-                        neededChunks.add(`${cx},${cz}`);
-                    } else if (lod === 2) {
-                        // LoD 2: 簡易メッシュ
-                        neededLoD2Chunks.add(`${cx},${cz}`);
-                    } else {
-                        // LoD 3: 4x4グリッドメッシュ
-                        const grid = LoDHelper.getLoD3Grid(cx, cz);
-                        neededLoD3Grids.add(`${grid.gridX},${grid.gridZ}`);
-                    }
+                    neededChunks.add(`${cx},${cz}`);
                 }
             }
 
@@ -151,28 +160,13 @@ class ChunkManager {
                 }
             }
 
+            // アンロードキューに追加（フレーム分散）
             if (chunksToUnload.length > 0) {
-                await this._unloadChunksBatch(chunksToUnload);
+                this._addToUnloadQueue(chunksToUnload);
             }
 
-            // 範囲外の LoD 2 メッシュを削除
-            for (const key of this.lod2Meshes.keys()) {
-                if (!neededLoD2Chunks.has(key)) {
-                    const [cx, cz] = key.split(',').map(Number);
-                    this._removeLoD2Mesh(cx, cz);
-                }
-            }
-
-            // 範囲外の LoD 3 メッシュを削除
-            for (const key of this.lod3Meshes.keys()) {
-                if (!neededLoD3Grids.has(key)) {
-                    const [gx, gz] = key.split(',').map(Number);
-                    this._removeLoD3Mesh(gx, gz);
-                }
-            }
-
-            // LoD 0/1 チャンクのLoD変更を検出し、再生成が必要なものをリストアップ
-            const chunksToRebuild = [];
+            // LoD変更を検出し、再生成キューに追加
+            // LoD0を常に正しい状態に維持するため、移動中も処理する
             for (const key of neededChunks) {
                 const chunk = this.chunks.get(key);
                 if (chunk && chunk.mesh) {
@@ -180,96 +174,287 @@ class ChunkManager {
                     const newLoD = this.getChunkLoD(cx, cz);
                     const currentLoD = chunk.mesh.userData.lodLevel;
 
-                    // LoDレベルが変わった場合は再生成が必要
                     if (currentLoD !== newLoD) {
-                        chunksToRebuild.push({ key, chunkX: cx, chunkZ: cz, newLoD });
+                        this._addToLoDRebuildQueue(cx, cz, newLoD);
                     }
                 }
             }
 
-            // LoD変更があるチャンクのメッシュを再生成
-            for (const item of chunksToRebuild) {
-                await this._rebuildChunkMesh(item.chunkX, item.chunkZ, item.newLoD);
-            }
+            // 既にキューにあるチャンクのセット
+            const queuedKeys = new Set(this.chunkQueue.map(item => item.key));
 
-            // 必要なチャンクをキューに追加（距離順）
+            // 必要なチャンクをキューに追加（LoD0優先でソート）
             const chunksToLoad = [];
+
             for (const key of neededChunks) {
-                if (!this.chunks.has(key) && !this._isInQueue(key)) {
+                // 既にロード済み or キューにある場合はスキップ
+                if (!this.chunks.has(key) && !queuedKeys.has(key)) {
                     const [cx, cz] = key.split(',').map(Number);
+                    const lod = this.getChunkLoD(cx, cz);
                     const distance = Math.abs(cx - center.chunkX) + Math.abs(cz - center.chunkZ);
-                    chunksToLoad.push({ key, chunkX: cx, chunkZ: cz, distance });
+                    chunksToLoad.push({ key, chunkX: cx, chunkZ: cz, distance, lod });
                 }
             }
 
-            // 距離でソート（近い順）
-            chunksToLoad.sort((a, b) => a.distance - b.distance);
+            // LoD0を先に、LoD1を後に。同じLoDなら距離が近い順
+            chunksToLoad.sort((a, b) => {
+                if (a.lod !== b.lod) return a.lod - b.lod;
+                return a.distance - b.distance;
+            });
 
+            // チャンクキューに追加（LoD情報も保持して getQueueCounts を高速化）
             for (const chunk of chunksToLoad) {
-                this._addToQueue(chunk.chunkX, chunk.chunkZ);
+                this.chunkQueue.push({ chunkX: chunk.chunkX, chunkZ: chunk.chunkZ, key: chunk.key, lod: chunk.lod });
             }
 
-            // LoD 2 メッシュを生成
-            for (const key of neededLoD2Chunks) {
-                if (!this.lod2Meshes.has(key)) {
-                    const [cx, cz] = key.split(',').map(Number);
-                    this._getOrCreateLoD2Mesh(cx, cz);
-                }
-            }
-
-            // LoD 3 メッシュを生成
-            for (const key of neededLoD3Grids) {
-                if (!this.lod3Meshes.has(key)) {
-                    const [gx, gz] = key.split(',').map(Number);
-                    this._getOrCreateLoD3Mesh(gx, gz);
-                }
-            }
-
-            // 生成処理を開始
-            await this._processQueue();
+            // 統合キュー処理を開始（優先度順: 再生成 > アンロード > 生成）
+            this._processQueuesWithPriority();
         } finally {
             this.isUpdatingView = false;
         }
     }
 
     /**
-     * キューにチャンクを追加
+     * キュー数を取得（高速版：追加時のLoD情報を使用）
+     * @returns {{lod0: number, lod1: number}}
      */
-    _addToQueue(chunkX, chunkZ) {
+    getQueueCounts() {
+        let lod0 = 0;
+        let lod1 = 0;
+        for (const item of this.chunkQueue) {
+            // 追加時のLoD情報を使用（視点移動で変わる可能性あるがUI表示用なら許容）
+            if (item.lod === 0) lod0++;
+            else lod1++;
+        }
+        return { lod0, lod1 };
+    }
+
+    /**
+     * LoD再生成キューに追加
+     */
+    _addToLoDRebuildQueue(chunkX, chunkZ, newLoD) {
         const key = `${chunkX},${chunkZ}`;
-        if (!this._isInQueue(key) && !this.chunks.has(key)) {
-            this.generationQueue.push({ chunkX, chunkZ, key });
+        // 既にキューにあれば追加しない
+        if (!this.lodRebuildQueue.some(item => item.key === key)) {
+            this.lodRebuildQueue.push({ chunkX, chunkZ, key, newLoD });
         }
     }
 
     /**
-     * キューに存在するか確認
+     * アンロードキューに追加
      */
-    _isInQueue(key) {
-        return this.generationQueue.some(item => item.key === key);
+    _addToUnloadQueue(keys) {
+        for (const key of keys) {
+            if (!this.unloadQueue.includes(key)) {
+                this.unloadQueue.push(key);
+            }
+        }
     }
 
     /**
-     * キューを処理（1フレームでchunksPerFrame個まで）
+     * チャンクが描画範囲内かどうかを判定
+     * @param {number} chunkX - チャンクX座標
+     * @param {number} chunkZ - チャンクZ座標
+     * @returns {boolean} 範囲内ならtrue
      */
-    async _processQueue() {
-        if (this.isGenerating) return;
-        if (this.generationQueue.length === 0) return;
+    _isInRange(chunkX, chunkZ) {
+        const center = this.worldToChunk(this.viewX, this.viewZ);
+        const dx = Math.abs(chunkX - center.chunkX);
+        const dz = Math.abs(chunkZ - center.chunkZ);
+        return dx <= this.chunkRange && dz <= this.chunkRange;
+    }
 
-        this.isGenerating = true;
+    /**
+     * チャンクキュー処理（遅延評価）
+     * 処理時に範囲チェックを行い、範囲外ならスキップ
+     */
+    async _processChunkQueue() {
+        if (this.chunkQueue.length === 0) return;
+
+        const item = this.chunkQueue.shift();
+
+        // 遅延評価：処理時に範囲チェック
+        if (!this._isInRange(item.chunkX, item.chunkZ)) {
+            // 範囲外なのでスキップ
+            return;
+        }
+
+        // 既にロード済みならスキップ
+        if (this.chunks.has(item.key)) {
+            return;
+        }
+
+        // チャンク生成
+        await this._generateChunk(item.chunkX, item.chunkZ);
+    }
+
+    /**
+     * フレームタイムバジェットを考慮したキュー処理
+     * 指定した時間（ms）内で可能な限り処理を行う
+     * @param {number} budgetMs - 処理に使える時間（ミリ秒）
+     */
+    processQueuesWithBudget(budgetMs) {
+        const startTime = performance.now();
+        const endTime = startTime + budgetMs;
+
+        // 優先度1: アンロード（軽い処理なので先に片付ける）
+        while (this.unloadQueue.length > 0 && performance.now() < endTime) {
+            const key = this.unloadQueue.shift();
+            this._unloadChunkSync(key);
+        }
+
+        // 優先度2: LoD再生成（重要：視覚的な不整合を防ぐ）
+        while (this.lodRebuildQueue.length > 0 && performance.now() < endTime) {
+            const item = this.lodRebuildQueue.shift();
+            this._rebuildChunkMeshSync(item.chunkX, item.chunkZ, item.newLoD);
+        }
+
+        // 優先度3: 生成（遅延評価付き）- 時間が余っている場合のみ
+        while (this.chunkQueue.length > 0 && performance.now() < endTime) {
+            const item = this.chunkQueue.shift();
+
+            // 遅延評価：処理時に範囲チェック
+            if (!this._isInRange(item.chunkX, item.chunkZ)) {
+                continue;
+            }
+
+            // 既にロード済みならスキップ
+            if (this.chunks.has(item.key)) {
+                continue;
+            }
+
+            // 同期生成（awaitなし）
+            this._generateChunkSync(item.chunkX, item.chunkZ);
+        }
+    }
+
+    /**
+     * 統合キュー処理（優先度順: 再生成 > アンロード > 生成）
+     * 1フレームで最大 maxProcessingPerFrame 個の処理を行う
+     */
+    _processQueuesWithPriority() {
+        if (this.isProcessingQueues) return;
+
+        const hasWork = this.lodRebuildQueue.length > 0 ||
+                       this.unloadQueue.length > 0 ||
+                       this.chunkQueue.length > 0;
+
+        if (!hasWork) return;
+
+        this.isProcessingQueues = true;
 
         let processed = 0;
-        while (this.generationQueue.length > 0 && processed < this.chunksPerFrame) {
-            const item = this.generationQueue.shift();
-            await this._generateChunk(item.chunkX, item.chunkZ);
+
+        // 優先度1: LoD再生成（LoD0を正しく維持するため移動中も処理）
+        while (this.lodRebuildQueue.length > 0 && processed < this.maxProcessingPerFrame) {
+            const item = this.lodRebuildQueue.shift();
+            this._rebuildChunkMeshSync(item.chunkX, item.chunkZ, item.newLoD);
             processed++;
         }
 
-        this.isGenerating = false;
+        // 優先度2: アンロード
+        while (this.unloadQueue.length > 0 && processed < this.maxProcessingPerFrame) {
+            const key = this.unloadQueue.shift();
+            this._unloadChunkSync(key);
+            processed++;
+        }
+
+        // 優先度3: 生成（遅延評価付き、同期版を使用）
+        while (this.chunkQueue.length > 0 && processed < this.maxProcessingPerFrame) {
+            const item = this.chunkQueue.shift();
+
+            // 遅延評価：処理時に範囲チェック
+            if (!this._isInRange(item.chunkX, item.chunkZ)) {
+                continue;
+            }
+
+            // 既にロード済みならスキップ
+            if (this.chunks.has(item.key)) {
+                continue;
+            }
+
+            // 同期版を使用（ストレージ読み込みなし）
+            this._generateChunkSync(item.chunkX, item.chunkZ);
+            processed++;
+        }
+
+        this.isProcessingQueues = false;
 
         // キューが残っている場合は次のフレームで継続
-        if (this.generationQueue.length > 0) {
-            requestAnimationFrame(() => this._processQueue());
+        if (this.lodRebuildQueue.length > 0 ||
+            this.unloadQueue.length > 0 ||
+            this.chunkQueue.length > 0) {
+            requestAnimationFrame(() => this._processQueuesWithPriority());
+        }
+    }
+
+    /**
+     * チャンクを同期生成（ストレージ読み込みなし）
+     * フレームタイムバジェット用の軽量版
+     */
+    _generateChunkSync(chunkX, chunkZ) {
+        const key = `${chunkX},${chunkZ}`;
+
+        // 既にロード済みなら何もしない
+        if (this.chunks.has(key)) return;
+
+        // 処理時間計測開始
+        const startTime = performance.now();
+
+        // コールバック: 生成開始
+        if (this.onChunkGenerating) {
+            this.onChunkGenerating(chunkX, chunkZ);
+        }
+
+        // 新規生成のみ（ストレージ読み込みなし）
+        const chunkData = new ChunkData(chunkX, chunkZ);
+        this.worldGenerator.generate(chunkData);
+        this.stats.newGenerated++;
+
+        // LoDレベルを取得
+        const lodLevel = this.getChunkLoD(chunkX, chunkZ);
+
+        // メッシュ生成（LoDレベルに応じて）
+        let mesh;
+        const mode = this.useCulling !== false ? 'CULLED' : 'FULL';
+
+        if (lodLevel === 0) {
+            // LoD 0: フルテクスチャ
+            mesh = this.meshBuilder.build(chunkData, mode, this.useGreedy || false);
+        } else {
+            // LoD 1: 頂点カラー
+            mesh = this.meshBuilder.buildLoD1(chunkData, this.blockColors, this.blockShapes, this.useGreedy || false);
+        }
+
+        mesh.position.x = chunkX * ChunkData.SIZE_X;
+        mesh.position.z = chunkZ * ChunkData.SIZE_Z;
+        mesh.userData.lodLevel = lodLevel;
+        mesh.name = `chunk_${chunkX}_${chunkZ}`;
+
+        // シーンに追加
+        if (this.worldContainer) {
+            this.worldContainer.add(mesh);
+        }
+
+        // 登録
+        this.chunks.set(key, {
+            chunkData,
+            mesh,
+            state: 'active'
+        });
+
+        // 処理時間計測終了
+        const elapsed = performance.now() - startTime;
+        this._recordTime(this.stats.newGenerateTimes, elapsed);
+
+        // LoD1生成時間を別途記録
+        if (lodLevel === 1) {
+            this._recordTime(this.stats.lod1GenerateTimes, elapsed);
+        }
+
+        // コールバック: 生成完了
+        if (this.onChunkGenerated) {
+            this.onChunkGenerated(chunkX, chunkZ, chunkData, false);
         }
     }
 
@@ -316,12 +501,9 @@ class ChunkManager {
         if (lodLevel === 0) {
             // LoD 0: フルテクスチャ
             mesh = this.meshBuilder.build(chunkData, mode, this.useGreedy || false);
-        } else if (lodLevel === 1) {
+        } else {
             // LoD 1: 頂点カラー
             mesh = this.meshBuilder.buildLoD1(chunkData, this.blockColors, this.blockShapes, this.useGreedy || false);
-        } else {
-            // LoD 2/3: 高さマップメッシュはここでは生成しない（別途管理）
-            mesh = this.meshBuilder.build(chunkData, mode, this.useGreedy || false);
         }
 
         mesh.position.x = chunkX * ChunkData.SIZE_X;
@@ -349,6 +531,11 @@ class ChunkManager {
             this._recordTime(this.stats.newGenerateTimes, elapsed);
         }
 
+        // LoD1生成時間を別途記録
+        if (lodLevel === 1) {
+            this._recordTime(this.stats.lod1GenerateTimes, elapsed);
+        }
+
         // コールバック: 生成完了
         if (this.onChunkGenerated) {
             this.onChunkGenerated(chunkX, chunkZ, chunkData, isFromStorage);
@@ -359,16 +546,23 @@ class ChunkManager {
      * チャンクをアンロード
      */
     async _unloadChunk(key) {
+        this._unloadChunkSync(key);
+    }
+
+    /**
+     * チャンクをアンロード（同期版）
+     */
+    _unloadChunkSync(key) {
         const chunk = this.chunks.get(key);
         if (!chunk) return;
 
         // 処理時間計測開始
         const startTime = performance.now();
 
-        const [chunkX, chunkZ] = key.split(',').map(Number);
+        // アンロード前のLoDレベルを記録
+        const lodLevel = chunk.mesh ? chunk.mesh.userData.lodLevel : null;
 
-        // ストレージに保存（速度テストのため一時的に無効化）
-        // await this.storage.save(this.worldName, chunkX, chunkZ, chunk.chunkData);
+        const [chunkX, chunkZ] = key.split(',').map(Number);
 
         // メッシュをシーンから削除
         if (this.worldContainer && chunk.mesh) {
@@ -387,7 +581,13 @@ class ChunkManager {
         this.chunks.delete(key);
 
         // 処理時間計測終了（直近10件を保持）
-        this._recordTime(this.stats.unloadTimes, performance.now() - startTime);
+        const elapsed = performance.now() - startTime;
+        this._recordTime(this.stats.unloadTimes, elapsed);
+
+        // LoD1解放時間を別途記録
+        if (lodLevel === 1) {
+            this._recordTime(this.stats.lod1UnloadTimes, elapsed);
+        }
 
         // コールバック
         if (this.onChunkUnloaded) {
@@ -403,24 +603,6 @@ class ChunkManager {
 
         // 処理時間計測開始
         const startTime = performance.now();
-
-        // バッチ保存用データを収集（速度テストのため一時的に無効化）
-        // const chunksToSave = [];
-        // for (const key of keys) {
-        //     const chunk = this.chunks.get(key);
-        //     if (!chunk) continue;
-        //
-        //     const [chunkX, chunkZ] = key.split(',').map(Number);
-        //     chunksToSave.push({
-        //         worldName: this.worldName,
-        //         chunkX,
-        //         chunkZ,
-        //         chunkData: chunk.chunkData
-        //     });
-        // }
-        //
-        // // バッチ保存（1つのトランザクション）
-        // await this.storage.saveBatch(chunksToSave);
 
         // メッシュ削除と登録解除
         for (const key of keys) {
@@ -475,7 +657,7 @@ class ChunkManager {
      * 現在生成中のチャンク数を取得
      */
     getCurrentlyGeneratingCount() {
-        return this.isGenerating ? 1 : 0;
+        return this.isProcessingQueues ? 1 : 0;
     }
 
     /**
@@ -512,6 +694,23 @@ class ChunkManager {
             newGenerate: avg(this.stats.newGenerateTimes),
             loadGenerate: avg(this.stats.loadGenerateTimes),
             unload: avg(this.stats.unloadTimes)
+        };
+    }
+
+    /**
+     * LoD処理時間の平均を取得（直近10チャンク）
+     * @returns {{lod1Generate: number|null, lod1to0: number|null, lod0to1: number|null, lod1Unload: number|null}}
+     */
+    getLoDProcessingTimes() {
+        const avg = (arr) => arr.length > 0
+            ? arr.reduce((a, b) => a + b, 0) / arr.length
+            : null;
+
+        return {
+            lod1Generate: avg(this.stats.lod1GenerateTimes),
+            lod1to0: avg(this.stats.lod1to0Times),
+            lod0to1: avg(this.stats.lod0to1Times),
+            lod1Unload: avg(this.stats.lod1UnloadTimes)
         };
     }
 
@@ -578,9 +777,25 @@ class ChunkManager {
      * @param {number} newLoD - 新しいLoDレベル
      */
     async _rebuildChunkMesh(chunkX, chunkZ, newLoD) {
+        this._rebuildChunkMeshSync(chunkX, chunkZ, newLoD);
+    }
+
+    /**
+     * 単一チャンクのメッシュを再生成（同期版）
+     * @param {number} chunkX - チャンクX座標
+     * @param {number} chunkZ - チャンクZ座標
+     * @param {number} newLoD - 新しいLoDレベル
+     */
+    _rebuildChunkMeshSync(chunkX, chunkZ, newLoD) {
         const key = `${chunkX},${chunkZ}`;
         const chunk = this.chunks.get(key);
         if (!chunk) return;
+
+        // 処理時間計測開始
+        const startTime = performance.now();
+
+        // 変換前のLoDレベルを記録
+        const oldLoD = chunk.mesh ? chunk.mesh.userData.lodLevel : null;
 
         // 古いメッシュを削除
         if (this.worldContainer && chunk.mesh) {
@@ -602,12 +817,9 @@ class ChunkManager {
         if (newLoD === 0) {
             // LoD 0: フルテクスチャ
             mesh = this.meshBuilder.build(chunk.chunkData, mode, this.useGreedy || false);
-        } else if (newLoD === 1) {
+        } else {
             // LoD 1: 頂点カラー
             mesh = this.meshBuilder.buildLoD1(chunk.chunkData, this.blockColors, this.blockShapes, this.useGreedy || false);
-        } else {
-            // LoD 2/3 はこのメソッドでは処理しない
-            return;
         }
 
         mesh.position.x = chunkX * ChunkData.SIZE_X;
@@ -620,6 +832,14 @@ class ChunkManager {
         }
 
         chunk.mesh = mesh;
+
+        // 処理時間計測終了
+        const elapsed = performance.now() - startTime;
+        if (oldLoD === 1 && newLoD === 0) {
+            this._recordTime(this.stats.lod1to0Times, elapsed);
+        } else if (oldLoD === 0 && newLoD === 1) {
+            this._recordTime(this.stats.lod0to1Times, elapsed);
+        }
     }
 
     /**
@@ -661,27 +881,14 @@ class ChunkManager {
             this.chunks.delete(key);
         }
 
-        // LoD 2/3 メッシュもクリア
-        for (const [key, mesh] of this.lod2Meshes) {
-            if (this.worldContainer) {
-                this.worldContainer.remove(mesh);
-            }
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) mesh.material.dispose();
-        }
-        this.lod2Meshes.clear();
+        // キューをクリア
+        this.chunkQueue = [];
+        this.lodRebuildQueue = [];
+        this.unloadQueue = [];
 
-        for (const [key, mesh] of this.lod3Meshes) {
-            if (this.worldContainer) {
-                this.worldContainer.remove(mesh);
-            }
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) mesh.material.dispose();
-        }
-        this.lod3Meshes.clear();
-
-        // キューもクリア
-        this.generationQueue = [];
+        // チャンク座標をリセット
+        this.lastChunkX = null;
+        this.lastChunkZ = null;
     }
 
     /**
@@ -696,22 +903,22 @@ class ChunkManager {
     // ========================================
 
     /**
-     * LoD閾値を設定
-     * @param {number} lod0Range - LoD 0の範囲（チャンク数）
-     * @param {number} lod1Range - LoD 1の範囲（チャンク数）
-     * @param {number} lod2Range - LoD 2の範囲（チャンク数）
+     * LoD 0 範囲を設定
+     * 設定変更時はキュー更新を強制
+     * @param {number} range - LoD 0の範囲（チャンク数）
      */
-    setLoDRanges(lod0Range, lod1Range, lod2Range) {
-        this.lod0Range = lod0Range;
-        this.lod1Range = lod1Range;
-        this.lod2Range = lod2Range;
+    setLoD0Range(range) {
+        this.lod0Range = range;
+        // 設定変更時はキュー更新を強制
+        this.lastChunkX = null;
+        this.lastChunkZ = null;
     }
 
     /**
      * チャンクのLoDレベルを取得
      * @param {number} chunkX - チャンクX座標
      * @param {number} chunkZ - チャンクZ座標
-     * @returns {number} LoDレベル（0-3）
+     * @returns {number} LoDレベル（0または1）
      */
     getChunkLoD(chunkX, chunkZ) {
         const center = this.worldToChunk(this.viewX, this.viewZ);
@@ -722,9 +929,7 @@ class ChunkManager {
         );
 
         if (distance <= this.lod0Range) return 0;
-        if (distance <= this.lod1Range) return 1;
-        if (distance <= this.lod2Range) return 2;
-        return 3;
+        return 1;
     }
 
     /**
@@ -747,147 +952,35 @@ class ChunkManager {
 
     /**
      * LoD別のチャンク数を取得
-     * @returns {{lod0: number, lod1: number, lod2: number, lod3: number}}
+     * @returns {{lod0: number, lod1: number}}
      */
     getLoDCounts() {
-        const counts = { lod0: 0, lod1: 0, lod2: 0, lod3: 0 };
+        const counts = { lod0: 0, lod1: 0 };
 
-        // LoD 0/1 チャンク（chunks マップから）
-        for (const key of this.chunks.keys()) {
-            const [cx, cz] = key.split(',').map(Number);
-            const lod = this.getChunkLoD(cx, cz);
-            if (lod === 0) {
-                counts.lod0++;
-            } else if (lod === 1) {
-                counts.lod1++;
+        for (const [key, chunk] of this.chunks) {
+            if (chunk.mesh && chunk.mesh.userData.lodLevel !== undefined) {
+                if (chunk.mesh.userData.lodLevel === 0) {
+                    counts.lod0++;
+                } else {
+                    counts.lod1++;
+                }
             }
         }
-
-        // LoD 2 メッシュ（1メッシュ = 1チャンク）
-        counts.lod2 = this.lod2Meshes.size;
-
-        // LoD 3 メッシュ（1メッシュ = 16チャンク分）
-        counts.lod3 = this.lod3Meshes.size * 16;
 
         return counts;
-    }
-
-    /**
-     * LoD 2 メッシュを作成または取得
-     */
-    _getOrCreateLoD2Mesh(chunkX, chunkZ) {
-        const key = `${chunkX},${chunkZ}`;
-        if (this.lod2Meshes.has(key)) {
-            return this.lod2Meshes.get(key);
-        }
-
-        const mesh = LoDHelper.createLoD2Mesh(chunkX, chunkZ, this.worldGenerator);
-        mesh.userData.lodLevel = 2;
-
-        if (this.lodDebugMode) {
-            mesh.material.color.setStyle(LoDHelper.getDebugColor(2));
-        }
-
-        this.lod2Meshes.set(key, mesh);
-
-        if (this.worldContainer) {
-            this.worldContainer.add(mesh);
-        }
-
-        return mesh;
-    }
-
-    /**
-     * LoD 3 メッシュを作成または取得
-     */
-    _getOrCreateLoD3Mesh(gridX, gridZ) {
-        const key = `${gridX},${gridZ}`;
-        if (this.lod3Meshes.has(key)) {
-            return this.lod3Meshes.get(key);
-        }
-
-        const mesh = LoDHelper.createLoD3Mesh(gridX, gridZ, this.worldGenerator);
-        mesh.userData.lodLevel = 3;
-
-        if (this.lodDebugMode) {
-            mesh.material.color.setStyle(LoDHelper.getDebugColor(3));
-        }
-
-        this.lod3Meshes.set(key, mesh);
-
-        if (this.worldContainer) {
-            this.worldContainer.add(mesh);
-        }
-
-        return mesh;
-    }
-
-    /**
-     * LoD 2/3 メッシュを削除
-     */
-    _removeLoD2Mesh(chunkX, chunkZ) {
-        const key = `${chunkX},${chunkZ}`;
-        const mesh = this.lod2Meshes.get(key);
-        if (mesh) {
-            if (this.worldContainer) {
-                this.worldContainer.remove(mesh);
-            }
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) mesh.material.dispose();
-            this.lod2Meshes.delete(key);
-        }
-    }
-
-    _removeLoD3Mesh(gridX, gridZ) {
-        const key = `${gridX},${gridZ}`;
-        const mesh = this.lod3Meshes.get(key);
-        if (mesh) {
-            if (this.worldContainer) {
-                this.worldContainer.remove(mesh);
-            }
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) mesh.material.dispose();
-            this.lod3Meshes.delete(key);
-        }
-    }
-
-    /**
-     * 全LoD 2/3メッシュをクリア
-     */
-    clearLoDMeshes() {
-        for (const [key, mesh] of this.lod2Meshes) {
-            if (this.worldContainer) {
-                this.worldContainer.remove(mesh);
-            }
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) mesh.material.dispose();
-        }
-        this.lod2Meshes.clear();
-
-        for (const [key, mesh] of this.lod3Meshes) {
-            if (this.worldContainer) {
-                this.worldContainer.remove(mesh);
-            }
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) mesh.material.dispose();
-        }
-        this.lod3Meshes.clear();
     }
 
     /**
      * LoDデバッグ色を適用/解除
      */
     applyLoDDebugColors() {
-        // 通常チャンク（LoD 0/1）
         for (const [key, chunk] of this.chunks) {
-            const [cx, cz] = key.split(',').map(Number);
-            const lod = this.getChunkLoD(cx, cz);
-
             if (chunk.mesh && chunk.mesh.material) {
+                const lod = chunk.mesh.userData.lodLevel;
+
                 if (this.lodDebugMode) {
                     // デバッグ色を適用
                     if (!chunk.mesh.material.isShaderMaterial) {
-                        // vertexColorsを無効にして単色表示
                         chunk.mesh.material.vertexColors = false;
                         chunk.mesh.material.color.setStyle(LoDHelper.getDebugColor(lod));
                         chunk.mesh.material.needsUpdate = true;
@@ -895,7 +988,6 @@ class ChunkManager {
                 } else {
                     // 元の表示に戻す
                     if (!chunk.mesh.material.isShaderMaterial) {
-                        // LoD 1 は vertexColors を有効に
                         if (lod === 1) {
                             chunk.mesh.material.vertexColors = true;
                         }
@@ -905,33 +997,8 @@ class ChunkManager {
                 }
             }
         }
-
-        // LoD 2メッシュ
-        for (const [key, mesh] of this.lod2Meshes) {
-            if (this.lodDebugMode) {
-                mesh.material.vertexColors = false;
-                mesh.material.color.setStyle(LoDHelper.getDebugColor(2));
-                mesh.material.needsUpdate = true;
-            } else {
-                mesh.material.vertexColors = true;
-                mesh.material.color.setStyle('#FFFFFF');
-                mesh.material.needsUpdate = true;
-            }
-        }
-
-        // LoD 3メッシュ
-        for (const [key, mesh] of this.lod3Meshes) {
-            if (this.lodDebugMode) {
-                mesh.material.vertexColors = false;
-                mesh.material.color.setStyle(LoDHelper.getDebugColor(3));
-                mesh.material.needsUpdate = true;
-            } else {
-                mesh.material.vertexColors = true;
-                mesh.material.color.setStyle('#FFFFFF');
-                mesh.material.needsUpdate = true;
-            }
-        }
     }
+
 }
 
 // グローバルに公開

@@ -2,8 +2,8 @@
 
 ## 概要
 
-LoD（Level of Detail）システムを実装し、視点からの距離に応じてチャンクの描画詳細度を変える。
-遠距離のチャンクを簡略化することで、広い視界を維持しながらパフォーマンスを向上させる。
+LoD（Level of Detail）システムを実装し、視点からの距離に応じてチャンクの描画詳細度と生成優先度を制御する。
+近距離のゲームチャンク（LoD 0）を最優先で生成し、遠距離の風景チャンク（LoD 1）は余裕があるときに生成する。
 
 ## 関連資料
 
@@ -27,15 +27,15 @@ LoD（Level of Detail）システムを実装し、視点からの距離に応�
 src/
 ├── game/
 │   ├── ChunkData.js            # 既存
-│   ├── ChunkMeshBuilder.js     # 既存: LoD対応メッシュ生成を追加
-│   ├── ChunkManager.js         # 既存: LoD管理機能を追加
+│   ├── ChunkMeshBuilder.js     # 既存: LoD対応メッシュ生成
+│   ├── ChunkManager.js         # 既存: LoD管理・優先度キュー
 │   ├── ChunkStorage.js         # 既存
-│   ├── TextureLoader.js        # 既存: 頂点カラー対応を追加
-│   ├── WorldGenerator.js       # 既存: 高さ・色取得関数を追加
-│   └── LoDHelper.js            # 新規: LoD計算・メッシュ生成ヘルパー
+│   ├── TextureLoader.js        # 既存: 頂点カラー対応
+│   ├── WorldGenerator.js       # 既存
+│   └── LoDHelper.js            # LoD計算ヘルパー（簡略化）
 ├── test/
-│   ├── 2-3_lod_test.html       # 新規: テストページ
-│   └── 2-3_main.js             # 新規: メイン処理
+│   ├── 2-3_lod_test.html       # テストページ
+│   └── 2-3_main.js             # メイン処理
 ```
 
 ---
@@ -44,63 +44,46 @@ src/
 
 ### **REQ-2-3-1: LoDレベル定義**
 
-視点からの距離に応じて4段階のLoDレベルを適用する。
+視点からの距離に応じて2段階のLoDレベルを適用する。
 
-| レベル | 名称 | 描画方式 | 想定ポリゴン数 |
-|--------|------|----------|---------------|
-| LoD 0 | 近距離 | 全テクスチャ、カスタムブロック表示 | 数千〜数万/チャンク |
-| LoD 1 | 中距離 | 頂点カラー、カスタムブロック→標準ブロック形状+代表色 | 数千/チャンク |
-| LoD 2 | 遠距離 | 1チャンク = 4隅の高さで1面 | 2/チャンク |
-| LoD 3 | 最遠距離 | 4×4チャンク = 4隅の高さで1面 | 2/16チャンク |
+| レベル | 名称 | 描画方式 | 生成優先度 |
+|--------|------|----------|-----------|
+| LoD 0 | ゲームチャンク | テクスチャ、カスタムブロック表示 | 最優先（常に即時生成） |
+| LoD 1 | 風景チャンク | 頂点カラー、標準ブロック形状 | 低優先（余裕時に生成） |
 
-#### LoD 0: 近距離（フル詳細）
+#### LoD 0: ゲームチャンク（フル詳細）
 
 - 2-2で実装済みの描画方式をそのまま使用
 - テクスチャアトラス使用
 - カスタムブロックは定義通りの形状で描画
 - グリーディーメッシング適用可能
+- **生成優先度: 最優先** - 常に他のチャンクより先に生成
 
-#### LoD 1: 中距離（頂点カラー）
+#### LoD 1: 風景チャンク（頂点カラー）
 
 - テクスチャを使用せず、頂点カラーで描画
 - 各ブロックの色はテクスチャ定義の `color_hex` を使用
 - カスタムブロック（shape_type = "custom"）は標準ブロック形状（1×1×1立方体）で描画
 - カスタムブロックの色はそのブロックのマテリアルの `color_hex` を使用
 - グリーディーメッシング適用可能（同色ブロックをマージ）
-
-#### LoD 2: 遠距離（チャンク単位簡略化）
-
-- 1チャンクを4隅の高さで傾いた1つの四角形として描画
-- 4隅の座標: (0,0), (15,0), (0,15), (15,15) のワールドX,Z座標
-- 各隅の高さは `WorldGenerator.getTerrainHeight(worldX, worldZ)` で取得
-- 面の色は `WorldGenerator.getTerrainColor(worldX, worldZ)` で取得
-- 4隅それぞれの色を頂点カラーとして設定（補間でグラデーション）
-- ポリゴン数: 2（1四角形 = 2三角形）
-
-#### LoD 3: 最遠距離（4×4チャンク単位簡略化）
-
-- 4×4チャンク（64チャンク分）を1つの四角形として描画
-- グリッドは固定: チャンク座標を4の倍数で区切る
-  - 例: (0,0)〜(3,3)、(4,0)〜(7,3)、(-4,-4)〜(-1,-1) など
-- 4隅の座標: グリッドの角のワールド座標
-- 高さと色は LoD 2 と同様に WorldGenerator から取得
-- ポリゴン数: 2/16チャンク
+- **生成優先度: 低** - LoD 0キューが空のときのみ生成
 
 ---
 
 ### **REQ-2-3-2: 距離閾値設定**
 
-LoDレベルの切り替え距離をUIで設定可能にする。
+LoDレベルの切り替え距離をUIで設定可能にする。すべて半径（チェビシェフ距離）で指定する。
 
 | 設定項目 | デフォルト値 | 説明 |
 |----------|-------------|------|
-| LoD 0 範囲 | 3 | 視点から3チャンク以内 |
-| LoD 1 範囲 | 7 | 視点から7チャンク以内 |
-| LoD 2 範囲 | 15 | 視点から15チャンク以内 |
-| LoD 3 範囲 | それ以上 | 15チャンクより遠い |
+| LoD 0 半径 | 3 | 視点から半径3チャンク以内はLoD 0 |
+| 総描画半径 | 3 | 視点から半径3チャンク以内を描画 |
 
 - 距離計算はチェビシェフ距離（最大座標差）を使用
   - `distance = max(|chunkX - viewChunkX|, |chunkZ - viewChunkZ|)`
+- 半径3の場合、-3〜+3の範囲（7×7 = 49チャンク）が対象
+- LoD 0 半径内: LoD 0（ゲームチャンク）
+- LoD 0 半径外: LoD 1（風景チャンク）
 - 切り替えは即時（フェードなし）
 
 #### LoD動的切り替え
@@ -109,105 +92,114 @@ LoDレベルの切り替え距離をUIで設定可能にする。
 
 - 各チャンクは現在のLoDレベルを `mesh.userData.lodLevel` に保持
 - 視点移動時、`getChunkLoD()` で計算したLoDと保持しているLoDが異なる場合:
-  - LoD 0/1 間の切り替え: メッシュを再生成（テクスチャ ↔ 頂点カラー）
-  - LoD 0/1 → LoD 2/3: 通常チャンクを削除し、LoD 2/3メッシュを生成
-  - LoD 2/3 → LoD 0/1: LoD 2/3メッシュを削除し、通常チャンクを生成
+  - LoD 0 → LoD 1: メッシュを再生成（テクスチャ → 頂点カラー）
+  - LoD 1 → LoD 0: メッシュを再生成（頂点カラー → テクスチャ）
 
 ---
 
-### **REQ-2-3-3: WorldGenerator 拡張**
+### **REQ-2-3-3: チャンクキューシステム**
 
-地形の高さと色を返す関数を追加する。
+ChunkManagerにチャンク処理のキューシステムを実装する。
+
+#### キュー構造
 
 ```javascript
-/**
- * 指定座標の地形の高さを取得
- * @param {number} worldX - ワールドX座標
- * @param {number} worldZ - ワールドZ座標
- * @returns {number} 地形の高さ（Y座標）
- */
-getTerrainHeight(worldX, worldZ)
+// チャンクキュー（生成・LoD変更を統合）
+this.chunkQueue = [];
 
-/**
- * 指定座標の地形の色を取得
- * @param {number} worldX - ワールドX座標
- * @param {number} worldZ - ワールドZ座標
- * @returns {string} 色（16進数形式、例: "#4CAF50"）
- */
-getTerrainColor(worldX, worldZ)
+// アンロードキュー
+this.unloadQueue = [];
 ```
 
-- 現在のテスト地形（フラット）では:
-  - 高さ: 常に64（地表）
-  - 色: 草ブロックの色（#4CAF50 など）
-- 将来的にはノイズベースの地形生成に対応可能な設計とする
+#### 処理タイミング
 
----
+視点のチャンク座標が変わった時のみキュー更新処理を行う。
+ワールド座標が変わっても、チャンク座標が同じなら処理しない。
 
-### **REQ-2-3-4: ChunkManager LoD対応**
+```javascript
+updateViewPosition(worldX, worldZ) {
+    const newChunkCoord = this.worldToChunk(worldX, worldZ);
 
-ChunkManagerにLoD管理機能を追加する。
+    // チャンク座標が変わっていなければ何もしない
+    if (前回と同じチャンク座標) return;
+
+    // キュー更新処理...
+}
+```
+
+#### キュー追加時
+
+重複チェックは行わない。必要なチャンクをそのままキューに追加する。
+
+#### キュー処理時（遅延評価）
+
+キューから取り出した時点で、そのチャンクがまだ必要かを判断する。
+
+```javascript
+_processChunkQueue() {
+    const item = this.chunkQueue.shift();
+
+    // 範囲外なら捨てる
+    if (!this._isInRange(item.chunkX, item.chunkZ)) return;
+
+    if (this.chunks.has(item.key)) {
+        // 生成済み → LoD変更が必要か確認
+        const currentLoD = chunk.mesh.userData.lodLevel;
+        const newLoD = this.getChunkLoD(item.chunkX, item.chunkZ);
+        if (currentLoD !== newLoD) {
+            this._rebuildChunkMesh(...);
+        }
+    } else {
+        // 未生成 → 新規生成
+        await this._generateChunk(...);
+    }
+}
+```
+
+#### 処理の優先度
+
+1フレームあたり最大 `maxProcessingPerFrame` 個の処理を行う。
+優先度順: チャンクキュー（近い順） > アンロードキュー
+
+#### API
 
 ```javascript
 /**
- * LoD閾値を設定
- * @param {number} lod0Range - LoD 0の範囲（チャンク数）
- * @param {number} lod1Range - LoD 1の範囲（チャンク数）
- * @param {number} lod2Range - LoD 2の範囲（チャンク数）
+ * LoD 0 範囲を設定
+ * @param {number} range - LoD 0の範囲（チャンク数）
  */
-setLoDRanges(lod0Range, lod1Range, lod2Range)
+setLoD0Range(range)
 
 /**
  * チャンクのLoDレベルを取得
  * @param {number} chunkX - チャンクX座標
  * @param {number} chunkZ - チャンクZ座標
- * @returns {number} LoDレベル（0-3）
+ * @returns {number} LoDレベル（0または1）
  */
 getChunkLoD(chunkX, chunkZ)
-```
 
-- 視点移動時にLoDレベルが変わったチャンクのメッシュを再生成
-- LoD 3のメッシュは4×4チャンクグリッド単位で管理
+/**
+ * LoD別のチャンク数を取得
+ * @returns {{lod0: number, lod1: number}}
+ */
+getLoDCounts()
 
----
+/**
+ * 1フレームで処理する最大数を設定
+ * @param {number} n - 上限数（デフォルト: 1）
+ */
+setMaxProcessingPerFrame(n)
 
-### **REQ-2-3-5: LoDHelper クラス**
-
-LoD 2/3用のメッシュ生成を担当する新規クラス。
-
-```javascript
-class LoDHelper {
-    /**
-     * LoD 2用メッシュを生成（1チャンク = 1四角形）
-     * @param {number} chunkX - チャンクX座標
-     * @param {number} chunkZ - チャンクZ座標
-     * @param {WorldGenerator} worldGenerator - 地形生成クラス
-     * @returns {THREE.Mesh} 生成されたメッシュ
-     */
-    static createLoD2Mesh(chunkX, chunkZ, worldGenerator)
-
-    /**
-     * LoD 3用メッシュを生成（4×4チャンク = 1四角形）
-     * @param {number} gridX - 4×4グリッドのX座標（4の倍数）
-     * @param {number} gridZ - 4×4グリッドのZ座標（4の倍数）
-     * @param {WorldGenerator} worldGenerator - 地形生成クラス
-     * @returns {THREE.Mesh} 生成されたメッシュ
-     */
-    static createLoD3Mesh(gridX, gridZ, worldGenerator)
-
-    /**
-     * 4×4グリッド座標を計算
-     * @param {number} chunkX - チャンクX座標
-     * @param {number} chunkZ - チャンクZ座標
-     * @returns {{gridX: number, gridZ: number}} グリッド座標
-     */
-    static getLoD3Grid(chunkX, chunkZ)
-}
+/**
+ * LoD処理時間の平均を取得（直近10チャンク）
+ * @returns {{lod1Generate: number|null, lod1to0: number|null, lod0to1: number|null, lod1Unload: number|null}}
+ */
+getLoDProcessingTimes()
 ```
 
 ---
 
-### **REQ-2-3-6: ChunkMeshBuilder LoD 1対応**
+### **REQ-2-3-4: ChunkMeshBuilder LoD 1対応**
 
 頂点カラーモードを追加する。
 
@@ -229,7 +221,31 @@ buildLoD1(chunkData, blockColors, blockShapes, greedy = true)
 
 ---
 
-### **REQ-2-3-7: テストUI**
+### **REQ-2-3-5: LoDHelper クラス（簡略化）**
+
+LoD計算のヘルパークラス。
+
+```javascript
+class LoDHelper {
+    /**
+     * LoD色分け表示用の色を取得
+     * @param {number} lodLevel - LoDレベル（0-1）
+     * @returns {string} 16進数カラー
+     */
+    static getDebugColor(lodLevel)
+}
+```
+
+**デバッグ色:**
+
+| LoDレベル | デバッグ色 |
+|-----------|-----------|
+| LoD 0 | 緑 (#00FF00) |
+| LoD 1 | 黄 (#FFFF00) |
+
+---
+
+### **REQ-2-3-6: テストUI**
 
 画面左上にデバッグパネルを表示する。
 
@@ -238,40 +254,35 @@ buildLoD1(chunkData, blockColors, blockShapes, greedy = true)
 | 項目 | セレクタ | 説明 |
 |------|---------|------|
 | FPS | `#debug-fps` | フレームレート |
+| FPSグラフ | `#fps-graph` | 0.1秒ごとのFPS履歴をグラフ表示（Canvas、幅280px×高さ80px） |
 | 総ポリゴン数 | `#debug-triangles` | 全LoDレベル合計 |
 | ドローコール数 | `#debug-drawcalls` | 描画呼び出し回数 |
 | 視点座標 | `#debug-position` | 現在の視点座標 |
-| LoD別チャンク数 | `#debug-lod-counts` | LoD0: X, LoD1: Y, LoD2: Z, LoD3: W |
+| LoD別チャンク数 | `#debug-lod-counts` | LoD0: X, LoD1: Y |
+| LoD 0 キュー数 | `#debug-lod0-queue` | LoD 0 生成待ちチャンク数 |
+| LoD 1 キュー数 | `#debug-lod1-queue` | LoD 1 生成待ちチャンク数 |
+| LoD1生成時間 | `#debug-lod1-generate-time` | LoD1生成の平均時間(ms) |
+| LoD1→0変換時間 | `#debug-lod1to0-time` | LoD1→0変換の平均時間(ms) |
+| LoD0→1変換時間 | `#debug-lod0to1-time` | LoD0→1変換の平均時間(ms) |
+| LoD1解放時間 | `#debug-lod1-unload-time` | LoD1解放の平均時間(ms) |
 
 #### 操作項目
 
 | 項目 | セレクタ | 説明 |
 |------|---------|------|
 | LoD 0 範囲 | `#input-lod0-range` | 数値入力（デフォルト: 3） |
-| LoD 1 範囲 | `#input-lod1-range` | 数値入力（デフォルト: 7） |
-| LoD 2 範囲 | `#input-lod2-range` | 数値入力（デフォルト: 15） |
 | 総描画範囲 | `#input-total-range` | NxN範囲（デフォルト: 31） |
 | ワイヤーフレーム | `#btn-wireframe` | ON/OFF切り替え |
 | グリーディー | `#btn-greedy` | ON/OFF切り替え（デフォルト: ON） |
 | カリング | `#btn-culling` | ON/OFF切り替え（デフォルト: ON） |
 | LoD色分け表示 | `#btn-lod-debug` | デバッグ用: LoDレベルで色分け |
+| フレーム処理上限 | `#input-max-processing-per-frame` | 数値入力（デフォルト: 1） |
 | リセット | `#btn-reset` | 視点を原点に戻す |
 | ストレージクリア | `#btn-clear-storage` | 保存データを全削除 |
 
-#### LoD色分け表示モード
-
-デバッグ用にLoDレベルごとに色を付けて表示する。
-
-| LoDレベル | デバッグ色 |
-|-----------|-----------|
-| LoD 0 | 緑 (#00FF00) |
-| LoD 1 | 黄 (#FFFF00) |
-| LoD 2 | オレンジ (#FFA500) |
-| LoD 3 | 赤 (#FF0000) |
-
 ---
 
-### **REQ-2-3-8: 手動操作**
+### **REQ-2-3-7: 手動操作**
 
 2-2と同様のWASD操作で視点移動。
 
@@ -298,7 +309,7 @@ buildLoD1(chunkData, blockColors, blockShapes, greedy = true)
 
 ---
 
-### **REQ-2-3-9: ワールド選択機能**
+### **REQ-2-3-8: ワールド選択機能**
 
 ドロップダウンでワールドタイプを切り替えられるようにする。
 
@@ -362,11 +373,6 @@ if (baseHeight > threshold) {
 
 **地下ブロック:** 土（dirt）
 
-**色（LoD 2/3用）:**
-- 低地（40〜64）: 濃い緑 → 薄い緑
-- 高地（64〜80）: 薄い緑 → 茶色
-- 山頂（80〜100）: 茶色 → 灰色
-
 **パラメータ変更時の動作:**
 - パラメータを変更すると自動的にワールドを再生成
 - ストレージはクリアされる
@@ -396,6 +402,25 @@ generateSimplePerlin(chunkData)
 
 ---
 
+### **REQ-2-3-9: パフォーマンス要件**
+
+移動中も安定した60FPSを維持する。
+
+#### 性能基準
+
+| 条件 | 要件 |
+|------|------|
+| LoD 0 半径: 3、総描画半径: 10 | 移動中58FPS以上を維持（headlessブラウザでは60厳密維持が困難なため） |
+| LoD 0 半径: 3、総描画半径: 15 | 移動中60FPS以上を維持（実ブラウザ基準） |
+
+#### 最適化ポイント
+
+- 毎フレーム実行する処理は最小限にする
+- 重い計算（ポリゴン数集計、LoD別チャンク数集計）は間引いて実行
+- キューカウントの取得はO(n)ではなくキャッシュを活用
+
+---
+
 ### **REQ-2-3-10: block_manager.html への統合**
 
 `src/tool/block_manager.html` に「LoDテスト」タブを追加する。
@@ -417,18 +442,24 @@ Playwrightテストで使用するセレクタを定義する。
 | キャンバス | `#game-canvas` | Three.jsの描画キャンバス |
 | デバッグパネル | `#debug-panel` | デバッグ情報表示パネル |
 | FPS表示 | `#debug-fps` | FPS値 |
+| FPSグラフ | `#fps-graph` | 0.1秒ごとのFPS履歴グラフ（Canvas） |
 | ポリゴン数表示 | `#debug-triangles` | 総ポリゴン数 |
 | ドローコール表示 | `#debug-drawcalls` | ドローコール数 |
 | 視点座標表示 | `#debug-position` | 視点座標 |
 | LoD別チャンク数 | `#debug-lod-counts` | 各LoDのチャンク数 |
+| LoD 0 キュー数 | `#debug-lod0-queue` | LoD 0 生成待ち数 |
+| LoD 1 キュー数 | `#debug-lod1-queue` | LoD 1 生成待ち数 |
+| LoD1生成時間 | `#debug-lod1-generate-time` | LoD1生成の平均時間(ms) |
+| LoD1→0変換時間 | `#debug-lod1to0-time` | LoD1→0変換の平均時間(ms) |
+| LoD0→1変換時間 | `#debug-lod0to1-time` | LoD0→1変換の平均時間(ms) |
+| LoD1解放時間 | `#debug-lod1-unload-time` | LoD1解放の平均時間(ms) |
 | LoD 0 範囲入力 | `#input-lod0-range` | LoD 0の閾値 |
-| LoD 1 範囲入力 | `#input-lod1-range` | LoD 1の閾値 |
-| LoD 2 範囲入力 | `#input-lod2-range` | LoD 2の閾値 |
 | 総描画範囲入力 | `#input-total-range` | 描画範囲 |
 | ワイヤーフレームボタン | `#btn-wireframe` | ワイヤーフレーム切り替え |
 | グリーディーボタン | `#btn-greedy` | グリーディーメッシング切り替え |
 | カリングボタン | `#btn-culling` | カリング切り替え |
 | LoD色分けボタン | `#btn-lod-debug` | LoD色分け表示切り替え |
+| フレーム処理上限 | `#input-max-processing-per-frame` | 1フレームで処理する最大数（全キュー合計） |
 | リセットボタン | `#btn-reset` | リセット |
 | ストレージクリアボタン | `#btn-clear-storage` | ストレージクリア |
 | ワールド選択 | `#select-world` | ワールド選択ドロップダウン |
@@ -458,25 +489,21 @@ Playwrightテストで使用するセレクタを定義する。
 
 1. **LoD 0 表示テスト**
    - 近距離チャンクがテクスチャ付きで表示される
-   - カスタムブロックが正しい形状で表示される
+   - LoD 0 範囲内のチャンクは lodLevel = 0
 
 2. **LoD 1 表示テスト**
-   - 中距離チャンクが頂点カラーで表示される
-   - カスタムブロックが標準ブロック形状で表示される
+   - 遠距離チャンクが頂点カラーで表示される
+   - LoD 0 範囲外のチャンクは lodLevel = 1
 
-3. **LoD 2 表示テスト**
-   - 遠距離チャンクが1四角形で表示される
-   - 4隅の高さが正しく反映される
+3. **優先度キューテスト**
+   - LoD 0 チャンクが先に生成される
+   - LoD 0 キューが空のときのみ LoD 1 チャンクが生成される
 
-4. **LoD 3 表示テスト**
-   - 最遠距離が4×4チャンク単位で表示される
-   - グリッド境界が正しい
-
-5. **LoD切り替えテスト**
+4. **LoD切り替えテスト**
    - 視点移動でLoDレベルが正しく切り替わる
    - 閾値設定が反映される
 
-6. **UI操作テスト**
+5. **UI操作テスト**
    - 各入力・ボタンが正しく動作する
    - LoD色分け表示が切り替わる
 

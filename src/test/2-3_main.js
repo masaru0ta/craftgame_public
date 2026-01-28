@@ -23,7 +23,7 @@ class LoDTestApp {
         this.greedyEnabled = true;
         this.cullingEnabled = true;
         this.lodDebugMode = false;
-        this.totalRange = 31;
+        this.totalRange = 3; // 描画半径
 
         // 移動速度（ブロック/秒）
         this.moveSpeed = 32;
@@ -40,6 +40,14 @@ class LoDTestApp {
         this.lastTime = performance.now();
         this.frameCount = 0;
         this.fps = 0;
+
+        // FPSグラフ用
+        this.fpsHistory = [];
+        this.fpsGraphInterval = 100; // 0.1秒ごと
+        this.fpsGraphMaxPoints = 100; // 最大100ポイント（10秒間）
+        this.lastFpsRecordTime = performance.now();
+        this.fpsGraphCanvas = null;
+        this.fpsGraphCtx = null;
 
         // 初期化完了フラグ
         this.isReady = false;
@@ -153,28 +161,30 @@ class LoDTestApp {
     _initUI() {
         // LoD範囲入力
         const lod0Input = document.getElementById('input-lod0-range');
-        const lod1Input = document.getElementById('input-lod1-range');
-        const lod2Input = document.getElementById('input-lod2-range');
         const totalRangeInput = document.getElementById('input-total-range');
 
-        const updateLoDRanges = async () => {
+        const updateLoD0Range = async () => {
             const lod0 = parseInt(lod0Input.value) || 3;
-            const lod1 = parseInt(lod1Input.value) || 7;
-            const lod2 = parseInt(lod2Input.value) || 15;
-            this.chunkManager.setLoDRanges(lod0, lod1, lod2);
+            this.chunkManager.setLoD0Range(lod0);
             // LoD範囲変更に伴いチャンクを再描画
             await this.chunkManager.updateViewPosition(this.viewX, this.viewZ);
             this._updateLoDCounts();
         };
 
-        lod0Input.addEventListener('change', updateLoDRanges);
-        lod1Input.addEventListener('change', updateLoDRanges);
-        lod2Input.addEventListener('change', updateLoDRanges);
+        lod0Input.addEventListener('change', updateLoD0Range);
 
         totalRangeInput.addEventListener('change', async () => {
-            this.totalRange = parseInt(totalRangeInput.value) || 31;
+            this.totalRange = parseInt(totalRangeInput.value) || 3;
             this.chunkManager.setChunkRange(this.totalRange);
             await this.chunkManager.updateViewPosition(this.viewX, this.viewZ);
+        });
+
+        // フレーム処理設定
+        const maxProcessingInput = document.getElementById('input-max-processing-per-frame');
+
+        maxProcessingInput.addEventListener('change', () => {
+            const value = parseInt(maxProcessingInput.value) || 1;
+            this.chunkManager.setMaxProcessingPerFrame(value);
         });
 
         // ワイヤーフレームボタン
@@ -244,11 +254,7 @@ class LoDTestApp {
         this._initPerlinParamsUI();
 
         // 初期値を設定
-        this.chunkManager.setLoDRanges(
-            parseInt(lod0Input.value),
-            parseInt(lod1Input.value),
-            parseInt(lod2Input.value)
-        );
+        this.chunkManager.setLoD0Range(parseInt(lod0Input.value));
     }
 
     _initPerlinParamsUI() {
@@ -324,9 +330,11 @@ class LoDTestApp {
     _animate() {
         requestAnimationFrame(() => this._animate());
 
+        // フレーム開始時間
+        const now = performance.now();
+
         // FPS計測
         this.frameCount++;
-        const now = performance.now();
         const elapsed = now - this.lastTime;
 
         if (elapsed >= 1000) {
@@ -335,17 +343,27 @@ class LoDTestApp {
             this.lastTime = now;
         }
 
+        // FPSグラフ用：0.1秒ごとに記録
+        if (now - this.lastFpsRecordTime >= this.fpsGraphInterval) {
+            this.fpsHistory.push(this.fps);
+            if (this.fpsHistory.length > this.fpsGraphMaxPoints) {
+                this.fpsHistory.shift();
+            }
+            this.lastFpsRecordTime = now;
+            this._drawFpsGraph();
+        }
+
         // 手動移動処理
         this._handleManualMovement();
 
         // カメラを視点に追従
         this._updateCameraPosition();
 
-        // 描画
+        // 描画（最優先）
         this.renderer.render(this.scene, this.camera);
 
-        // 統計更新
-        this._updateStats();
+        // 統計更新（軽量版）
+        this._updateStatsLight();
     }
 
     _handleManualMovement() {
@@ -372,6 +390,7 @@ class LoDTestApp {
         }
 
         if (moved) {
+            // 視点位置の更新（キュー更新とrequestAnimationFrameベースの処理）
             this.chunkManager.updateViewPosition(this.viewX, this.viewZ);
         }
     }
@@ -396,30 +415,56 @@ class LoDTestApp {
         this.controls.update();
     }
 
-    _updateStats() {
-        // FPS
-        document.getElementById('debug-fps').textContent = this.fps;
+    /**
+     * 軽量版統計更新（毎フレーム呼び出し用）
+     * DOM操作を最小限に抑える
+     */
+    _updateStatsLight() {
+        // FPS（キャッシュした要素に直接設定）
+        if (!this._fpsElement) {
+            this._fpsElement = document.getElementById('debug-fps');
+            this._drawcallsElement = document.getElementById('debug-drawcalls');
+            this._positionElement = document.getElementById('debug-position');
+        }
 
-        // ポリゴン数
+        this._fpsElement.textContent = this.fps;
+        this._drawcallsElement.textContent = this.renderer.info.render.calls;
+
+        // 視点座標（計算とDOM更新を分離）
+        const chunkX = Math.floor(this.viewX / 16);
+        const chunkZ = Math.floor(this.viewZ / 16);
+        this._positionElement.textContent =
+            `X: ${Math.round(this.viewX)}, Z: ${Math.round(this.viewZ)} (${chunkX}, ${chunkZ})`;
+
+        // 重い処理は1秒ごとに更新
+        const now = performance.now();
+        if (!this._lastHeavyUpdate || now - this._lastHeavyUpdate > 1000) {
+            this._lastHeavyUpdate = now;
+            this._updateStatsHeavy();
+        }
+    }
+
+    /**
+     * 重い統計更新（1秒ごと）
+     */
+    _updateStatsHeavy() {
+        // ポリゴン数（チャンク数が多いと重い）
         let totalTriangles = 0;
-        this.worldContainer.children.forEach(child => {
+        const children = this.worldContainer.children;
+        for (let i = 0; i < children.length; i++) {
+            const child = children[i];
             if (child.geometry && child.geometry.index) {
                 totalTriangles += child.geometry.index.count / 3;
             }
-        });
+        }
         document.getElementById('debug-triangles').textContent = totalTriangles.toLocaleString();
 
-        // ドローコール
-        document.getElementById('debug-drawcalls').textContent = this.renderer.info.render.calls;
-
-        // 視点座標
-        const chunkX = Math.floor(this.viewX / 16);
-        const chunkZ = Math.floor(this.viewZ / 16);
-        document.getElementById('debug-position').textContent =
-            `X: ${Math.round(this.viewX)}, Z: ${Math.round(this.viewZ)} (${chunkX}, ${chunkZ})`;
-
-        // LoD別チャンク数
+        // LoD別チャンク数（重い処理）
         this._updateLoDCounts();
+    }
+
+    _updateStats() {
+        this._updateStatsLight();
     }
 
     _updateLoDCounts() {
@@ -428,9 +473,72 @@ class LoDTestApp {
         container.innerHTML = `
             <div class="lod-count-item"><span style="color:#00FF00">LoD0:</span> <span>${counts.lod0}</span></div>
             <div class="lod-count-item"><span style="color:#FFFF00">LoD1:</span> <span>${counts.lod1}</span></div>
-            <div class="lod-count-item"><span style="color:#FFA500">LoD2:</span> <span>${counts.lod2}</span></div>
-            <div class="lod-count-item"><span style="color:#FF0000">LoD3:</span> <span>${counts.lod3}</span></div>
         `;
+
+        // キュー数更新
+        const queueCounts = this.chunkManager.getQueueCounts();
+        document.getElementById('debug-lod0-queue').textContent = queueCounts.lod0;
+        document.getElementById('debug-lod1-queue').textContent = queueCounts.lod1;
+
+        // LoD処理時間更新
+        const times = this.chunkManager.getLoDProcessingTimes();
+        const formatTime = (t) => t !== null ? t.toFixed(2) : '-';
+        document.getElementById('debug-lod1-generate-time').textContent = formatTime(times.lod1Generate);
+        document.getElementById('debug-lod1to0-time').textContent = formatTime(times.lod1to0);
+        document.getElementById('debug-lod0to1-time').textContent = formatTime(times.lod0to1);
+        document.getElementById('debug-lod1-unload-time').textContent = formatTime(times.lod1Unload);
+    }
+
+    _drawFpsGraph() {
+        // キャッシュ
+        if (!this.fpsGraphCanvas) {
+            this.fpsGraphCanvas = document.getElementById('fps-graph');
+            this.fpsGraphCtx = this.fpsGraphCanvas.getContext('2d');
+        }
+        const canvas = this.fpsGraphCanvas;
+        const ctx = this.fpsGraphCtx;
+        const width = canvas.width;
+        const height = canvas.height;
+
+        // 背景クリア
+        ctx.fillStyle = '#222';
+        ctx.fillRect(0, 0, width, height);
+
+        // 目盛り線（60, 30, 0 FPS）
+        ctx.strokeStyle = '#444';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, height * (1 - 60/60));
+        ctx.lineTo(width, height * (1 - 60/60));
+        ctx.moveTo(0, height * (1 - 30/60));
+        ctx.lineTo(width, height * (1 - 30/60));
+        ctx.stroke();
+
+        // 目盛りラベル
+        ctx.fillStyle = '#666';
+        ctx.font = '10px sans-serif';
+        ctx.fillText('60', 2, 12);
+        ctx.fillText('30', 2, height/2 + 4);
+
+        if (this.fpsHistory.length < 2) return;
+
+        // グラフ描画
+        ctx.strokeStyle = '#4fc3f7';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        const pointWidth = width / (this.fpsGraphMaxPoints - 1);
+
+        for (let i = 0; i < this.fpsHistory.length; i++) {
+            const x = i * pointWidth;
+            const y = height - (this.fpsHistory[i] / 60) * height;
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.stroke();
     }
 
     _drawAxisHelper() {
