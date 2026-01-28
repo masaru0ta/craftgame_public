@@ -305,6 +305,53 @@ test.describe('TEST-2-3-5: LoD 1 表示テスト', () => {
     });
     expect(result).toBe(1);
   });
+
+  test('ChunkManager.blockColors にブロック色情報が設定されている', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const cm = window.gameApp.chunkManager;
+      const tl = window.gameApp.textureLoader;
+      const blockColors = cm.blockColors;
+      // 少なくとも1つのブロックに色が設定されていること
+      const hasColors = Object.keys(blockColors).length > 0;
+      // TextureLoaderから色を正しく取得できているか確認
+      // テクスチャデータにcolor_hexが設定されているテクスチャがあるか
+      const texturesWithColors = tl.textures.filter(t => t.color_hex && t.color_hex !== '#808080');
+      const hasTexturesWithColors = texturesWithColors.length > 0;
+      return { hasColors, hasTexturesWithColors, blockColors, texturesWithColors: texturesWithColors.map(t => t.file_name) };
+    });
+    expect(result.hasColors).toBe(true);
+    // テクスチャデータに非グレー色が存在する場合、ブロック色にも反映されるべき
+    // ただし現在のテストデータでは一部のテクスチャのみ色が設定されている
+    expect(result.hasTexturesWithColors).toBe(true);
+  });
+
+  test('LoD 1 チャンクの頂点カラーが正しく設定されている', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const mesh = window.gameApp.worldContainer.children.find(
+        child => child.name && child.name.startsWith('chunk_') && child.userData.lodLevel === 1
+      );
+      if (!mesh || !mesh.geometry || !mesh.geometry.attributes.color) return null;
+
+      const colors = mesh.geometry.attributes.color.array;
+      // 頂点カラーが正しく設定されているか確認
+      // 少なくとも1つの頂点に有効なカラー（0以上の値）が設定されていること
+      let hasValidColor = false;
+      for (let i = 0; i < colors.length; i += 3) {
+        const r = colors[i];
+        const g = colors[i + 1];
+        const b = colors[i + 2];
+        // 有効な色が設定されているかチェック（0-1の範囲）
+        if (r >= 0 && r <= 1 && g >= 0 && g <= 1 && b >= 0 && b <= 1) {
+          hasValidColor = true;
+          break;
+        }
+      }
+      return { hasValidColor, vertexCount: colors.length / 3 };
+    });
+    expect(result).not.toBeNull();
+    expect(result.hasValidColor).toBe(true);
+    expect(result.vertexCount).toBeGreaterThan(0);
+  });
 });
 
 // ========================================

@@ -823,8 +823,9 @@ class ChunkMeshBuilder {
         chunkData.forEachBlock((x, y, z, blockStrId) => {
             if (blockStrId === 'air') return;
 
-            // ブロックの色を取得
-            const color = blockColors[blockStrId] || '#808080';
+            // ブロックの色を取得（面ごとの色に対応）
+            const blockColorData = blockColors[blockStrId];
+            const defaultColor = '#808080';
 
             // 各面をチェック
             for (const [faceName, faceInfo] of Object.entries(ChunkMeshBuilder.FACES)) {
@@ -834,6 +835,14 @@ class ChunkMeshBuilder {
                 // カリング判定
                 if (this._shouldCullFace(chunkData, x, y, z, faceName, neighborChunks)) {
                     continue;
+                }
+
+                // 面ごとの色を取得（オブジェクト形式または文字列形式に対応）
+                let color;
+                if (typeof blockColorData === 'object' && blockColorData !== null) {
+                    color = blockColorData[faceName] || defaultColor;
+                } else {
+                    color = blockColorData || defaultColor;
                 }
 
                 // 面を追加（色 + 面名でグループ化）

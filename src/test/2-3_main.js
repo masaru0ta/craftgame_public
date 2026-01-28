@@ -61,15 +61,30 @@ class LoDTestApp {
         this.textureLoader = new TextureLoader();
         await this.textureLoader.loadAll();
 
-        // ブロック色情報を収集
+        // ブロック色情報を収集（面ごとの色を設定）
         const blockColors = {};
         const blockShapes = {};
-        if (this.textureLoader._blockData) {
-            for (const block of this.textureLoader._blockData) {
-                // デフォルトテクスチャの色を取得
-                const texName = block.tex_default || block.block_str_id;
-                const texData = this.textureLoader._textureData.find(t => t.file_name === texName);
-                blockColors[block.block_str_id] = texData ? texData.color_hex : '#808080';
+        const faceNames = ['top', 'bottom', 'front', 'back', 'left', 'right'];
+
+        if (this.textureLoader.blocks) {
+            for (const block of this.textureLoader.blocks) {
+                // 面ごとの色を取得
+                const faceColors = {};
+                const defaultTexName = block.tex_default || block.block_str_id;
+                const defaultTexData = this.textureLoader.textures.find(t => t.file_name === defaultTexName);
+                const defaultColor = (defaultTexData && defaultTexData.color_hex) || '#808080';
+
+                for (const faceName of faceNames) {
+                    // 面専用のテクスチャがあればその色を使用、なければデフォルト色
+                    const faceTexName = block[`tex_${faceName}`];
+                    if (faceTexName) {
+                        const faceTexData = this.textureLoader.textures.find(t => t.file_name === faceTexName);
+                        faceColors[faceName] = (faceTexData && faceTexData.color_hex) || defaultColor;
+                    } else {
+                        faceColors[faceName] = defaultColor;
+                    }
+                }
+                blockColors[block.block_str_id] = faceColors;
                 blockShapes[block.block_str_id] = block.shape_type || 'normal';
             }
         }
