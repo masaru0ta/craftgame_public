@@ -113,9 +113,10 @@ class PhysicsWorld {
         // ステップアップ/オートジャンプ判定（接地中かつ非飛行時のみ）
         if (player.isOnGround() && !player.isFlying()) {
             const stepUpResult = this._tryStepUpOrAutoJump(player, collisions, dx, 0);
-            if (stepUpResult.steppedUp || stepUpResult.autoJumped) {
-                return; // ステップアップまたはオートジャンプ成功、押し返し不要
+            if (stepUpResult.steppedUp) {
+                return; // ステップアップ成功、押し返し不要
             }
+            // オートジャンプの場合は壁との衝突解決を続行
         }
 
         for (const blockAABB of collisions) {
@@ -151,9 +152,10 @@ class PhysicsWorld {
         // ステップアップ/オートジャンプ判定（接地中かつ非飛行時のみ）
         if (player.isOnGround() && !player.isFlying()) {
             const stepUpResult = this._tryStepUpOrAutoJump(player, collisions, 0, dz);
-            if (stepUpResult.steppedUp || stepUpResult.autoJumped) {
-                return; // ステップアップまたはオートジャンプ成功、押し返し不要
+            if (stepUpResult.steppedUp) {
+                return; // ステップアップ成功、押し返し不要
             }
+            // オートジャンプの場合は壁との衝突解決を続行
         }
 
         for (const blockAABB of collisions) {
