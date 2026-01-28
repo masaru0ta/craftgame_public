@@ -60,6 +60,10 @@ class ChunkMeshBuilder {
         chunkData.forEachBlock((x, y, z, blockStrId) => {
             if (blockStrId === 'air') return;
 
+            // カスタムブロックはスキップ（別途処理される）
+            const blockDef = this.textureLoader.getBlockDef(blockStrId);
+            if (blockDef && blockDef.shape_type === 'custom') return;
+
             // 各面をチェック
             for (const [faceName, faceInfo] of Object.entries(ChunkMeshBuilder.FACES)) {
                 // y=0の底面は常にカリング

@@ -20,6 +20,7 @@ class ChunkManager {
         this.worldGenerator = new WorldGenerator();
         this.textureLoader = null;
         this.meshBuilder = null;
+        this.customBlockMeshBuilder = null;
         this.worldContainer = null;
 
         // 統計
@@ -82,6 +83,10 @@ class ChunkManager {
     async init(textureLoader, worldContainer) {
         this.textureLoader = textureLoader;
         this.meshBuilder = new ChunkMeshBuilder(textureLoader);
+        // カスタムブロック用メッシュビルダー（CustomBlockMeshBuilderが存在する場合のみ）
+        if (typeof CustomBlockMeshBuilder !== 'undefined') {
+            this.customBlockMeshBuilder = new CustomBlockMeshBuilder(THREE);
+        }
         this.worldContainer = worldContainer;
         await this.storage.open();
     }
@@ -745,12 +750,27 @@ class ChunkManager {
      */
     setWireframe(enabled) {
         for (const chunk of this.chunks.values()) {
-            if (chunk.mesh && chunk.mesh.material) {
-                if (Array.isArray(chunk.mesh.material)) {
-                    chunk.mesh.material.forEach(m => m.wireframe = enabled);
-                } else {
-                    chunk.mesh.material.wireframe = enabled;
-                }
+            if (chunk.mesh) {
+                this._setWireframeRecursive(chunk.mesh, enabled);
+            }
+        }
+    }
+
+    /**
+     * オブジェクトとその子に再帰的にワイヤーフレームを設定
+     * @private
+     */
+    _setWireframeRecursive(obj, enabled) {
+        if (obj.material) {
+            if (Array.isArray(obj.material)) {
+                obj.material.forEach(m => m.wireframe = enabled);
+            } else {
+                obj.material.wireframe = enabled;
+            }
+        }
+        if (obj.children) {
+            for (const child of obj.children) {
+                this._setWireframeRecursive(child, enabled);
             }
         }
     }
@@ -783,6 +803,22 @@ class ChunkManager {
     }
 
     /**
+     * 単一チャンクのメッシュを再生成（公開メソッド）
+     * 現在のLoDレベルを維持してメッシュを再構築
+     * @param {number} chunkX - チャンクX座標
+     * @param {number} chunkZ - チャンクZ座標
+     */
+    rebuildChunkMesh(chunkX, chunkZ) {
+        const key = `${chunkX},${chunkZ}`;
+        const chunk = this.chunks.get(key);
+        if (!chunk) return;
+
+        // 現在のLoDレベルを取得
+        const currentLoD = chunk.mesh ? (chunk.mesh.userData.lodLevel || 0) : 0;
+        this._rebuildChunkMeshSync(chunkX, chunkZ, currentLoD);
+    }
+
+    /**
      * 単一チャンクのメッシュを再生成（LoD変更時）
      * @param {number} chunkX - チャンクX座標
      * @param {number} chunkZ - チャンクZ座標
@@ -812,38 +848,40 @@ class ChunkManager {
         // 古いメッシュを削除
         if (this.worldContainer && chunk.mesh) {
             this.worldContainer.remove(chunk.mesh);
-            if (chunk.mesh.geometry) chunk.mesh.geometry.dispose();
-            if (chunk.mesh.material) {
-                if (Array.isArray(chunk.mesh.material)) {
-                    chunk.mesh.material.forEach(m => m.dispose());
-                } else {
-                    chunk.mesh.material.dispose();
-                }
-            }
+            this._disposeObject(chunk.mesh);
         }
 
         // 新しいLoDレベルでメッシュを生成
-        let mesh;
         const mode = this.useCulling !== false ? 'CULLED' : 'FULL';
+        let normalMesh;
 
         if (newLoD === 0) {
             // LoD 0: フルテクスチャ
-            mesh = this.meshBuilder.build(chunk.chunkData, mode, this.useGreedy || false);
+            normalMesh = this.meshBuilder.build(chunk.chunkData, mode, this.useGreedy || false);
         } else {
             // LoD 1: 頂点カラー
-            mesh = this.meshBuilder.buildLoD1(chunk.chunkData, this.blockColors, this.blockShapes, this.useGreedy || false);
+            normalMesh = this.meshBuilder.buildLoD1(chunk.chunkData, this.blockColors, this.blockShapes, this.useGreedy || false);
         }
 
-        mesh.position.x = chunkX * ChunkData.SIZE_X;
-        mesh.position.z = chunkZ * ChunkData.SIZE_Z;
-        mesh.userData.lodLevel = newLoD;
-        mesh.name = `chunk_${chunkX}_${chunkZ}`;
+        // チャンクグループを作成
+        const chunkGroup = new THREE.Group();
+        chunkGroup.add(normalMesh);
+
+        // LoD 0の場合、カスタムブロックのメッシュを追加
+        if (newLoD === 0 && this.customBlockMeshBuilder) {
+            this._addCustomBlockMeshes(chunk.chunkData, chunkGroup);
+        }
+
+        chunkGroup.position.x = chunkX * ChunkData.SIZE_X;
+        chunkGroup.position.z = chunkZ * ChunkData.SIZE_Z;
+        chunkGroup.userData.lodLevel = newLoD;
+        chunkGroup.name = `chunk_${chunkX}_${chunkZ}`;
 
         if (this.worldContainer) {
-            this.worldContainer.add(mesh);
+            this.worldContainer.add(chunkGroup);
         }
 
-        chunk.mesh = mesh;
+        chunk.mesh = chunkGroup;
 
         // 処理時間計測終了
         const elapsed = performance.now() - startTime;
@@ -852,6 +890,100 @@ class ChunkManager {
         } else if (oldLoD === 0 && newLoD === 1) {
             this._recordTime(this.stats.lod0to1Times, elapsed);
         }
+    }
+
+    /**
+     * オブジェクトを再帰的に破棄
+     * @private
+     */
+    _disposeObject(obj) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+            if (Array.isArray(obj.material)) {
+                obj.material.forEach(m => m.dispose());
+            } else {
+                obj.material.dispose();
+            }
+        }
+        if (obj.children) {
+            for (const child of obj.children) {
+                this._disposeObject(child);
+            }
+        }
+    }
+
+    /**
+     * カスタムブロックのメッシュをグループに追加
+     * @private
+     */
+    _addCustomBlockMeshes(chunkData, chunkGroup) {
+        // カスタムブロックを検出
+        const customBlocks = [];
+        chunkData.forEachBlock((x, y, z, blockStrId) => {
+            if (blockStrId === 'air') return;
+            const blockDef = this.textureLoader.getBlockDef(blockStrId);
+            if (blockDef && blockDef.shape_type === 'custom') {
+                customBlocks.push({ x, y, z, blockStrId, blockDef });
+            }
+        });
+
+        // 各カスタムブロックのメッシュを生成
+        for (const { x, y, z, blockStrId, blockDef } of customBlocks) {
+            // ボクセルデータを取得（voxel_lookフィールドを使用）
+            const voxelDataBase64 = blockDef.voxel_look;
+            if (!voxelDataBase64) continue;
+
+            const voxelData = VoxelData.decode(voxelDataBase64);
+
+            // マテリアルを作成
+            const materials = this._createCustomBlockMaterials(blockDef);
+
+            // メッシュを生成（グリーディメッシング適用）
+            const customMesh = this.customBlockMeshBuilder.buildWithUVGreedy(voxelData, materials, 0.125);
+
+            // 位置を設定（ブロック中心に配置）
+            customMesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+
+            chunkGroup.add(customMesh);
+        }
+    }
+
+    /**
+     * カスタムブロック用マテリアルを作成
+     * @private
+     */
+    _createCustomBlockMaterials(blockDef) {
+        const materials = [];
+        // GASデータのフィールド名はmaterial_1, material_2, material_3
+        const materialKeys = ['material_1', 'material_2', 'material_3'];
+
+        // デフォルトテクスチャを取得（フォールバック用）
+        const defaultTexName = blockDef.tex_default || blockDef.block_str_id;
+        const defaultTexData = this.textureLoader.textures.find(t => t.file_name === defaultTexName);
+
+        for (const key of materialKeys) {
+            const texName = blockDef[key];
+            let texData = null;
+
+            if (texName) {
+                texData = this.textureLoader.textures.find(t => t.file_name === texName);
+            }
+
+            // テクスチャが見つからない場合はデフォルトテクスチャを使用
+            if (!texData && defaultTexData) {
+                texData = defaultTexData;
+            }
+
+            if (texData && texData.image_base64) {
+                materials.push(this.customBlockMeshBuilder.createMaterialFromTexture(texData.image_base64));
+            } else {
+                // テクスチャがない場合は色付きマテリアル
+                const color = (texData && texData.color_hex) ? parseInt(texData.color_hex.replace('#', ''), 16) : 0x808080;
+                materials.push(this.customBlockMeshBuilder.createColorMaterial(color));
+            }
+        }
+
+        return materials;
     }
 
     /**

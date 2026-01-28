@@ -266,6 +266,7 @@ function switchTab(tabName) {
   document.getElementById('chunkManagerTest').classList.toggle('active', tabName === 'chunkManagerTest');
   document.getElementById('lodTest').classList.toggle('active', tabName === 'lodTest');
   document.getElementById('movementTest').classList.toggle('active', tabName === 'movementTest');
+  document.getElementById('blockTest').classList.toggle('active', tabName === 'blockTest');
 }
 
 // ========================================

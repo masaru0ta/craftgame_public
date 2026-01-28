@@ -553,15 +553,15 @@ class PhysicsWorld {
     }
 
     /**
-     * レイキャスト（将来のブロック設置/破壊用）
+     * レイキャスト（ブロック設置/破壊用）
      * @param {{x: number, y: number, z: number}} origin - 始点
      * @param {{x: number, y: number, z: number}} direction - 方向（単位ベクトル）
      * @param {number} maxDistance - 最大距離
-     * @returns {{hit: boolean, blockX: number, blockY: number, blockZ: number, face: string}|null}
+     * @returns {{hit: boolean, blockX: number, blockY: number, blockZ: number, face: string, distance: number, adjacentX: number, adjacentY: number, adjacentZ: number}|null}
      */
     raycast(origin, direction, maxDistance) {
         // DDA (Digital Differential Analyzer) アルゴリズム
-        const step = 0.1;
+        const step = 0.05;  // より高精度なステップ
         let x = origin.x;
         let y = origin.y;
         let z = origin.z;
@@ -573,12 +573,19 @@ class PhysicsWorld {
 
             const blockStrId = this.getBlockAt(blockX, blockY, blockZ);
             if (blockStrId && blockStrId !== 'air') {
+                const face = this._determineFace(x - blockX, y - blockY, z - blockZ);
+                const adjacent = this._getAdjacentBlock(blockX, blockY, blockZ, face);
+
                 return {
                     hit: true,
                     blockX,
                     blockY,
                     blockZ,
-                    face: this._determineFace(x - blockX, y - blockY, z - blockZ)
+                    face,
+                    distance: dist,
+                    adjacentX: adjacent.x,
+                    adjacentY: adjacent.y,
+                    adjacentZ: adjacent.z
                 };
             }
 
@@ -588,6 +595,33 @@ class PhysicsWorld {
         }
 
         return null;
+    }
+
+    /**
+     * 面に隣接するブロック座標を取得
+     * @param {number} blockX
+     * @param {number} blockY
+     * @param {number} blockZ
+     * @param {string} face
+     * @returns {{x: number, y: number, z: number}}
+     */
+    _getAdjacentBlock(blockX, blockY, blockZ, face) {
+        switch (face) {
+            case 'top':
+                return { x: blockX, y: blockY + 1, z: blockZ };
+            case 'bottom':
+                return { x: blockX, y: blockY - 1, z: blockZ };
+            case 'north':
+                return { x: blockX, y: blockY, z: blockZ + 1 };
+            case 'south':
+                return { x: blockX, y: blockY, z: blockZ - 1 };
+            case 'east':
+                return { x: blockX + 1, y: blockY, z: blockZ };
+            case 'west':
+                return { x: blockX - 1, y: blockY, z: blockZ };
+            default:
+                return { x: blockX, y: blockY + 1, z: blockZ };
+        }
     }
 
     /**
