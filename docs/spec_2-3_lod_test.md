@@ -413,11 +413,117 @@ generateSimplePerlin(chunkData)
 | LoD 0 半径: 3、総描画半径: 10 | 移動中58FPS以上を維持（headlessブラウザでは60厳密維持が困難なため） |
 | LoD 0 半径: 3、総描画半径: 15 | 移動中60FPS以上を維持（実ブラウザ基準） |
 
-#### 最適化ポイント
+#### キュー処理アーキテクチャ
+
+**重要: キュー処理は`animate()`ループから毎フレーム1回だけ呼び出す。**
+
+```javascript
+// 2-3_main.js の animate() 内
+_animate() {
+    requestAnimationFrame(() => this._animate());
+
+    this._handleManualMovement();           // 移動処理 → updateViewPosition()
+    this.chunkManager._processQueuesWithPriority();  // キュー処理（毎フレーム1回）
+    this.renderer.render(this.scene, this.camera);
+}
+```
+
+**禁止事項:**
+- `_processQueuesWithPriority()` 内で `requestAnimationFrame` を使った自己スケジューリングは行わない
+- `updateViewPosition()` 内からキュー処理を直接呼び出さない
+
+**理由:**
+- 複数箇所からのキュー処理呼び出しは、1フレームで複数回の重い処理（チャンク生成など）を引き起こす
+- 特にLoD1生成が1フレームで2回実行されるとFPSが劇的に低下する
+
+#### 処理の優先度
+
+3つのキューを優先度順に処理する。重い処理（LoD再生成、生成）は合計で1フレーム1回まで。
+
+| 優先度 | キュー | 1フレームの上限 | 理由 |
+|--------|--------|----------------|------|
+| 1 | LoD再生成 | 1 | 視覚的な不整合を防ぐため最優先 |
+| 2 | 生成 | 1（LoD再生成と共有） | 進行方向の新チャンクを優先表示 |
+| 3 | アンロード | 100 | 軽量なので一括処理可能 |
+
+```javascript
+_processQueuesWithPriority() {
+    let processed = 0;
+
+    // 優先度1: LoD再生成（重い処理）
+    while (lodRebuildQueue.length > 0 && processed < maxProcessingPerFrame) {
+        // 処理...
+        processed++;
+    }
+
+    // 優先度2: 生成（重い処理、LoD再生成とカウンター共有）
+    while (chunkQueue.length > 0 && processed < maxProcessingPerFrame) {
+        // 処理...
+        processed++;
+    }
+
+    // 優先度3: アンロード（軽い処理、独立カウンター）
+    let unloaded = 0;
+    while (unloadQueue.length > 0 && unloaded < 100) {
+        // 処理...
+        unloaded++;
+    }
+}
+```
+
+#### O(1)重複チェック
+
+各キューにはSetを併用し、重複チェックをO(1)で行う。
+
+```javascript
+// キューとSet を併用
+this.chunkQueue = [];
+this.chunkQueueKeys = new Set();  // O(1)重複チェック用
+
+this.lodRebuildQueue = [];
+this.lodRebuildQueueKeys = new Set();
+
+this.unloadQueue = [];
+this.unloadQueueKeys = new Set();
+```
+
+**追加時:**
+```javascript
+if (!this.chunkQueueKeys.has(key)) {  // O(1)
+    this.chunkQueue.push(item);
+    this.chunkQueueKeys.add(key);
+}
+```
+
+**削除時:**
+```javascript
+const item = this.chunkQueue.shift();
+this.chunkQueueKeys.delete(item.key);
+```
+
+#### 境界のみLoD検出
+
+視点移動時、全チャンクをループせず、LoD0境界のチャンクのみをチェックする。
+
+```javascript
+// 最適化前: 全961チャンクをループ（LoD0=3, 総描画=15の場合）
+for (const [key, chunk] of this.chunks) {
+    // 全チャンクのLoD変更をチェック
+}
+
+// 最適化後: 境界の約56チャンクのみチェック
+for (let d = this.lod0Range; d <= this.lod0Range + 1; d++) {
+    // LoD0境界（距離 = lod0Range または lod0Range+1）のチャンクのみ
+}
+```
+
+**効果:** 961回 → 約56回のループ（約94%削減）
+
+#### その他の最適化ポイント
 
 - 毎フレーム実行する処理は最小限にする
-- 重い計算（ポリゴン数集計、LoD別チャンク数集計）は間引いて実行
-- キューカウントの取得はO(n)ではなくキャッシュを活用
+- 重い計算（ポリゴン数集計、LoD別チャンク数集計）は1秒ごとに間引いて実行
+- チャンク座標が変わっていなければキュー更新をスキップ
 
 ---
 
