@@ -172,7 +172,7 @@ class ChunkManagerTestApp {
         const chunksPerFrameInput = document.getElementById('input-chunks-per-frame');
         chunksPerFrameInput.addEventListener('change', (e) => {
             const value = parseInt(e.target.value) || 2;
-            this.chunkManager.setChunksPerFrame(value);
+            this.chunkManager.setMaxProcessingPerFrame(value);
         });
 
         // ワイヤーフレームボタン
@@ -585,6 +585,9 @@ class ChunkManagerTestApp {
 
         // 手動移動
         this._updateManualMovement(delta);
+
+        // チャンクキュー処理（毎フレーム呼び出し）
+        this.chunkManager._processQueuesWithPriority();
 
         // カメラとターゲットを視点に追従
         // 現在のカメラオフセット（ターゲットからの相対位置）を計算
