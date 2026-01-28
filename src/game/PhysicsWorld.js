@@ -21,6 +21,12 @@ class PhysicsWorld {
 
         // ステップアップの最大高さ（0.5ブロック以下の段差を瞬時に乗り越える）
         this.stepUpMaxHeight = 0.5;
+
+        // オートジャンプの最大高さ（0.5超〜1.0ブロックの段差でジャンプ）
+        this.autoJumpMaxHeight = 1.0;
+
+        // 進行方向の高さチェック距離（ブロック）
+        this.stepCheckDistance = 0.3;
     }
 
     /**
@@ -104,11 +110,11 @@ class PhysicsWorld {
         const collisions = this._getCollidingBlocks(aabb);
         const halfWidth = Player.WIDTH / 2;
 
-        // ステップアップ判定（接地中かつ非飛行時のみ）
+        // ステップアップ/オートジャンプ判定（接地中かつ非飛行時のみ）
         if (player.isOnGround() && !player.isFlying()) {
-            const stepUpResult = this._tryStepUp(player, collisions);
-            if (stepUpResult.steppedUp) {
-                return; // ステップアップ成功、押し返し不要
+            const stepUpResult = this._tryStepUpOrAutoJump(player, collisions, dx, 0);
+            if (stepUpResult.steppedUp || stepUpResult.autoJumped) {
+                return; // ステップアップまたはオートジャンプ成功、押し返し不要
             }
         }
 
@@ -142,11 +148,11 @@ class PhysicsWorld {
         const collisions = this._getCollidingBlocks(aabb);
         const halfWidth = Player.WIDTH / 2;
 
-        // ステップアップ判定（接地中かつ非飛行時のみ）
+        // ステップアップ/オートジャンプ判定（接地中かつ非飛行時のみ）
         if (player.isOnGround() && !player.isFlying()) {
-            const stepUpResult = this._tryStepUp(player, collisions);
-            if (stepUpResult.steppedUp) {
-                return; // ステップアップ成功、押し返し不要
+            const stepUpResult = this._tryStepUpOrAutoJump(player, collisions, 0, dz);
+            if (stepUpResult.steppedUp || stepUpResult.autoJumped) {
+                return; // ステップアップまたはオートジャンプ成功、押し返し不要
             }
         }
 
@@ -171,46 +177,109 @@ class PhysicsWorld {
     }
 
     /**
-     * ステップアップを試行
-     * 衝突しているすべてのAABBの最高点を見つけ、ステップアップ可能ならジャンプ
+     * ステップアップまたはオートジャンプを試行
+     * 進行方向前方の高さをチェックして、ステップアップまたはオートジャンプを判定
      * @param {Player} player
      * @param {Array<Object>} collisions - 衝突候補のAABBリスト
-     * @returns {{steppedUp: boolean, targetY: number}}
+     * @param {number} dx - X方向の移動
+     * @param {number} dz - Z方向の移動
+     * @returns {{steppedUp: boolean, autoJumped: boolean, targetY: number}}
      */
-    _tryStepUp(player, collisions) {
+    _tryStepUpOrAutoJump(player, collisions, dx, dz) {
         const pos = player.getPosition();
         const playerAABB = player.getAABB();
 
-        // 実際に衝突しているAABBの最高Y座標を見つける
-        let maxStepY = pos.y;
+        // 実際に衝突しているAABBがあるか確認
         let hasCollision = false;
-
         for (const blockAABB of collisions) {
-            if (!this._aabbIntersects(playerAABB, blockAABB)) continue;
-
-            hasCollision = true;
-            const stepHeight = blockAABB.maxY - pos.y;
-
-            // ステップアップ可能な範囲内の最高点を記録
-            if (stepHeight > 0 && stepHeight <= this.stepUpMaxHeight) {
-                if (blockAABB.maxY > maxStepY) {
-                    maxStepY = blockAABB.maxY;
-                }
+            if (this._aabbIntersects(playerAABB, blockAABB)) {
+                hasCollision = true;
+                break;
             }
         }
 
-        // 衝突がない、またはステップアップ対象がない場合
-        if (!hasCollision || maxStepY <= pos.y) {
-            return { steppedUp: false, targetY: pos.y };
+        if (!hasCollision) {
+            return { steppedUp: false, autoJumped: false, targetY: pos.y };
         }
 
-        // 最高点にステップアップできるか確認
-        if (this._canStepUpTo(player, maxStepY)) {
-            player.setPosition(pos.x, maxStepY, pos.z);
-            return { steppedUp: true, targetY: maxStepY };
+        // 進行方向を正規化
+        const len = Math.sqrt(dx * dx + dz * dz);
+        if (len === 0) {
+            return { steppedUp: false, autoJumped: false, targetY: pos.y };
+        }
+        const dirX = dx / len;
+        const dirZ = dz / len;
+
+        // 進行方向前方の位置を計算
+        const checkX = pos.x + dirX * this.stepCheckDistance;
+        const checkZ = pos.z + dirZ * this.stepCheckDistance;
+
+        // 進行方向前方の高さを取得
+        const frontHeight = this._getObstacleHeightAt(checkX, pos.y, checkZ, player);
+
+        // 段差の高さ
+        const stepHeight = frontHeight - pos.y;
+
+        // 段差がない場合
+        if (stepHeight <= 0) {
+            return { steppedUp: false, autoJumped: false, targetY: pos.y };
         }
 
-        return { steppedUp: false, targetY: pos.y };
+        // ステップアップ（0.5以下）
+        if (stepHeight <= this.stepUpMaxHeight) {
+            if (this._canStepUpTo(player, frontHeight)) {
+                player.setPosition(pos.x, frontHeight, pos.z);
+                return { steppedUp: true, autoJumped: false, targetY: frontHeight };
+            }
+        }
+        // オートジャンプ（0.5超〜1.0以下）
+        else if (stepHeight <= this.autoJumpMaxHeight) {
+            if (this._canStepUpTo(player, frontHeight)) {
+                // ジャンプ速度を付与（PlayerControllerのJUMP_VELOCITYと同じ8）
+                const vel = player.getVelocity();
+                player.setVelocity(vel.x, 8, vel.z);
+                player.setOnGround(false);
+                return { steppedUp: false, autoJumped: true, targetY: frontHeight };
+            }
+        }
+
+        return { steppedUp: false, autoJumped: false, targetY: pos.y };
+    }
+
+    /**
+     * 指定座標での障害物の高さを取得
+     * @param {number} x - X座標
+     * @param {number} baseY - 基準Y座標（プレイヤーの足元）
+     * @param {number} z - Z座標
+     * @param {Player} player - プレイヤー
+     * @returns {number} 障害物の上面Y座標
+     */
+    _getObstacleHeightAt(x, baseY, z, player) {
+        const halfWidth = Player.WIDTH / 2;
+
+        // チェック用のAABB（プレイヤーの幅で縦に細い領域）
+        const checkAABB = {
+            minX: x - halfWidth,
+            minY: baseY,
+            minZ: z - halfWidth,
+            maxX: x + halfWidth,
+            maxY: baseY + this.autoJumpMaxHeight + 0.1,
+            maxZ: z + halfWidth
+        };
+
+        const collisions = this._getCollidingBlocks(checkAABB);
+        let maxY = baseY;
+
+        for (const blockAABB of collisions) {
+            if (!this._aabbIntersects(checkAABB, blockAABB)) continue;
+
+            // この位置での障害物の高さを記録
+            if (blockAABB.maxY > maxY && blockAABB.maxY <= baseY + this.autoJumpMaxHeight + 0.1) {
+                maxY = blockAABB.maxY;
+            }
+        }
+
+        return maxY;
     }
 
     /**

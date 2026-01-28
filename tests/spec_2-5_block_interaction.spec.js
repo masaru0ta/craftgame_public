@@ -1326,6 +1326,13 @@ test.describe('TEST-2-5-14: ステップアップ機能', () => {
     expect(stepUpMaxHeight).toBe(0.5);
   });
 
+  test('PhysicsWorld.STEP_CHECK_DISTANCE が0.3である', async ({ page }) => {
+    const stepCheckDistance = await page.evaluate(() => {
+      return window.gameApp.physicsWorld.stepCheckDistance;
+    });
+    expect(stepCheckDistance).toBe(0.3);
+  });
+
   test('0.5ブロック以下の段差を瞬時に乗り越えられる', async ({ page }) => {
     const result = await page.evaluate(() => {
       const pw = window.gameApp.physicsWorld;
@@ -1435,7 +1442,7 @@ test.describe('TEST-2-5-14: ステップアップ機能', () => {
     expect(result.steppedUp).toBe(true);
   });
 
-  test('0.5ブロックより高い段差はステップアップしない', async ({ page }) => {
+  test('0.5超〜1.0ブロックの段差はオートジャンプになる（ジャンプ速度が付与される）', async ({ page }) => {
     const result = await page.evaluate(() => {
       const pw = window.gameApp.physicsWorld;
       const player = window.gameApp.player;
@@ -1471,6 +1478,7 @@ test.describe('TEST-2-5-14: ステップアップ機能', () => {
       }
 
       // 0.75ブロックの高さのブロック（当たり判定: y=0,1,2）を配置
+      // 0.5超なのでオートジャンプになるはず
       const collisionData = CustomCollision.createEmpty();
       for (let y = 0; y < 3; y++) {  // 3/4 = 0.75ブロック
         for (let z = 0; z < 4; z++) {
@@ -1482,21 +1490,126 @@ test.describe('TEST-2-5-14: ステップアップ機能', () => {
       const voxelCollision = CustomCollision.encode(collisionData);
 
       const testBlockDef = {
-        block_str_id: 'test_075_block',
+        block_str_id: 'test_075block',
         shape_type: 'custom',
         voxel_collision: voxelCollision
       };
       if (!pw.textureLoader) {
         pw.textureLoader = { blocks: [] };
       }
-      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_075_block');
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_075block');
       if (existingIdx >= 0) {
         pw.textureLoader.blocks[existingIdx] = testBlockDef;
       } else {
         pw.textureLoader.blocks.push(testBlockDef);
       }
 
-      chunkData.setBlock(localX, testY, localZNext, 'test_075_block');
+      chunkData.setBlock(localX, testY, localZNext, 'test_075block');
+
+      // プレイヤーを配置
+      player.setPosition(testX + 0.5, testY, testZ + 0.5);
+      player.setOnGround(true);
+      player.setFlying(false);
+      player.setVelocity(0, 0, 0);
+
+      // オートジャンプON
+      if (window.gameApp.playerController) {
+        window.gameApp.playerController.autoJumpEnabled = true;
+      }
+
+      const initialY = player.getPosition().y;
+
+      // 北（Z+）方向に移動して衝突させる
+      const velocity = { x: 0, y: 0, z: 5 };
+      // 1フレームだけ移動して衝突させる
+      pw.movePlayer(player, velocity, 0.1);
+
+      // 衝突直後のY速度を確認（ジャンプ速度が付与されているはず）
+      const velocityAfterCollision = player.getVelocity();
+
+      return {
+        initialY,
+        velocityY: velocityAfterCollision.y,
+        // ジャンプ速度（8）が付与されている = オートジャンプ発動
+        hasJumpVelocity: velocityAfterCollision.y >= 7
+      };
+    });
+
+    if (result.error) {
+      console.log('Test skipped:', result.error);
+      return;
+    }
+
+    // オートジャンプでジャンプ速度が付与された
+    expect(result.hasJumpVelocity).toBe(true);
+  });
+
+  test('1.0ブロックより高い段差はステップアップしない', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+      const player = window.gameApp.player;
+      const cm = window.gameApp.chunkManager;
+
+      // テスト用の位置
+      const testX = 57, testY = 64, testZ = 57;
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor(testZ / 16);
+      const chunkKey = `${chunkX},${chunkZ}`;
+
+      let chunk = cm.chunks.get(chunkKey);
+      if (!chunk) {
+        return { error: 'Chunk not found' };
+      }
+
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+      }
+
+      // 地面を作成
+      const localX = ((testX % 16) + 16) % 16;
+      const localZ = ((testZ % 16) + 16) % 16;
+      const localZNext = ((testZ + 1) % 16 + 16) % 16;
+
+      for (let lz = 0; lz < 16; lz++) {
+        for (let lx = 0; lx < 16; lx++) {
+          chunkData.setBlock(lx, testY - 1, lz, 'stone');
+        }
+      }
+
+      // 1.25ブロックの高さのブロック（通常ブロック+0.25）を配置
+      // 通常ブロックを1段目に配置
+      chunkData.setBlock(localX, testY, localZNext, 'stone');
+
+      // その上に0.25ブロックのカスタムブロックを配置
+      const collisionData = CustomCollision.createEmpty();
+      for (let y = 0; y < 1; y++) {  // 1/4 = 0.25ブロック
+        for (let z = 0; z < 4; z++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      const testBlockDef = {
+        block_str_id: 'test_025_block',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_025_block');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      chunkData.setBlock(localX, testY + 1, localZNext, 'test_025_block');
 
       // プレイヤーを配置
       player.setPosition(testX + 0.5, testY, testZ + 0.5);
@@ -1532,8 +1645,234 @@ test.describe('TEST-2-5-14: ステップアップ機能', () => {
       return;
     }
 
-    // 0.75ブロックの段差はステップアップしない
+    // 1.25ブロックの段差はステップアップしない
     expect(result.noStepUp).toBe(true);
+  });
+
+  test('階段を前から登るとステップアップ（進行方向前方の高さが低い）', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+      const player = window.gameApp.player;
+      const cm = window.gameApp.chunkManager;
+
+      // テスト用の位置
+      const testX = 58, testY = 64, testZ = 58;
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor(testZ / 16);
+      const chunkKey = `${chunkX},${chunkZ}`;
+
+      let chunk = cm.chunks.get(chunkKey);
+      if (!chunk) {
+        return { error: 'Chunk not found' };
+      }
+
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+      }
+
+      // 地面を作成
+      const localX = ((testX % 16) + 16) % 16;
+      const localZ = ((testZ % 16) + 16) % 16;
+      const localZNext = ((testZ + 1) % 16 + 16) % 16;
+
+      for (let lz = 0; lz < 16; lz++) {
+        for (let lx = 0; lx < 16; lx++) {
+          chunkData.setBlock(lx, testY - 1, lz, 'stone');
+        }
+      }
+
+      // 階段ブロック（Z+方向に向かって低くなる）
+      // z=0,1: 高さ1.0 (y=0,1,2,3)
+      // z=2: 高さ0.5 (y=0,1)
+      // z=3: 高さ0.25 (y=0)
+      const collisionData = CustomCollision.createEmpty();
+      // z=0,1は高さ1.0
+      for (let z = 0; z < 2; z++) {
+        for (let y = 0; y < 4; y++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      // z=2は高さ0.5
+      for (let y = 0; y < 2; y++) {
+        for (let x = 0; x < 4; x++) {
+          CustomCollision.setVoxel(collisionData, x, y, 2, 1);
+        }
+      }
+      // z=3は高さ0.25
+      for (let x = 0; x < 4; x++) {
+        CustomCollision.setVoxel(collisionData, x, 0, 3, 1);
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      const testBlockDef = {
+        block_str_id: 'test_stair_block',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_stair_block');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      chunkData.setBlock(localX, testY, localZNext, 'test_stair_block');
+
+      // プレイヤーを配置（階段の低い方から入る = Z+方向に進む）
+      player.setPosition(testX + 0.5, testY, testZ + 0.5);
+      player.setOnGround(true);
+      player.setFlying(false);
+      player.setVelocity(0, 0, 0);
+
+      const initialY = player.getPosition().y;
+
+      // 北（Z+）方向に移動（階段の低い方から入る）
+      const velocity = { x: 0, y: 0, z: 5 };
+      // 1フレーム移動
+      pw.movePlayer(player, velocity, 0.1);
+
+      const velocityAfter = player.getVelocity();
+      const posAfter = player.getPosition();
+
+      return {
+        initialY,
+        finalY: posAfter.y,
+        velocityY: velocityAfter.y,
+        yDiff: posAfter.y - initialY,
+        // ステップアップ = Y座標が上がり、ジャンプ速度がない
+        isStepUp: (posAfter.y - initialY) > 0.1 && velocityAfter.y < 1
+      };
+    });
+
+    if (result.error) {
+      console.log('Test skipped:', result.error);
+      return;
+    }
+
+    // 階段を前から登るとステップアップ（ジャンプ速度なしで上がる）
+    expect(result.isStepUp).toBe(true);
+  });
+
+  test('階段を後ろから登るとオートジャンプ（進行方向前方の高さが高い）', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const pw = window.gameApp.physicsWorld;
+      const player = window.gameApp.player;
+      const cm = window.gameApp.chunkManager;
+
+      // テスト用の位置
+      const testX = 59, testY = 64, testZ = 62;  // 階段の高い方から入る位置
+      const chunkX = Math.floor(testX / 16);
+      const chunkZ = Math.floor((testZ - 1) / 16);  // 階段ブロックのあるチャンク
+      const chunkKey = `${chunkX},${chunkZ}`;
+
+      let chunk = cm.chunks.get(chunkKey);
+      if (!chunk) {
+        return { error: 'Chunk not found' };
+      }
+
+      let chunkData = chunk.chunkData || chunk.data;
+      if (!chunkData) {
+        chunkData = new ChunkData();
+        chunk.chunkData = chunkData;
+        chunk.data = chunkData;
+      }
+
+      // 地面を作成
+      for (let lz = 0; lz < 16; lz++) {
+        for (let lx = 0; lx < 16; lx++) {
+          chunkData.setBlock(lx, testY - 1, lz, 'stone');
+        }
+      }
+
+      // 階段ブロック（Z-方向に向かって低くなる = Z+方向に向かって高い）
+      // z=0: 高さ0.25 (y=0)
+      // z=1: 高さ0.5 (y=0,1)
+      // z=2,3: 高さ1.0 (y=0,1,2,3)
+      const collisionData = CustomCollision.createEmpty();
+      // z=0は高さ0.25
+      for (let x = 0; x < 4; x++) {
+        CustomCollision.setVoxel(collisionData, x, 0, 0, 1);
+      }
+      // z=1は高さ0.5
+      for (let y = 0; y < 2; y++) {
+        for (let x = 0; x < 4; x++) {
+          CustomCollision.setVoxel(collisionData, x, y, 1, 1);
+        }
+      }
+      // z=2,3は高さ1.0
+      for (let z = 2; z < 4; z++) {
+        for (let y = 0; y < 4; y++) {
+          for (let x = 0; x < 4; x++) {
+            CustomCollision.setVoxel(collisionData, x, y, z, 1);
+          }
+        }
+      }
+      const voxelCollision = CustomCollision.encode(collisionData);
+
+      const testBlockDef = {
+        block_str_id: 'test_stair_block2',
+        shape_type: 'custom',
+        voxel_collision: voxelCollision
+      };
+      if (!pw.textureLoader) {
+        pw.textureLoader = { blocks: [] };
+      }
+      const existingIdx = pw.textureLoader.blocks.findIndex(b => b.block_str_id === 'test_stair_block2');
+      if (existingIdx >= 0) {
+        pw.textureLoader.blocks[existingIdx] = testBlockDef;
+      } else {
+        pw.textureLoader.blocks.push(testBlockDef);
+      }
+
+      const stairLocalX = ((testX % 16) + 16) % 16;
+      const stairLocalZ = (((testZ - 1) % 16) + 16) % 16;
+      chunkData.setBlock(stairLocalX, testY, stairLocalZ, 'test_stair_block2');
+
+      // プレイヤーを配置（階段の高い方から入る = Z-方向に進む）
+      player.setPosition(testX + 0.5, testY, testZ + 0.5);
+      player.setOnGround(true);
+      player.setFlying(false);
+      player.setVelocity(0, 0, 0);
+
+      // オートジャンプON
+      if (window.gameApp.playerController) {
+        window.gameApp.playerController.autoJumpEnabled = true;
+      }
+
+      const initialY = player.getPosition().y;
+
+      // 南（Z-）方向に移動（階段の高い方から入る）
+      const velocity = { x: 0, y: 0, z: -5 };
+      // 1フレーム移動
+      pw.movePlayer(player, velocity, 0.1);
+
+      const velocityAfter = player.getVelocity();
+      const posAfter = player.getPosition();
+
+      return {
+        initialY,
+        finalY: posAfter.y,
+        velocityY: velocityAfter.y,
+        // オートジャンプ = ジャンプ速度が付与されている
+        isAutoJump: velocityAfter.y >= 7
+      };
+    });
+
+    if (result.error) {
+      console.log('Test skipped:', result.error);
+      return;
+    }
+
+    // 階段を後ろから登るとオートジャンプ（ジャンプ速度が付与される）
+    expect(result.isAutoJump).toBe(true);
   });
 
   test('ステップアップはジャンプ速度を付与しない（瞬時移動）', async ({ page }) => {
