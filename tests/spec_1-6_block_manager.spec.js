@@ -745,6 +745,121 @@ test.describe('テクスチャ追加機能', () => {
 });
 
 // ============================================
+// テクスチャ編集（代表色変更）
+// ============================================
+test.describe('テクスチャ編集（代表色変更）', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(TOOL_PAGE_PATH);
+    // データ読み込み待機
+    await page.waitForSelector('.col-left .tile', { timeout: 30000 });
+    // テクスチャ一覧タブに切り替え（3番目のタブ、インデックス2）
+    await page.locator('.tab').nth(2).click();
+    await expect(page.locator('#textureList')).toHaveClass(/active/);
+  });
+
+  test('代表色を変更して保存後、ファイル名が維持される', async ({ page }) => {
+    // 画像付きテクスチャを選択（file_nameがあるもの）
+    await page.waitForFunction(() => {
+      return window.state && window.state.textures && window.state.textures.length > 0;
+    }, { timeout: 10000 });
+
+    // file_nameを持つテクスチャを探す
+    const textureWithFileName = await page.evaluate(() => {
+      return window.state.textures.find(t => t.file_name && t.file_name.length > 0);
+    });
+
+    if (!textureWithFileName) {
+      test.skip();
+      return;
+    }
+
+    // 対象のテクスチャタイルをクリック
+    await page.locator(`#textureGrid .tile[data-texture-id="${textureWithFileName.texture_id}"]`).click();
+    await page.waitForTimeout(300);
+
+    // 元のファイル名を記録
+    const originalFileName = await page.locator('#textureFilename').inputValue();
+    expect(originalFileName).toBe(textureWithFileName.file_name);
+
+    // 代表色を変更
+    await page.locator('#textureColor').fill('#ff0000');
+    await page.waitForTimeout(100);
+
+    // 保存ボタンをクリック
+    await page.click('#saveTextureBtn');
+
+    // API呼び出し完了を待機
+    await page.waitForTimeout(1500);
+
+    // ファイル名が維持されていることを確認（UI上）
+    const fileNameAfterSave = await page.locator('#textureFilename').inputValue();
+    expect(fileNameAfterSave).toBe(originalFileName);
+
+    // state.textures内のデータも確認（ローカル状態）
+    const textureAfterSave = await page.evaluate((id) => {
+      return window.state.textures.find(t => t.texture_id === id);
+    }, textureWithFileName.texture_id);
+    expect(textureAfterSave.file_name).toBe(originalFileName);
+
+    // サーバーから再取得して確認（GAS APIにアクセス）
+    const serverData = await page.evaluate(async (id) => {
+      const textures = await window.state.api.getTextures();
+      return textures.find(t => t.texture_id === id);
+    }, textureWithFileName.texture_id);
+
+    expect(serverData.file_name).toBe(originalFileName);
+  });
+
+  test('代表色を変更して保存後、テクスチャ画像が維持される', async ({ page }) => {
+    // 画像付きテクスチャを選択
+    await page.waitForFunction(() => {
+      return window.state && window.state.textures && window.state.textures.length > 0;
+    }, { timeout: 10000 });
+
+    // image_base64を持つテクスチャを探す
+    const textureWithImage = await page.evaluate(() => {
+      return window.state.textures.find(t => t.image_base64 && t.image_base64.length > 0);
+    });
+
+    if (!textureWithImage) {
+      test.skip();
+      return;
+    }
+
+    // 対象のテクスチャタイルをクリック
+    await page.locator(`#textureGrid .tile[data-texture-id="${textureWithImage.texture_id}"]`).click();
+    await page.waitForTimeout(300);
+
+    // 元のimage_base64を記録
+    const originalImageBase64 = textureWithImage.image_base64;
+
+    // 代表色を変更
+    await page.locator('#textureColor').fill('#00ff00');
+    await page.waitForTimeout(100);
+
+    // 保存ボタンをクリック
+    await page.click('#saveTextureBtn');
+
+    // API呼び出し完了を待機
+    await page.waitForTimeout(1500);
+
+    // state.textures内のimage_base64が維持されていることを確認（ローカル状態）
+    const textureAfterSave = await page.evaluate((id) => {
+      return window.state.textures.find(t => t.texture_id === id);
+    }, textureWithImage.texture_id);
+    expect(textureAfterSave.image_base64).toBe(originalImageBase64);
+
+    // サーバーから再取得して確認（GAS APIにアクセス）
+    const serverData = await page.evaluate(async (id) => {
+      const textures = await window.state.api.getTextures();
+      return textures.find(t => t.texture_id === id);
+    }, textureWithImage.texture_id);
+
+    expect(serverData.image_base64).toBe(originalImageBase64);
+  });
+});
+
+// ============================================
 // テクスチャ画像ぼやけ防止
 // ============================================
 test.describe('テクスチャ画像ぼやけ防止', () => {

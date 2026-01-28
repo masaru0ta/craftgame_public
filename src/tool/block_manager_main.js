@@ -728,8 +728,11 @@ async function saveTexture() {
   const texture = state.textures.find(t => t.texture_id === state.selectedTextureId);
   if (!texture) return;
 
+  // 既存データを維持しつつ、変更された値のみ更新
   const updatedTexture = {
     texture_id: texture.texture_id,
+    file_name: texture.file_name || '',
+    image_base64: texture.image_base64 || '',
     color_hex: elements.textureColor.value,
   };
 
