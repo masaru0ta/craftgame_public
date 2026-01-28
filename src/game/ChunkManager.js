@@ -50,12 +50,15 @@ class ChunkManager {
 
         // チャンクキュー（生成・LoD変更を統合）
         this.chunkQueue = [];
+        this.chunkQueueKeys = new Set();  // O(1)重複チェック用
 
         // LoD再生成キュー（フレーム分散用）
         this.lodRebuildQueue = [];
+        this.lodRebuildQueueKeys = new Set();  // O(1)重複チェック用
 
         // アンロードキュー（フレーム分散用）
         this.unloadQueue = [];
+        this.unloadQueueKeys = new Set();  // O(1)重複チェック用
 
         // 統合キュー処理
         this.isProcessingQueues = false;
@@ -166,29 +169,36 @@ class ChunkManager {
             }
 
             // LoD変更を検出し、再生成キューに追加
-            // LoD0を常に正しい状態に維持するため、移動中も処理する
-            for (const key of neededChunks) {
-                const chunk = this.chunks.get(key);
-                if (chunk && chunk.mesh) {
-                    const [cx, cz] = key.split(',').map(Number);
-                    const newLoD = this.getChunkLoD(cx, cz);
-                    const currentLoD = chunk.mesh.userData.lodLevel;
+            // 最適化: LoD0境界のチャンクのみチェック（全チャンクをループしない）
+            // LoD0境界 = 距離がlod0Rangeまたはlod0Range+1のチャンク
+            for (let d = this.lod0Range; d <= this.lod0Range + 1; d++) {
+                // 境界の4辺をチェック
+                for (let i = -d; i <= d; i++) {
+                    // 上辺と下辺
+                    const keys1 = [`${center.chunkX + i},${center.chunkZ + d}`, `${center.chunkX + i},${center.chunkZ - d}`];
+                    // 左辺と右辺（角は除く）
+                    const keys2 = i !== -d && i !== d ? [`${center.chunkX + d},${center.chunkZ + i}`, `${center.chunkX - d},${center.chunkZ + i}`] : [];
 
-                    if (currentLoD !== newLoD) {
-                        this._addToLoDRebuildQueue(cx, cz, newLoD);
+                    for (const key of [...keys1, ...keys2]) {
+                        const chunk = this.chunks.get(key);
+                        if (chunk && chunk.mesh) {
+                            const [cx, cz] = key.split(',').map(Number);
+                            const newLoD = this.getChunkLoD(cx, cz);
+                            const currentLoD = chunk.mesh.userData.lodLevel;
+                            if (currentLoD !== newLoD) {
+                                this._addToLoDRebuildQueue(cx, cz, newLoD);
+                            }
+                        }
                     }
                 }
             }
-
-            // 既にキューにあるチャンクのセット
-            const queuedKeys = new Set(this.chunkQueue.map(item => item.key));
 
             // 必要なチャンクをキューに追加（LoD0優先でソート）
             const chunksToLoad = [];
 
             for (const key of neededChunks) {
-                // 既にロード済み or キューにある場合はスキップ
-                if (!this.chunks.has(key) && !queuedKeys.has(key)) {
+                // 既にロード済み or キューにある場合はスキップ（O(1)チェック）
+                if (!this.chunks.has(key) && !this.chunkQueueKeys.has(key)) {
                     const [cx, cz] = key.split(',').map(Number);
                     const lod = this.getChunkLoD(cx, cz);
                     const distance = Math.abs(cx - center.chunkX) + Math.abs(cz - center.chunkZ);
@@ -202,9 +212,10 @@ class ChunkManager {
                 return a.distance - b.distance;
             });
 
-            // チャンクキューに追加（LoD情報も保持して getQueueCounts を高速化）
+            // チャンクキューに追加（Set も更新）
             for (const chunk of chunksToLoad) {
                 this.chunkQueue.push({ chunkX: chunk.chunkX, chunkZ: chunk.chunkZ, key: chunk.key, lod: chunk.lod });
+                this.chunkQueueKeys.add(chunk.key);
             }
 
             // 統合キュー処理を開始（優先度順: 再生成 > アンロード > 生成）
@@ -230,23 +241,25 @@ class ChunkManager {
     }
 
     /**
-     * LoD再生成キューに追加
+     * LoD再生成キューに追加（O(1)重複チェック）
      */
     _addToLoDRebuildQueue(chunkX, chunkZ, newLoD) {
         const key = `${chunkX},${chunkZ}`;
-        // 既にキューにあれば追加しない
-        if (!this.lodRebuildQueue.some(item => item.key === key)) {
+        // 既にキューにあれば追加しない（O(1)チェック）
+        if (!this.lodRebuildQueueKeys.has(key)) {
             this.lodRebuildQueue.push({ chunkX, chunkZ, key, newLoD });
+            this.lodRebuildQueueKeys.add(key);
         }
     }
 
     /**
-     * アンロードキューに追加
+     * アンロードキューに追加（O(1)重複チェック）
      */
     _addToUnloadQueue(keys) {
         for (const key of keys) {
-            if (!this.unloadQueue.includes(key)) {
+            if (!this.unloadQueueKeys.has(key)) {
                 this.unloadQueue.push(key);
+                this.unloadQueueKeys.add(key);
             }
         }
     }
@@ -300,18 +313,21 @@ class ChunkManager {
         // 優先度1: アンロード（軽い処理なので先に片付ける）
         while (this.unloadQueue.length > 0 && performance.now() < endTime) {
             const key = this.unloadQueue.shift();
+            this.unloadQueueKeys.delete(key);
             this._unloadChunkSync(key);
         }
 
         // 優先度2: LoD再生成（重要：視覚的な不整合を防ぐ）
         while (this.lodRebuildQueue.length > 0 && performance.now() < endTime) {
             const item = this.lodRebuildQueue.shift();
+            this.lodRebuildQueueKeys.delete(item.key);
             this._rebuildChunkMeshSync(item.chunkX, item.chunkZ, item.newLoD);
         }
 
         // 優先度3: 生成（遅延評価付き）- 時間が余っている場合のみ
         while (this.chunkQueue.length > 0 && performance.now() < endTime) {
             const item = this.chunkQueue.shift();
+            this.chunkQueueKeys.delete(item.key);
 
             // 遅延評価：処理時に範囲チェック
             if (!this._isInRange(item.chunkX, item.chunkZ)) {
@@ -348,6 +364,7 @@ class ChunkManager {
         // 優先度1: LoD再生成（LoD0を正しく維持するため移動中も処理）
         while (this.lodRebuildQueue.length > 0 && processed < this.maxProcessingPerFrame) {
             const item = this.lodRebuildQueue.shift();
+            this.lodRebuildQueueKeys.delete(item.key);
             this._rebuildChunkMeshSync(item.chunkX, item.chunkZ, item.newLoD);
             processed++;
         }
@@ -355,6 +372,7 @@ class ChunkManager {
         // 優先度2: アンロード
         while (this.unloadQueue.length > 0 && processed < this.maxProcessingPerFrame) {
             const key = this.unloadQueue.shift();
+            this.unloadQueueKeys.delete(key);
             this._unloadChunkSync(key);
             processed++;
         }
@@ -362,6 +380,7 @@ class ChunkManager {
         // 優先度3: 生成（遅延評価付き、同期版を使用）
         while (this.chunkQueue.length > 0 && processed < this.maxProcessingPerFrame) {
             const item = this.chunkQueue.shift();
+            this.chunkQueueKeys.delete(item.key);
 
             // 遅延評価：処理時に範囲チェック
             if (!this._isInRange(item.chunkX, item.chunkZ)) {
@@ -883,8 +902,11 @@ class ChunkManager {
 
         // キューをクリア
         this.chunkQueue = [];
+        this.chunkQueueKeys.clear();
         this.lodRebuildQueue = [];
+        this.lodRebuildQueueKeys.clear();
         this.unloadQueue = [];
+        this.unloadQueueKeys.clear();
 
         // チャンク座標をリセット
         this.lastChunkX = null;
