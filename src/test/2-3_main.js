@@ -356,6 +356,9 @@ class LoDTestApp {
         // 手動移動処理
         this._handleManualMovement();
 
+        // キュー処理（毎フレーム1回、移動有無に関わらず）
+        this.chunkManager._processQueuesWithPriority();
+
         // カメラを視点に追従
         this._updateCameraPosition();
 

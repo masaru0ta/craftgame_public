@@ -217,9 +217,7 @@ class ChunkManager {
                 this.chunkQueue.push({ chunkX: chunk.chunkX, chunkZ: chunk.chunkZ, key: chunk.key, lod: chunk.lod });
                 this.chunkQueueKeys.add(chunk.key);
             }
-
-            // 統合キュー処理を開始（優先度順: 再生成 > アンロード > 生成）
-            this._processQueuesWithPriority();
+            // キュー処理はanimate()から毎フレーム呼び出される
         } finally {
             this.isUpdatingView = false;
         }
@@ -369,15 +367,7 @@ class ChunkManager {
             processed++;
         }
 
-        // 優先度2: アンロード
-        while (this.unloadQueue.length > 0 && processed < this.maxProcessingPerFrame) {
-            const key = this.unloadQueue.shift();
-            this.unloadQueueKeys.delete(key);
-            this._unloadChunkSync(key);
-            processed++;
-        }
-
-        // 優先度3: 生成（遅延評価付き、同期版を使用）
+        // 優先度2: 生成（遅延評価付き、同期版を使用）
         while (this.chunkQueue.length > 0 && processed < this.maxProcessingPerFrame) {
             const item = this.chunkQueue.shift();
             this.chunkQueueKeys.delete(item.key);
@@ -397,14 +387,17 @@ class ChunkManager {
             processed++;
         }
 
-        this.isProcessingQueues = false;
-
-        // キューが残っている場合は次のフレームで継続
-        if (this.lodRebuildQueue.length > 0 ||
-            this.unloadQueue.length > 0 ||
-            this.chunkQueue.length > 0) {
-            requestAnimationFrame(() => this._processQueuesWithPriority());
+        // 優先度3: アンロード（軽量なので最大100チャンク/フレーム）
+        const maxUnloadPerFrame = 100;
+        let unloaded = 0;
+        while (this.unloadQueue.length > 0 && unloaded < maxUnloadPerFrame) {
+            const key = this.unloadQueue.shift();
+            this.unloadQueueKeys.delete(key);
+            this._unloadChunkSync(key);
+            unloaded++;
         }
+
+        this.isProcessingQueues = false;
     }
 
     /**
