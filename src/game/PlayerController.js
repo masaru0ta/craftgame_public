@@ -5,7 +5,7 @@
  */
 class PlayerController {
     // 物理パラメータ
-    static WALK_SPEED = 9;           // 歩行速度（ブロック/秒）
+    static WALK_SPEED = 7.2;         // 歩行速度（ブロック/秒）
     static SNEAK_SPEED = 3;          // スニーク速度（ブロック/秒）
     static SPRINT_SPEED = 9;         // 走り速度（ブロック/秒）
     static FLY_SPEED = 15;           // 飛行速度（ブロック/秒）
