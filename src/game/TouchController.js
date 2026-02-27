@@ -11,7 +11,7 @@
  *   移動/設置/破壊 → ハイライト消去
  */
 class TouchController {
-    static DEFAULT_SENSITIVITY = 0.004;
+    static DEFAULT_SENSITIVITY = 0.008;
     static ACTION_LONG_PRESS_MS = 400;
     static ACTION_DRAG_THRESHOLD = 10;
     static PITCH_LIMIT = Math.PI / 2 * 0.99;
@@ -40,11 +40,15 @@ class TouchController {
         this._enabled = false;
         this._sensitivity = TouchController.DEFAULT_SENSITIVITY;
 
-        // 前進ボタン状態
+        // 前進/後退ボタン状態
         this._forwardActive = false;
         this._forwardTouchId = null;
         this._forwardLastX = 0;
         this._forwardLastY = 0;
+        this._backwardActive = false;
+        this._backwardTouchId = null;
+        this._backwardLastX = 0;
+        this._backwardLastY = 0;
 
         // 視点操作状態（タップ/長押しによるアクション判定を含む）
         this._lookActive = false;
@@ -63,6 +67,7 @@ class TouchController {
 
         // UI要素キャッシュ
         this._btnForward = document.getElementById('touch-btn-forward');
+        this._btnBackward = document.getElementById('touch-btn-backward');
 
         this._bindEvents();
     }
@@ -97,6 +102,13 @@ class TouchController {
             (e) => this._onForwardStart(e),
             (e) => this._onForwardMove(e),
             (e) => this._onForwardEnd(e)
+        );
+
+        // 後退ボタン（タッチで後退、ドラッグで後退+視点回転）
+        this._addTouchListeners(this._btnBackward,
+            (e) => this._onBackwardStart(e),
+            (e) => this._onBackwardMove(e),
+            (e) => this._onBackwardEnd(e)
         );
 
         // 視点操作エリア
@@ -174,6 +186,47 @@ class TouchController {
 
         this._playerController.keys.w = false;
         if (this._btnForward) this._btnForward.style.opacity = '0.5';
+    }
+
+    // --- 後退ボタン操作 ---
+
+    _onBackwardStart(e) {
+        if (!this._enabled) return;
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        this._backwardActive = true;
+        this._backwardTouchId = touch.identifier;
+        this._backwardLastX = touch.clientX;
+        this._backwardLastY = touch.clientY;
+
+        // 後退開始 → ハイライト消去
+        this._playerController.keys.s = true;
+        this._clearHighlight();
+        if (this._btnBackward) this._btnBackward.style.opacity = '0.8';
+    }
+
+    _onBackwardMove(e) {
+        if (!this._enabled || !this._backwardActive) return;
+        e.preventDefault();
+        const touch = this._findTouch(e.changedTouches, this._backwardTouchId);
+        if (!touch) return;
+
+        const dx = touch.clientX - this._backwardLastX;
+        const dy = touch.clientY - this._backwardLastY;
+        this._backwardLastX = touch.clientX;
+        this._backwardLastY = touch.clientY;
+
+        this._applyLookDelta(dx, dy);
+    }
+
+    _onBackwardEnd(e) {
+        if (!this._backwardActive) return;
+        e.preventDefault();
+        this._backwardActive = false;
+        this._backwardTouchId = null;
+
+        this._playerController.keys.s = false;
+        if (this._btnBackward) this._btnBackward.style.opacity = '0.5';
     }
 
     // --- 視点操作 + 2段階ブロック操作 ---
@@ -351,6 +404,7 @@ class TouchController {
         this._enabled = false;
         this.hide();
         this._playerController.keys.w = false;
+        this._playerController.keys.s = false;
         this._playerController.keys.space = false;
         this._playerController.keys.shift = false;
         this._clearHighlight();

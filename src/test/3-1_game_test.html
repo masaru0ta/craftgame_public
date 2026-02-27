@@ -121,14 +121,16 @@
         }
         #touch-controls > * { pointer-events: auto; }
 
-        #touch-btn-forward {
-            position: fixed; bottom: 160px; left: 50%; transform: translateX(-50%);
+        #touch-btn-forward, #touch-btn-backward {
+            position: fixed; left: 50%; transform: translateX(-50%);
             width: 70px; height: 70px;
             display: flex; align-items: center; justify-content: center;
             background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3);
             border-radius: 50%; touch-action: none; opacity: 0.5;
             color: #fff; font-size: 28px;
         }
+        #touch-btn-forward { bottom: 160px; }
+        #touch-btn-backward { bottom: 80px; }
 
         #touch-look-area {
             position: fixed; top: 0; left: 0;
@@ -277,6 +279,7 @@
     <!-- タッチ操作UI（タッチデバイスで自動表示） -->
     <div id="touch-controls" style="display:none;">
         <div id="touch-btn-forward">&#x25B2;</div>
+        <div id="touch-btn-backward">&#x25BC;</div>
         <div id="touch-look-area"></div>
         <div id="touch-btn-jump" class="touch-btn">&#x2B06;</div>
 
