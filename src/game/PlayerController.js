@@ -296,9 +296,9 @@ class PlayerController {
         let moveX = 0;
         let moveZ = 0;
 
-        // WASD入力を収集
+        // WASD入力を収集（後退は前進の60%）
         if (this.keys.w) moveZ += 1;
-        if (this.keys.s) moveZ -= 1;
+        if (this.keys.s) moveZ -= 0.6;
         if (this.keys.a) moveX -= 1;
         if (this.keys.d) moveX += 1;
 
