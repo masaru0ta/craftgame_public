@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ブロック形状管理ツール</title>
+  <link rel="stylesheet" href="../game/block_editor_ui.css">
+  <link rel="stylesheet" href="block_manager_style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div class="nav-bar">
+    <select id="tabSelect">
+      <option value="data">データ選択</option>
+      <option value="blocks" selected>ブロック一覧</option>
+      <option value="textures">テクスチャ一覧</option>
+      <option value="chunkTest">1チャンクテスト</option>
+      <option value="chunkManagerTest">チャンク管理テスト</option>
+      <option value="lodTest">LoDテスト</option>
+      <option value="movementTest">移動テスト</option>
+      <option value="blockTest">ブロック操作テスト</option>
+      <option value="realmapTest">リアル地形テスト</option>
+      <option value="structureEditor">構造物エディタ</option>
+      <option value="characterEditor">キャラクターエディタ</option>
+    </select>
+  </div>
+
+  <!-- データ選択 -->
+  <div class="main" id="dataSelect">
+    <div class="column col-data-left">
+      <h3>データファイル一覧</h3>
+      <div class="data-file-list" id="dataFileList"></div>
+      <div class="add-file-item" id="addDataFileBtn">
+        <span style="font-size:20px;">+</span>
+        <span>新しいデータファイルを追加</span>
+      </div>
+    </div>
+    <div class="column col-data-right">
+      <!-- 詳細表示（編集モード） -->
+      <div class="detail-panel" id="detailPanel">
+        <h3 id="detailTitle">データファイル詳細</h3>
+        <div class="form-group">
+          <label>ファイル名<span class="required">*</span></label>
+          <input type="text" id="detailName">
+          <div class="error-message" id="nameError">ファイル名を入力してください</div>
+        </div>
+        <div class="form-group">
+          <label>スプレッドシートID<span class="required">*</span></label>
+          <input type="text" id="detailSpreadsheetId">
+          <div class="error-message" id="idError">スプレッドシートIDを入力してください</div>
+        </div>
+        <div class="form-group">
+          <label>作成日時</label>
+          <input type="text" id="detailCreatedAt" readonly>
+        </div>
+        <div class="btn-row btn-row-between">
+          <button class="btn-danger" id="deleteBtn">削除</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-secondary" id="copyBtn">コピー作成</button>
+            <button class="btn-primary" id="useBtn">このデータを使用</button>
+            <button class="btn-secondary" id="saveBtn">保存</button>
+          </div>
+        </div>
+        <div class="notice">
+          <strong>注意</strong>
+          スプレッドシートには1-1で定義されたシート構造（ブロック状態、テクスチャ）が必要です。
+          また、スプレッドシートへのアクセス権限が必要です。
+        </div>
+      </div>
+
+      <!-- 新規追加モード -->
+      <div class="detail-panel" id="addPanel" style="display:none;">
+        <h3>新しいデータファイルを追加</h3>
+        <div class="form-group">
+          <label>ファイル名<span class="required">*</span></label>
+          <input type="text" id="newName" placeholder="例: my_data">
+          <div class="error-message" id="newNameError">ファイル名を入力してください</div>
+        </div>
+        <div class="form-group">
+          <label>スプレッドシートID<span class="required">*</span></label>
+          <input type="text" id="newSpreadsheetId" placeholder="例: 1opkXxb8BRxQKGD7WKwbEvElWfd9UvIvx8wIDdm36GiM">
+          <div class="error-message" id="newIdError">スプレッドシートIDを入力してください</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-secondary" id="cancelAddBtn">キャンセル</button>
+          <button class="btn-primary" id="confirmAddBtn">追加</button>
+        </div>
+        <div class="notice">
+          <strong>注意</strong>
+          スプレッドシートには1-1で定義されたシート構造（ブロック状態、テクスチャ）が必要です。
+          また、スプレッドシートへのアクセス権限が必要です。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ブロック一覧 -->
+  <div class="main active" id="blockList">
+    <div class="column col-left">
+      <div class="grid" id="blockGrid"></div>
+    </div>
+    <div class="column col-mid">
+      <h3>基本情報</h3>
+      <div class="form-group">
+        <label>ブロックID<span class="required">*</span></label>
+        <input type="text" id="blockStrId" readonly>
+      </div>
+      <div class="form-group">
+        <label>表示名<span class="required">*</span></label>
+        <input type="text" id="blockName">
+      </div>
+      <div class="form-group">
+        <label>ブロックタイプ</label>
+        <select id="blockTypeSelect">
+          <option value="normal">通常ブロック</option>
+          <option value="custom">カスタムブロック</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>ドロップアイテム</label>
+        <input type="text" id="dropItem">
+      </div>
+      <div class="form-group">
+        <label>発光レベル (0-15)</label>
+        <input type="number" id="lightLevel" min="0" max="15" value="0">
+      </div>
+      <div class="form-group">
+        <label>オプション</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item"><input type="checkbox" id="isTransparent">透過ブロック</label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-danger" id="deleteBlockBtn">削除</button>
+        <button class="btn-primary" id="saveBlockBtn">保存</button>
+      </div>
+    </div>
+    <div class="column col-right">
+      <div class="preview-container" id="editorContainer">
+        <div class="preview-toolbar">
+          <div style="flex:1;"></div>
+          <button class="toolbar-btn" id="bgBtn" title="背景色切り替え">BG</button>
+        </div>
+        <div class="preview-3d" id="preview3d">
+          <span>(3Dプレビュー)</span>
+        </div>
+        <div class="preview-control" id="controlPanel"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャ一覧 -->
+  <div class="main" id="textureList">
+    <div class="column col-7">
+      <h3>テクスチャ一覧</h3>
+      <div class="grid" id="textureGrid"></div>
+    </div>
+    <div class="column col-3">
+      <h3>テクスチャ詳細</h3>
+      <div class="preview-large" id="texturePreview"></div>
+      <div class="form-group">
+        <label>テクスチャID</label>
+        <input type="number" id="textureId" readonly>
+      </div>
+      <div class="form-group">
+        <label>ファイル名</label>
+        <input type="text" id="textureFilename" readonly>
+      </div>
+      <div class="form-group">
+        <label>代表色（マップ表示用）</label>
+        <div class="color-row">
+          <input type="color" id="textureColor">
+          <input type="text" id="textureColorHex">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-secondary" id="avgColorBtn">平均色→代表色</button>
+        <button class="btn-secondary" id="modeColorBtn">最頻色→代表色</button>
+      </div>
+      <div class="btn-row btn-row-between">
+        <button class="btn-danger" id="deleteTextureBtn">削除</button>
+        <button class="btn-primary" id="saveTextureBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1チャンクテスト -->
+  <div class="main" id="chunkTest">
+    <iframe id="chunkTestFrame" data-src="../test/2-1_1chunk_test.html" style="width:100%; height:calc(100vh - 60px); border:none;"></iframe>
+  </div>
+
+  <!-- チャンク管理テスト -->
+  <div class="main" id="chunkManagerTest">
+    <iframe id="chunkManagerTestFrame" data-src="../test/2-2_chunk_manager_test.html" style="width:100%; height:calc(100vh - 60px); border:none;"></iframe>
+  </div>
+
+  <!-- LoDテスト -->
+  <div class="main" id="lodTest">
+    <iframe id="lodTestFrame" data-src="../test/2-3_lod_test.html" style="width:100%; height:calc(100vh - 60px); border:none;"></iframe>
+  </div>
+
+  <!-- 移動テスト -->
+  <div class="main" id="movementTest">
+    <iframe id="movementTestFrame" data-src="../test/2-4_movement_test.html" style="width:100%; height:calc(100vh - 60px); border:none;"></iframe>
+  </div>
+
+  <!-- ブロック操作テスト -->
+  <div class="main" id="blockTest">
+    <iframe id="blockTestFrame" data-src="../test/2-5_block_test.html" style="width:100%; height:calc(100vh - 60px); border:none;"></iframe>
+  </div>
+
+  <!-- リアル地形テスト -->
+  <div class="main" id="realmapTest">
+    <iframe id="realmapTestFrame" data-src="../test/2-6_realmap_test.html" style="width:100%; height:calc(100vh - 60px); border:none;"></iframe>
+  </div>
+
+  <!-- 構造物エディタ -->
+  <div class="main" id="structureEditor">
+    <iframe id="structureEditorFrame" data-src="../test/1-8_structure_editor.html" style="width:100%; height:calc(100vh - 60px); border:none;"></iframe>
+  </div>
+
+  <!-- キャラクターエディタ -->
+  <div class="main" id="characterEditor">
+    <iframe id="characterEditorFrame" data-src="../test/spec_1-9_character_editor.html" style="width:100%; height:calc(100vh - 60px); border:none;"></iframe>
+  </div>
+
+  <!-- 新規ブロック作成モーダル -->
+  <div class="modal-overlay" id="createBlockModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h4>新規ブロック作成</h4>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>ブロックID<span class="required">*</span></label>
+          <input type="text" name="block_str_id" placeholder="英数字とアンダースコアのみ">
+        </div>
+        <div class="form-group">
+          <label>表示名<span class="required">*</span></label>
+          <input type="text" name="name" placeholder="ブロック名">
+        </div>
+        <div class="form-group">
+          <label>ブロックタイプ</label>
+          <select name="shape_type">
+            <option value="normal">通常ブロック</option>
+            <option value="custom">カスタムブロック</option>
+          </select>
+        </div>
+        <div class="error" id="createError"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary modal-cancel">キャンセル</button>
+        <button class="btn-primary" id="createBlockSubmit">作成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- テクスチャアップロード用非表示ファイル入力 -->
+  <input type="file" id="textureFileInput" accept="image/*" style="display: none;">
+
+  <!-- テクスチャ選択ポップアップ -->
+  <div class="picker-overlay" id="pickerOverlay">
+    <div class="picker">
+      <div class="picker-header">
+        <h4>テクスチャを選択</h4>
+        <button class="picker-close">&times;</button>
+      </div>
+      <div class="picker-grid" id="pickerGrid"></div>
+    </div>
+  </div>
+
+  <script src="../game/gas_api.js"></script>
+  <script src="../game/voxel_data.js"></script>
+  <script src="../game/standard_block_mesh_builder.js"></script>
+  <script src="../game/standard_block_editor.js"></script>
+  <script src="../game/custom_block_mesh_builder.js"></script>
+  <script src="../game/custom_collision.js"></script>
+  <script src="../game/voxel_particle_system.js"></script>
+  <script src="../game/custom_block_editor.js"></script>
+  <script src="../game/custom_collision_checker.js"></script>
+  <script src="../game/block_editor_ui.js"></script>
+  <script src="../game/block_thumbnail.js"></script>
+  <script src="block_manager_main.js"></script>
+</body>
+</html>

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3-1 ゲーム本編テスト</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #game-canvas { display: block; width: 100%; height: 100vh; }
+
+        #debug-panel {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(0, 0, 0, 0.7); color: #fff;
+            border-radius: 8px; font-size: 12px;
+            min-width: 280px; max-height: 90vh; overflow-y: auto;
+        }
+        #debug-panel.collapsed { min-width: auto; overflow-y: hidden; }
+        #debug-panel-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 15px; cursor: pointer; user-select: none;
+            border-bottom: 1px solid #555;
+        }
+        #debug-panel.collapsed #debug-panel-header { border-bottom: none; }
+        #debug-panel-header h3 { margin: 0; font-size: 14px; }
+        #debug-panel-toggle {
+            background: none; border: none; color: #aaa;
+            font-size: 16px; cursor: pointer; padding: 0 4px;
+        }
+        #debug-panel-toggle:hover { color: #fff; }
+        #debug-panel-body { padding: 0 15px 15px; }
+        #debug-panel.collapsed #debug-panel-body { display: none; }
+        .debug-section { margin-bottom: 10px; }
+        .debug-section h4 {
+            font-size: 12px; color: #aaa; margin-bottom: 5px;
+            cursor: pointer; user-select: none;
+        }
+        .debug-section h4::before { content: '\25BC '; font-size: 10px; }
+        .debug-section.collapsed h4::before { content: '\25B6 '; }
+        .debug-section .debug-content { display: block; }
+        .debug-section.collapsed .debug-content { display: none; }
+        .debug-row { display: flex; justify-content: space-between; margin: 3px 0; }
+        .debug-row label { color: #ccc; }
+        .debug-row span { color: #4fc3f7; font-weight: bold; }
+        .debug-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+        .debug-btn {
+            padding: 5px 10px; background: #333; border: 1px solid #555;
+            color: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;
+        }
+        .debug-btn:hover { background: #444; }
+        .debug-btn.active { background: #1976d2; border-color: #1976d2; }
+        .debug-select, .debug-input {
+            padding: 4px 8px; background: #333; border: 1px solid #555;
+            color: #fff; border-radius: 4px; font-size: 11px;
+        }
+        .debug-input { width: 60px; }
+        .control-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+        .control-row label { min-width: 100px; color: #ccc; }
+
+        .lod-counts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-top: 5px; }
+        .lod-count-item {
+            display: flex; justify-content: space-between;
+            padding: 2px 5px; background: rgba(255,255,255,0.1); border-radius: 3px;
+        }
+
+        .crosshair {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px; height: 20px; pointer-events: none;
+        }
+        .crosshair::before, .crosshair::after {
+            content: ''; position: absolute; background: rgba(255, 255, 255, 0.8);
+        }
+        .crosshair::before {
+            top: 50%; left: 0; width: 100%; height: 2px; transform: translateY(-50%);
+        }
+        .crosshair::after {
+            left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%);
+        }
+
+        #loading-indicator {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8); color: #fff;
+            padding: 20px 40px; border-radius: 8px; font-size: 16px; z-index: 1000;
+        }
+        #click-to-start {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8); color: #fff;
+            padding: 30px 50px; border-radius: 12px; font-size: 20px;
+            cursor: pointer; text-align: center; display: none; z-index: 999;
+        }
+        #click-to-start:hover { background: rgba(0, 0, 0, 0.9); }
+
+        #hotbar-container {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 6px; z-index: 1002;
+            background: rgba(50, 50, 50, 0.95);
+            border: 2px solid #888; border-radius: 10px; padding: 10px 12px;
+        }
+        .hotbar-slot {
+            width: 72px; height: 72px; background: rgba(0,0,0,0.5);
+            border: 2px solid #555; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 10px; color: #fff; position: relative;
+        }
+        .hotbar-slot.selected { border-color: #fff; background: rgba(255,255,255,0.2); }
+        .hotbar-slot img { width: 54px; height: 54px; image-rendering: pixelated; }
+        .hotbar-count {
+            position: absolute; bottom: 2px; right: 4px;
+            font-size: 14px; font-weight: bold;
+            text-shadow: 1px 1px 2px #000; color: #fff;
+        }
+
+        /* タッチ操作UI */
+        #touch-controls {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1001; pointer-events: none;
+            touch-action: none; user-select: none;
+        }
+        #touch-controls > * { pointer-events: auto; }
+
+        #touch-btn-forward {
+            position: fixed; bottom: 160px; left: 50%; transform: translateX(-50%);
+            width: 70px; height: 70px;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%; touch-action: none; opacity: 0.5;
+            color: #fff; font-size: 28px;
+        }
+
+        #touch-look-area {
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%;
+            touch-action: none; z-index: -1;
+        }
+
+        .touch-btn {
+            position: fixed; display: flex; align-items: center; justify-content: center;
+            background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%; color: #fff; font-size: 20px;
+            touch-action: none; opacity: 0.5;
+        }
+        #touch-btn-jump { bottom: 120px; right: 30px; width: 60px; height: 60px; }
+
+        #touch-btn-inventory { bottom: 270px; right: 45px; width: 40px; height: 40px; font-size: 16px; }
+        #touch-btn-sneak { bottom: 120px; left: 170px; width: 40px; height: 40px; font-size: 16px; }
+        #touch-btn-fly { bottom: 175px; left: 170px; width: 40px; height: 40px; font-size: 16px; }
+
+    </style>
+</head>
+<body>
+    <canvas id="game-canvas"></canvas>
+    <div id="hotbar-container"></div>
+    <div id="inventory-container"></div>
+    <div id="crafting-container"></div>
+    <div class="crosshair" id="crosshair"></div>
+
+    <div id="debug-panel" class="collapsed">
+        <div id="debug-panel-header">
+            <h3>3-1 ゲーム本編テスト</h3>
+            <button id="debug-panel-toggle">+</button>
+        </div>
+        <div id="debug-panel-body">
+
+        <!-- プレイヤー情報（初期展開） -->
+        <div class="debug-section">
+            <h4>プレイヤー情報</h4>
+            <div class="debug-content">
+                <div class="debug-row"><label>FPS:</label><span id="debug-fps">0</span></div>
+                <div class="debug-row"><label>座標:</label><span id="debug-player-pos">X: 0.00, Y: 0.00, Z: 0.00</span></div>
+                <div class="debug-row"><label>チャンク:</label><span id="debug-chunk-pos">(0, 0)</span></div>
+                <div class="debug-row"><label>向き:</label><span id="debug-player-dir">Yaw: 0, Pitch: 0</span></div>
+                <div class="debug-row"><label>状態:</label><span id="debug-player-state">地上</span></div>
+            </div>
+        </div>
+
+        <!-- 地形情報 -->
+        <div class="debug-section collapsed">
+            <h4>地形情報</h4>
+            <div class="debug-content">
+                <div class="debug-row"><label>標高:</label><span id="debug-elevation">-</span></div>
+                <div class="debug-row"><label>被覆:</label><span id="debug-landcover">-</span></div>
+                <div class="debug-row"><label>マップ:</label><span id="debug-map-info">-</span></div>
+            </div>
+        </div>
+
+        <!-- ブロック操作 -->
+        <div class="debug-section collapsed">
+            <h4>ブロック操作</h4>
+            <div class="debug-content">
+                <div class="debug-row"><label>対象ブロック:</label><span id="debug-target-block">-</span></div>
+                <div class="debug-row"><label>所持アイテム数:</label><span id="debug-inventory-items">0</span></div>
+                <div class="debug-row"><label>パーティクル数:</label><span id="debug-particle-count">0</span></div>
+                <div class="debug-row"><label>クラフト画面:</label><span id="debug-crafting-open">閉</span></div>
+                <div class="debug-row"><label>インベントリ:</label><span id="debug-inventory-open">閉</span></div>
+            </div>
+        </div>
+
+        <!-- 描画情報 -->
+        <div class="debug-section collapsed">
+            <h4>描画情報</h4>
+            <div class="debug-content">
+                <div class="debug-row"><label>ポリゴン数:</label><span id="debug-triangles">0</span></div>
+                <div style="margin-top: 5px;">
+                    <label style="color:#aaa">LoD別チャンク数:</label>
+                    <div id="debug-lod-counts" class="lod-counts">
+                        <div class="lod-count-item"><span style="color:#00FF00">LoD0:</span> <span>0</span></div>
+                        <div class="lod-count-item"><span style="color:#FFFF00">LoD1:</span> <span>0</span></div>
+                    </div>
+                </div>
+                <div class="debug-row"><label>視点モード:</label><span id="debug-viewpoint-mode">1人称</span></div>
+                <div class="debug-row"><label>キャラ表示:</label><span id="debug-character-visible">非表示</span></div>
+            </div>
+        </div>
+
+        <!-- 描画設定 -->
+        <div class="debug-section collapsed">
+            <h4>描画設定</h4>
+            <div class="debug-content">
+                <div class="control-row">
+                    <label>LoD 0 半径:</label>
+                    <input type="number" id="input-lod0-range" class="debug-input" value="4" min="1" max="30">
+                </div>
+                <div class="control-row">
+                    <label>総描画半径:</label>
+                    <input type="number" id="input-total-range" class="debug-input" value="20" min="1" max="63">
+                </div>
+                <div class="control-row">
+                    <label>マウス感度:</label>
+                    <input type="number" id="input-mouse-sensitivity" class="debug-input" value="0.002" min="0.0005" max="0.01" step="0.0005">
+                </div>
+            </div>
+        </div>
+
+        <!-- 表示トグル -->
+        <div class="debug-section collapsed">
+            <h4>表示トグル</h4>
+            <div class="debug-content">
+                <div class="debug-buttons">
+                    <button id="btn-lighting-toggle" class="debug-btn active">ライティング: ON</button>
+                    <button id="btn-ao-toggle" class="debug-btn active">AO: ON</button>
+                    <button id="btn-fog-toggle" class="debug-btn active">フォグ: ON</button>
+                    <button id="btn-wireframe" class="debug-btn">ワイヤーフレーム</button>
+                    <button id="btn-fly-toggle" class="debug-btn">飛行モード: OFF</button>
+                    <button id="btn-toggle-viewpoint" class="debug-btn">視点切替 (V)</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- LoD1品質 -->
+        <div class="debug-section collapsed">
+            <h4>LoD1品質</h4>
+            <div class="debug-content">
+                <div class="debug-buttons">
+                    <button id="btn-lod1-ao" class="debug-btn active">LoD1 AO: ON</button>
+                    <button id="btn-lod1-light" class="debug-btn active">LoD1 ライト: ON</button>
+                    <button id="btn-lod1-texture" class="debug-btn">LoD1 テクスチャ: OFF</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作 -->
+        <div class="debug-section collapsed">
+            <h4>操作</h4>
+            <div class="debug-content">
+                <div class="debug-buttons">
+                    <button id="btn-reset" class="debug-btn">リセット</button>
+                    <button id="btn-clear-storage" class="debug-btn">ストレージクリア</button>
+                </div>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <!-- タッチ操作UI（タッチデバイスで自動表示） -->
+    <div id="touch-controls" style="display:none;">
+        <div id="touch-btn-forward">&#x25B2;</div>
+        <div id="touch-look-area"></div>
+        <div id="touch-btn-jump" class="touch-btn">&#x2B06;</div>
+
+        <div id="touch-btn-inventory" class="touch-btn">&#x1F4E6;</div>
+        <div id="touch-btn-sneak" class="touch-btn">&#x1F53D;</div>
+        <div id="touch-btn-fly" class="touch-btn">&#x1F54A;</div>
+    </div>
+
+    <div id="loading-indicator">Loading...</div>
+    <div id="click-to-start">クリックして開始</div>
+
+    <!-- Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
+    <!-- ゲームライブラリ（全モジュール） -->
+    <script src="../game/StructureData.js"></script>
+    <script src="../game/voxel_data.js"></script>
+    <script src="../game/custom_collision.js"></script>
+    <script src="../game/custom_block_mesh_builder.js"></script>
+    <script src="../game/ChunkData.js"></script>
+    <script src="../game/LightCalculator.js"></script>
+    <script src="../game/RealMapLoader.js"></script>
+    <script src="../game/WorldGenerator.js"></script>
+    <script src="../game/TextureLoader.js"></script>
+    <script src="../game/ChunkMeshBuilder.js"></script>
+    <script src="../game/ChunkStorage.js"></script>
+    <script src="../game/ChunkManager.js"></script>
+    <script src="../game/LoDHelper.js"></script>
+    <script src="../game/Player.js"></script>
+    <script src="../game/PhysicsWorld.js"></script>
+    <script src="../game/BlockHighlight.js"></script>
+    <script src="../game/standard_block_mesh_builder.js"></script>
+    <script src="../game/block_thumbnail.js"></script>
+    <script src="../game/Hotbar.js"></script>
+    <script src="../game/BlockInteraction.js"></script>
+    <script src="../game/PlayerController.js"></script>
+    <script src="../game/FirstPersonCamera.js"></script>
+    <script src="../game/gas_api.js"></script>
+    <script src="../game/CharacterData.js"></script>
+    <script src="../game/CharacterAnimator.js"></script>
+    <script src="../game/ThirdPersonCamera.js"></script>
+    <script src="../game/CharacterRenderer.js"></script>
+    <script src="../game/ViewpointManager.js"></script>
+    <script src="../game/Inventory.js"></script>
+    <script src="../game/CraftingScreen.js"></script>
+    <script src="../game/voxel_particle_system.js"></script>
+    <script src="../game/TouchController.js"></script>
+
+    <!-- メイン処理 -->
+    <script src="3-1_main.js"></script>
+</body>
+</html>

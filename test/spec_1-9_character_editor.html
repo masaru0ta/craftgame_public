@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1-9 キャラクターエディタ テスト</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 上部ツールバー */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: #16213e;
+      border-bottom: 1px solid #333;
+    }
+    #toolbar label { font-size: 13px; }
+    #anim-select {
+      background: #2a2a3e;
+      color: #e0e0e0;
+      border: 1px solid #555;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    #toolbar button {
+      background: #2a2a3e;
+      color: #e0e0e0;
+      border: 1px solid #555;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #toolbar button:hover { background: #3a3a5e; }
+
+    /* メインレイアウト */
+    .main-layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* 左パネル */
+    .left-panel {
+      width: 200px;
+      background: #16213e;
+      border-right: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+    }
+    .left-panel h3 { font-size: 14px; margin-bottom: 8px; color: #00bcd4; }
+    #character-list {
+      flex: 1;
+      overflow-y: auto;
+      margin-bottom: 8px;
+    }
+    .character-item {
+      padding: 8px;
+      margin-bottom: 4px;
+      border-radius: 4px;
+      cursor: pointer;
+      background: #2a2a3e;
+      border: 1px solid transparent;
+    }
+    .character-item:hover { border-color: #555; }
+    .character-item.active { border-color: #00bcd4; background: #1a3a5e; }
+    .character-item .character-name { display: block; font-size: 13px; }
+    .character-item .character-id { display: block; font-size: 11px; color: #888; }
+    .left-panel button {
+      width: 100%;
+      margin-top: 4px;
+      padding: 6px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      border: 1px solid #555;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .left-panel button:hover { background: #3a3a5e; }
+
+    /* 中央キャンバス */
+    .center-panel {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    #preview-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 右パネル */
+    .right-panel {
+      width: 220px;
+      background: #16213e;
+      border-left: 1px solid #333;
+      padding: 12px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .right-panel h3 { font-size: 14px; color: #00bcd4; }
+    .right-panel label { font-size: 12px; color: #aaa; }
+
+    /* カラー表示 */
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #current-color-swatch {
+      width: 32px;
+      height: 32px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #E74C3C;
+    }
+    #color-hex {
+      width: 80px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      border: 1px solid #555;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    #color-picker {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: none;
+      cursor: pointer;
+    }
+
+    /* パレット */
+    .palette-section { margin-top: 4px; }
+    .palette-section .palette-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+    .palette-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+    }
+    .palette-cell {
+      width: 22px;
+      height: 22px;
+      border: 2px solid transparent;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .palette-cell:hover { border-color: #aaa; }
+    .palette-cell.active { border-color: #00bcd4; }
+
+    /* ツールボタン */
+    .tool-section { margin-top: 4px; }
+    .tool-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .tool-btn {
+      padding: 6px 10px;
+      font-size: 12px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      border: 1px solid #555;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .tool-btn:hover { background: #3a3a5e; }
+    .tool-btn.active { background: #00bcd4; color: #000; border-color: #00bcd4; }
+
+    /* キャラクター情報 */
+    .char-info { margin-top: 8px; }
+    .char-info label { display: block; margin-bottom: 2px; }
+    .char-info input {
+      width: 100%;
+      margin-bottom: 8px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      border: 1px solid #555;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    #btn-save {
+      width: 100%;
+      padding: 8px;
+      background: #00bcd4;
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: bold;
+    }
+    #btn-save:hover { background: #00acc1; }
+    #status-message {
+      font-size: 11px;
+      color: #4caf50;
+      min-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <!-- 上部ツールバー -->
+  <div id="toolbar">
+    <label>アニメーション:</label>
+    <select id="anim-select">
+      <option value="walk">歩行</option>
+      <option value="attack">攻撃</option>
+    </select>
+    <button id="btn-anim-play">▶</button>
+    <button id="btn-anim-stop">■</button>
+  </div>
+
+  <!-- 3カラムレイアウト -->
+  <div class="main-layout">
+    <!-- 左パネル: キャラクター一覧 -->
+    <div class="left-panel">
+      <h3>キャラクター一覧</h3>
+      <div id="character-list"></div>
+      <button id="btn-new-character">+ 新規作成</button>
+      <button id="btn-duplicate-character">複製</button>
+      <button id="btn-delete-character">削除</button>
+    </div>
+
+    <!-- 中央: 3Dプレビュー -->
+    <div class="center-panel">
+      <canvas id="preview-canvas" width="800" height="600"></canvas>
+    </div>
+
+    <!-- 右パネル: カラーパレット+ツール+保存 -->
+    <div class="right-panel">
+      <h3>カラーパレット</h3>
+
+      <!-- 現在の色 -->
+      <div class="color-row">
+        <div id="current-color-swatch"></div>
+        <input id="color-hex" type="text" value="#E74C3C">
+        <input id="color-picker" type="color" value="#E74C3C">
+      </div>
+
+      <!-- スキンカラー -->
+      <div class="palette-section">
+        <div class="palette-label">スキン</div>
+        <div class="palette-grid" id="skin-palette"></div>
+      </div>
+
+      <!-- 基本色 -->
+      <div class="palette-section">
+        <div class="palette-label">基本色</div>
+        <div class="palette-grid" id="basic-palette"></div>
+      </div>
+
+      <!-- ツール -->
+      <div class="tool-section">
+        <h3>ツール</h3>
+        <div class="tool-grid">
+          <button id="tool-paint" class="tool-btn active">ペイント</button>
+          <button id="tool-eyedropper" class="tool-btn">スポイト</button>
+          <button id="tool-eraser" class="tool-btn">消しゴム</button>
+          <button id="tool-fill" class="tool-btn">塗りつぶし</button>
+        </div>
+      </div>
+
+      <!-- キャラクター情報 -->
+      <div class="char-info">
+        <h3>キャラクター情報</h3>
+        <label>ID</label>
+        <input id="input-character-id" type="text" placeholder="character_id">
+        <label>名前</label>
+        <input id="input-character-name" type="text" placeholder="キャラクター名">
+        <button id="btn-save">保存</button>
+        <span id="status-message"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
+  <!-- ゲームライブラリ -->
+  <script src="../game/gas_api.js?v=1"></script>
+  <script src="../game/CharacterData.js?v=1"></script>
+  <script src="../game/CharacterAnimator.js?v=1"></script>
+  <script src="../game/CharacterEditor.js?v=1"></script>
+
+  <!-- テストページスクリプト -->
+  <script src="spec_1-9_main.js?v=1"></script>
+</body>
+</html>

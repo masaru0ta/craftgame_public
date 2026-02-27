@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1-8 構造物エディタ テスト</title>
+  <link rel="stylesheet" href="1-8_structure_editor_style.css?v=1">
+</head>
+<body>
+  <div class="page-container">
+    <!-- 左カラム (4) -->
+    <div class="left-column">
+      <h2 style="margin-bottom: 8px; color: #00bcd4;">構造物エディタ</h2>
+
+      <div class="form-group">
+        <label for="structure-select">構造物選択</label>
+        <select id="structure-select">
+          <option value="">構造物を選択</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="structure-str-id">structure_str_id</label>
+        <input type="text" id="structure-str-id" placeholder="例: oak_tree">
+      </div>
+
+      <div class="form-group">
+        <label for="structure-name">name</label>
+        <input type="text" id="structure-name" placeholder="例: オークの木">
+      </div>
+
+      <div class="form-group">
+        <label for="category-select">カテゴリ</label>
+        <select id="category-select">
+          <option value="tree">tree</option>
+          <option value="building">building</option>
+          <option value="furniture">furniture</option>
+          <option value="decoration">decoration</option>
+          <option value="other">other</option>
+        </select>
+      </div>
+
+      <div style="flex: 1;"></div>
+
+      <div id="status-message" class="status-message"></div>
+
+      <div class="btn-group">
+        <button id="create-btn" class="btn btn-primary">新規作成</button>
+        <button id="save-btn" class="btn btn-primary">保存</button>
+        <button id="delete-btn" class="btn btn-danger">削除</button>
+      </div>
+    </div>
+
+    <!-- 右カラム (6) -->
+    <div class="right-column">
+      <div id="editor-container" class="structure-editor-container"></div>
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- pako (zlib) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+
+  <!-- ゲームライブラリ -->
+  <script src="../game/gas_api.js?v=4"></script>
+  <script src="../game/voxel_data.js?v=1"></script>
+  <script src="../game/custom_block_mesh_builder.js?v=1"></script>
+  <script src="../game/StructureData.js?v=1"></script>
+  <script src="../game/StructureEditor.js?v=2"></script>
+
+  <!-- テストページスクリプト -->
+  <script src="1-8_structure_editor_main.js?v=2"></script>
+</body>
+</html>

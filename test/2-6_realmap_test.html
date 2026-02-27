@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2-6 リアル地形マップテスト</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #game-canvas { display: block; width: 100%; height: 100vh; }
+
+        #debug-panel {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(0, 0, 0, 0.7); color: #fff;
+            border-radius: 8px; font-size: 12px;
+            min-width: 280px; max-height: 90vh; overflow-y: auto;
+        }
+        #debug-panel.collapsed { min-width: auto; overflow-y: hidden; }
+        #debug-panel-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 15px; cursor: pointer; user-select: none;
+            border-bottom: 1px solid #555;
+        }
+        #debug-panel.collapsed #debug-panel-header { border-bottom: none; }
+        #debug-panel-header h3 { margin: 0; font-size: 14px; }
+        #debug-panel-toggle { background: none; border: none; color: #aaa; font-size: 16px; cursor: pointer; padding: 0 4px; }
+        #debug-panel-toggle:hover { color: #fff; }
+        #debug-panel-body { padding: 0 15px 15px; }
+        #debug-panel.collapsed #debug-panel-body { display: none; }
+        .debug-section { margin-bottom: 15px; }
+        .debug-section h4 { font-size: 12px; color: #aaa; margin-bottom: 5px; }
+        .debug-row { display: flex; justify-content: space-between; margin: 3px 0; }
+        .debug-row label { color: #ccc; }
+        .debug-row span { color: #4fc3f7; font-weight: bold; }
+        .debug-buttons { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+        .debug-btn {
+            padding: 5px 10px; background: #333; border: 1px solid #555;
+            color: #fff; border-radius: 4px; cursor: pointer; font-size: 11px;
+        }
+        .debug-btn:hover { background: #444; }
+        .debug-btn.active { background: #1976d2; border-color: #1976d2; }
+        .debug-select, .debug-input {
+            padding: 4px 8px; background: #333; border: 1px solid #555;
+            color: #fff; border-radius: 4px; font-size: 11px;
+        }
+        .debug-input { width: 60px; }
+        .control-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+        .control-row label { color: #ccc; min-width: 90px; }
+
+        #crosshair {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 20px; height: 20px; pointer-events: none; display: none; z-index: 100;
+        }
+        #crosshair::before, #crosshair::after { content: ''; display: block; position: absolute; background: white; }
+        #crosshair::before { width: 2px; height: 20px; left: 9px; top: 0; }
+        #crosshair::after { width: 20px; height: 2px; top: 9px; left: 0; }
+
+        #loading-indicator {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8); color: #fff; padding: 20px 40px;
+            border-radius: 8px; font-size: 18px; z-index: 1000;
+        }
+        #click-to-start {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.6); color: #fff; padding: 15px 30px;
+            border-radius: 8px; font-size: 16px; cursor: pointer; z-index: 999; display: none;
+        }
+        #hotbar-container {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 4px; z-index: 100;
+        }
+        .hotbar-slot {
+            width: 48px; height: 48px; background: rgba(0,0,0,0.6);
+            border: 2px solid #555; border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 10px; color: #fff;
+        }
+        .hotbar-slot.selected { border-color: #fff; background: rgba(255,255,255,0.2); }
+        .hotbar-slot img { width: 40px; height: 40px; image-rendering: pixelated; }
+
+    </style>
+</head>
+<body>
+    <canvas id="game-canvas"></canvas>
+    <div id="crosshair"></div>
+
+    <div id="debug-panel" class="collapsed">
+        <div id="debug-panel-header" onclick="document.getElementById('debug-panel').classList.toggle('collapsed'); this.querySelector('#debug-panel-toggle').textContent = document.getElementById('debug-panel').classList.contains('collapsed') ? '+' : '\u2212';">
+            <h3>2-6 リアル地形マップテスト</h3>
+            <button id="debug-panel-toggle">+</button>
+        </div>
+        <div id="debug-panel-body">
+        <div class="debug-section">
+            <h4>マップ情報</h4>
+            <div class="debug-row">
+                <label>マップ:</label>
+                <span id="debug-map-info">-</span>
+            </div>
+            <div class="debug-row">
+                <label>標高:</label>
+                <span id="debug-elevation">-</span>
+            </div>
+            <div class="debug-row">
+                <label>被覆:</label>
+                <span id="debug-landcover">-</span>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>プレイヤー情報</h4>
+            <div class="debug-row">
+                <label>FPS:</label>
+                <span id="debug-fps">0</span>
+            </div>
+            <div class="debug-row">
+                <label>座標:</label>
+                <span id="debug-player-pos">-</span>
+            </div>
+            <div class="debug-row">
+                <label>チャンク:</label>
+                <span id="debug-chunk-pos">-</span>
+            </div>
+            <div class="debug-row">
+                <label>水中:</label>
+                <span id="debug-in-water">いいえ</span>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>ターゲットブロック</h4>
+            <div class="debug-row">
+                <label>ブロック:</label>
+                <span id="debug-target-block">-</span>
+            </div>
+            <div class="debug-row">
+                <label>座標:</label>
+                <span id="debug-target-pos">-</span>
+            </div>
+            <div class="debug-row">
+                <label>面:</label>
+                <span id="debug-target-face">-</span>
+            </div>
+            <div class="debug-row">
+                <label>距離:</label>
+                <span id="debug-target-dist">-</span>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>描画情報</h4>
+            <div class="debug-row">
+                <label>ポリゴン数:</label>
+                <span id="debug-triangles">0</span>
+            </div>
+            <div class="debug-row">
+                <label>Draw Calls:</label>
+                <span id="debug-drawcalls">0</span>
+            </div>
+            <div style="margin-top: 5px;">
+                <label style="color:#aaa">LoD別チャンク数:</label>
+                <div id="debug-lod-counts" class="lod-counts">
+                    <div class="lod-count-item"><span style="color:#00FF00">LoD0:</span> <span>0</span></div>
+                    <div class="lod-count-item"><span style="color:#FFFF00">LoD1:</span> <span>0</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>表示設定</h4>
+            <div class="control-row">
+                <label>LoD 0 半径:</label>
+                <input type="number" id="input-lod0-range" class="debug-input" value="4" min="1" max="30">
+            </div>
+            <div class="control-row">
+                <label>総描画半径:</label>
+                <input type="number" id="input-total-range" class="debug-input" value="30" min="1" max="63">
+            </div>
+            <div class="control-row">
+                <label>マウス感度:</label>
+                <input type="number" id="input-mouse-sensitivity" class="debug-input" value="0.002" min="0.0005" max="0.01" step="0.0005">
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>オプション</h4>
+            <div class="control-row">
+                <label>
+                    <input type="checkbox" id="checkbox-auto-jump" checked>
+                    オートジャンプ
+                </label>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>ライティング</h4>
+            <div class="debug-row">
+                <label>足元の明るさ:</label>
+                <span id="debug-light-level">-</span>
+            </div>
+            <div class="debug-buttons">
+                <button id="btn-lighting-toggle" class="debug-btn active">ライティング: ON</button>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>アンビエントオクルージョン</h4>
+            <div class="debug-buttons">
+                <button id="btn-ao-toggle" class="debug-btn active">AO: ON</button>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>LoD1 品質設定</h4>
+            <div class="debug-buttons">
+                <button id="btn-lod1-ao" class="debug-btn active">LoD1 AO: ON</button>
+                <button id="btn-lod1-light" class="debug-btn active">LoD1 ライト: ON</button>
+                <button id="btn-lod1-texture" class="debug-btn">LoD1 テクスチャ: OFF</button>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <h4>操作</h4>
+            <div class="debug-buttons">
+                <button id="btn-reset" class="debug-btn">リセット</button>
+                <button id="btn-fly-toggle" class="debug-btn">飛行モード: OFF</button>
+                <button id="btn-fog-toggle" class="debug-btn active">フォグ: ON</button>
+                <button id="btn-wireframe" class="debug-btn">ワイヤーフレーム: OFF</button>
+                <button id="btn-clear-storage" class="debug-btn">ストレージクリア</button>
+            </div>
+        </div>
+        </div>
+    </div>
+
+    <div id="hotbar-container"></div>
+    <div id="loading-indicator">Loading...</div>
+    <div id="click-to-start">クリックして開始</div>
+
+    <!-- Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
+
+    <!-- pako (zlib) -->
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
+    <!-- ゲームライブラリ -->
+    <script src="../game/StructureData.js"></script>
+    <script src="../game/voxel_data.js"></script>
+    <script src="../game/custom_collision.js"></script>
+    <script src="../game/custom_block_mesh_builder.js"></script>
+    <script src="../game/ChunkData.js"></script>
+    <script src="../game/LightCalculator.js"></script>
+    <script src="../game/RealMapLoader.js"></script>
+    <script src="../game/WorldGenerator.js"></script>
+    <script src="../game/TextureLoader.js"></script>
+    <script src="../game/ChunkMeshBuilder.js"></script>
+    <script src="../game/ChunkStorage.js"></script>
+    <script src="../game/ChunkManager.js"></script>
+    <script src="../game/LoDHelper.js"></script>
+    <script src="../game/Player.js"></script>
+    <script src="../game/PhysicsWorld.js"></script>
+    <script src="../game/PlayerController.js"></script>
+    <script src="../game/FirstPersonCamera.js"></script>
+    <script src="../game/BlockHighlight.js"></script>
+    <script src="../game/Hotbar.js"></script>
+    <script src="../game/BlockInteraction.js"></script>
+
+    <!-- メイン処理 -->
+    <script src="2-6_main.js"></script>
+</body>
+</html>

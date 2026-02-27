@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChunkMeshBuilder ユニットテスト</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 18px;
+            margin-bottom: 12px;
+            color: #ccc;
+        }
+        #status {
+            font-size: 20px;
+            font-weight: bold;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            border-radius: 6px;
+            background: #2a2a3e;
+        }
+        .category {
+            font-size: 14px;
+            font-weight: bold;
+            color: #aaa;
+            margin: 12px 0 4px 0;
+            border-bottom: 1px solid #333;
+            padding-bottom: 4px;
+        }
+        .test-item {
+            padding: 4px 12px;
+            margin: 2px 0;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+        .test-item.pass { color: #4caf50; }
+        .test-item.fail { color: #f44336; background: #2a1a1a; }
+        .test-item .error {
+            color: #ff8a80;
+            font-size: 12px;
+            margin-left: 20px;
+            margin-top: 2px;
+        }
+        .test-item.capture { color: #ffb74d; background: #2a2a1a; }
+        #capture-output {
+            margin-top: 16px;
+            padding: 12px;
+            background: #1e1e30;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: pre-wrap;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>ChunkMeshBuilder ユニットテスト (Golden Master)</h1>
+    <div id="status">読み込み中...</div>
+    <div id="results"></div>
+    <pre id="capture-output"></pre>
+
+    <!-- Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+
+    <!-- ゲーム依存（読み込み順序重要） -->
+    <script src="../game/voxel_data.js"></script>
+    <script src="../game/ChunkData.js"></script>
+    <script src="../game/TextureLoader.js"></script>
+    <script src="../game/LightCalculator.js"></script>
+    <script src="../game/ChunkMeshBuilder.js"></script>
+
+    <!-- テストロジック -->
+    <script src="./unit_chunk_mesh_builder_main.js"></script>
+</body>
+</html>
