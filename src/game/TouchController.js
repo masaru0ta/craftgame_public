@@ -11,7 +11,7 @@
  *   移動/設置/破壊 → ハイライト消去
  */
 class TouchController {
-    static DEFAULT_SENSITIVITY = 0.008;
+    static DEFAULT_SENSITIVITY = 0.0056;
     static ACTION_LONG_PRESS_MS = 400;
     static ACTION_DRAG_THRESHOLD = 10;
     static PITCH_LIMIT = Math.PI / 2 * 0.99;
