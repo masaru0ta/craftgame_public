@@ -18,6 +18,9 @@ class CharacterRenderer {
     // 体の回転速度（rad/s）
     static BODY_TURN_SPEED = 10;
 
+    // 頭の左右首振り最大角度（ラジアン）
+    static HEAD_YAW_LIMIT = Math.PI * 75 / 180; // ±75度
+
     /**
      * @param {Object} options
      * @param {THREE.Object3D} options.worldContainer - ワールドコンテナ
@@ -214,6 +217,23 @@ class CharacterRenderer {
         }
 
         this._characterGroup.rotation.y = this._bodyYaw;
+
+        // 頭の向き: ピッチ（上下）とヨー差分（左右首振り）
+        const headGroup = this._partMeshes['head'];
+        if (headGroup) {
+            // ピッチ → 頭のX軸回転（上を向く=負のpitch→正のrotation.x）
+            headGroup.rotation.x = -this._player.getPitch();
+
+            // ヨー差分 → 頭のY軸回転（視線方向と体の向きの差）
+            let headYawDiff = this._player.getYaw() - this._bodyYaw;
+            // -π〜πに正規化
+            while (headYawDiff > Math.PI) headYawDiff -= Math.PI * 2;
+            while (headYawDiff < -Math.PI) headYawDiff += Math.PI * 2;
+            // 首振り範囲を制限
+            headYawDiff = Math.max(-CharacterRenderer.HEAD_YAW_LIMIT,
+                Math.min(CharacterRenderer.HEAD_YAW_LIMIT, headYawDiff));
+            headGroup.rotation.y = -headYawDiff;
+        }
 
         // 歩行アニメ自動制御
         if (this._animator) {
