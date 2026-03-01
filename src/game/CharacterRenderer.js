@@ -225,14 +225,16 @@ class CharacterRenderer {
             headGroup.rotation.x = -this._player.getPitch();
 
             // ヨー差分 → 頭のY軸回転（視線方向と体の向きの差）
-            let headYawDiff = this._player.getYaw() - this._bodyYaw;
+            // カメラ: 視線方向 = (-sin(yaw), cos(yaw)) → rotation.y換算 = -yaw
+            // 体: rotation.y = bodyYaw → 頭の相対回転 = (-yaw) - bodyYaw
+            let headYawDiff = -this._player.getYaw() - this._bodyYaw;
             // -π〜πに正規化
             while (headYawDiff > Math.PI) headYawDiff -= Math.PI * 2;
             while (headYawDiff < -Math.PI) headYawDiff += Math.PI * 2;
             // 首振り範囲を制限
             headYawDiff = Math.max(-CharacterRenderer.HEAD_YAW_LIMIT,
                 Math.min(CharacterRenderer.HEAD_YAW_LIMIT, headYawDiff));
-            headGroup.rotation.y = -headYawDiff;
+            headGroup.rotation.y = headYawDiff;
         }
 
         // 歩行アニメ自動制御
