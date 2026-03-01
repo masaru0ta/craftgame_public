@@ -169,6 +169,8 @@
      */
     async connect(peerId) {
       this._isProcessingSignal = true; // シグナル処理中フラグON
+      // connect中はポーリングを停止（サーバーにwait_offerを送り続けるのを防ぐ）
+      this._stopPolling();
       try {
         console.log('[WebRTC-GAS] connect() start:', peerId);
         this.peerId = peerId;
@@ -218,8 +220,13 @@
         this._pendingCandidates = [];
         console.log('[WebRTC-GAS] connect() complete, status:', this.status);
 
+        // ポーリング再開（アンサー受信待ち）
+        this._startPolling();
+
       } catch (error) {
         console.error('[WebRTC-GAS] connect() error:', error);
+        // エラー時もポーリング再開
+        this._startPolling();
         this.emit('error', { error });
         throw error;
       } finally {
@@ -367,8 +374,8 @@
           }
         }
 
-        // connected 状態になったらステータスを上書きしない（WebRTC接続完了を優先）
-        if (this.status !== 'connected') {
+        // ステータス更新: connected中またはシグナル処理中は上書きしない
+        if (this.status !== 'connected' && !this._isProcessingSignal) {
           this.status = response.next_status;
         }
 
