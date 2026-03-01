@@ -723,10 +723,14 @@ class GameTestApp {
     }
 
     async _startMatchmaking(name, passphrase) {
+        this._pendingMessages = [];
         this.multiplayerManager = new MultiplayerManager({
             onMessage: (peerId, data) => {
                 if (this.multiplayerSync) {
                     this.multiplayerSync.handleMessage(peerId, data);
+                } else {
+                    // MultiplayerSync初期化前のメッセージをキューに保存
+                    this._pendingMessages.push({ peerId, data });
                 }
             },
             onConnected: (peerId, peerName) => {
@@ -797,6 +801,14 @@ class GameTestApp {
         });
 
         this.multiplayerSync.startSync();
+
+        // キューに溜まったメッセージを処理
+        if (this._pendingMessages && this._pendingMessages.length > 0) {
+            for (const msg of this._pendingMessages) {
+                this.multiplayerSync.handleMessage(msg.peerId, msg.data);
+            }
+            this._pendingMessages = [];
+        }
 
         this.matchmakingUI.setStatus(`${peerName} と接続中`);
         const debugStatus = document.getElementById('debug-mp-status');

@@ -50,13 +50,8 @@ class MultiplayerSync {
         // ピアプレイヤーを追加
         this._peerPlayerRenderer.addPeer(peerId);
 
-        // キャラクターデータを送信
-        if (this._characterData) {
-            this._manager.send({
-                type: 'characterData',
-                data: this._characterData
-            });
-        }
+        // キャラクターデータを送信（DataChannel準備待ちでリトライ）
+        this._sendCharacterDataWithRetry();
 
         // ホストの場合: 変更済みチャンクリストを送信
         if (this._manager.isHost()) {
@@ -106,6 +101,32 @@ class MultiplayerSync {
             default:
                 console.warn('[MultiplayerSync] 不明なメッセージタイプ:', data.type);
         }
+    }
+
+    /**
+     * キャラクターデータをリトライ付きで送信
+     * DataChannelがまだ開いていない場合に対応
+     */
+    _sendCharacterDataWithRetry() {
+        if (!this._characterData) return;
+        let attempts = 0;
+        const maxAttempts = 10;
+        const trySend = () => {
+            if (attempts >= maxAttempts || !this._manager.isConnected()) return;
+            attempts++;
+            try {
+                this._manager.send({
+                    type: 'characterData',
+                    data: this._characterData
+                });
+                console.log('[MultiplayerSync] characterData送信成功');
+            } catch (e) {
+                console.log(`[MultiplayerSync] characterData送信リトライ (${attempts}/${maxAttempts})`);
+                setTimeout(trySend, 300);
+            }
+        };
+        // 初回は少し遅延させてDataChannel準備を待つ
+        setTimeout(trySend, 300);
     }
 
     // --- メッセージ送信 ---
