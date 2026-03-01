@@ -308,6 +308,20 @@
      */
     async _poll() {
       try {
+        // exchange_ice中に未送信のICE候補があればトリクル送信
+        if (this.status === 'exchange_ice' && this._pendingCandidates && this._pendingCandidates.length > 0 && this.peerId) {
+          const candidates = this._pendingCandidates.slice();
+          this._pendingCandidates = [];
+          console.log('[WebRTC-GAS] Sending trickle ICE candidates:', candidates.length);
+          await this._apiCall({
+            action: 'sendsignal',
+            id: this.id,
+            peer_id: this.peerId,
+            type: 'ice',
+            candidates: candidates
+          });
+        }
+
         console.log('[WebRTC-GAS] Poll request:', { id: this.id, peerId: this.peerId, status: this.status });
         const response = await this._apiCall({
           action: 'sendsignal',
@@ -475,7 +489,29 @@
     async _createPeerConnection() {
       const config = {
         iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' }
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          {
+            urls: 'turn:global.relay.metered.ca:80',
+            username: 'e8dd65b92f6daa9de850a0e2',
+            credential: '2VjEDwJ+X+qkSj7c'
+          },
+          {
+            urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+            username: 'e8dd65b92f6daa9de850a0e2',
+            credential: '2VjEDwJ+X+qkSj7c'
+          },
+          {
+            urls: 'turn:global.relay.metered.ca:443',
+            username: 'e8dd65b92f6daa9de850a0e2',
+            credential: '2VjEDwJ+X+qkSj7c'
+          },
+          {
+            urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+            username: 'e8dd65b92f6daa9de850a0e2',
+            credential: '2VjEDwJ+X+qkSj7c'
+          }
         ]
       };
 
@@ -545,11 +581,15 @@
      */
     _waitForIceCandidates() {
       return new Promise((resolve) => {
-        // 最大1秒待つ、または gathering complete で終了
-        const timeout = setTimeout(resolve, 1000);
+        // 最大3秒待つ、または gathering complete で終了
+        const timeout = setTimeout(() => {
+          console.log('[WebRTC-GAS] ICE gathering timeout (3s), candidates:', this._pendingCandidates.length);
+          resolve();
+        }, 3000);
 
         this._peerConnection.onicegatheringstatechange = () => {
           if (this._peerConnection.iceGatheringState === 'complete') {
+            console.log('[WebRTC-GAS] ICE gathering complete, candidates:', this._pendingCandidates.length);
             clearTimeout(timeout);
             resolve();
           }
