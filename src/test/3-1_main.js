@@ -41,6 +41,12 @@ class GameTestApp {
         // タッチ操作
         this.touchController = null;
 
+        // マルチプレイ
+        this.multiplayerManager = null;
+        this.peerPlayerRenderer = null;
+        this.multiplayerSync = null;
+        this.matchmakingUI = null;
+
         // エフェクト
         this.particleSystem = null;
 
@@ -339,6 +345,9 @@ class GameTestApp {
 
         // 28. タッチデバイス判定 → TouchController初期化
         this._initTouch();
+
+        // 29. マッチングUI初期化
+        this._initMatchmaking();
 
         // 初期化完了
         this.isReady = true;
@@ -703,6 +712,136 @@ class GameTestApp {
         document.getElementById('crosshair').style.display = 'none';
     }
 
+    // --- マルチプレイ ---
+
+    _initMatchmaking() {
+        this.matchmakingUI = new MatchmakingUI({
+            container: document.getElementById('matchmaking-container'),
+            onJoinWorld: (peerId) => this._joinAsGuest(peerId),
+            onRegister: (name, passphrase) => this._startMatchmaking(name, passphrase)
+        });
+    }
+
+    async _startMatchmaking(name, passphrase) {
+        this.multiplayerManager = new MultiplayerManager({
+            onMessage: (peerId, data) => {
+                if (this.multiplayerSync) {
+                    this.multiplayerSync.handleMessage(peerId, data);
+                }
+            },
+            onConnected: (peerId, peerName) => {
+                console.log(`[Multiplayer] 接続確立: ${peerName} (${peerId})`);
+                this._onPeerConnected(peerId, peerName);
+            },
+            onDisconnected: (peerId, reason) => {
+                console.log(`[Multiplayer] 切断: ${peerId} (${reason})`);
+                this._onPeerDisconnected(peerId);
+            },
+            onMatchFound: (matchList) => {
+                // 最初のマッチング相手の参加ボタンを表示
+                if (matchList.length > 0) {
+                    const peer = matchList[0];
+                    this.matchmakingUI.showJoinButton(peer.id, peer.name);
+                }
+            },
+            onRegistered: (id) => {
+                console.log(`[Multiplayer] 登録完了: ${id}`);
+            },
+            onError: (error) => {
+                console.error('[Multiplayer] エラー:', error);
+            },
+            onStatusChange: (status) => {
+                this._updateMatchmakingStatus(status);
+            }
+        });
+
+        this.matchmakingUI.show();
+        this.matchmakingUI.setStatus('登録中...');
+
+        try {
+            await this.multiplayerManager.register(name, passphrase);
+        } catch (e) {
+            this.matchmakingUI.setStatus('登録失敗: ' + e.message);
+        }
+    }
+
+    async _joinAsGuest(peerId) {
+        if (!this.multiplayerManager) return;
+
+        this.matchmakingUI.setStatus('接続中...');
+        this.matchmakingUI.hideJoinButton();
+
+        try {
+            await this.multiplayerManager.connectToPeer(peerId);
+        } catch (e) {
+            this.matchmakingUI.setStatus('接続失敗: ' + e.message);
+        }
+    }
+
+    _onPeerConnected(peerId, peerName) {
+        // PeerPlayerRenderer初期化
+        this.peerPlayerRenderer = new PeerPlayerRenderer(
+            this.worldContainer,
+            this.textureLoader.blocks
+        );
+
+        // MultiplayerSync初期化・開始
+        this.multiplayerSync = new MultiplayerSync({
+            multiplayerManager: this.multiplayerManager,
+            blockInteraction: this.blockInteraction,
+            chunkManager: this.chunkManager,
+            chunkStorage: this.chunkManager.storage,
+            peerPlayerRenderer: this.peerPlayerRenderer,
+            player: this.player,
+            characterData: this.characterData
+        });
+
+        this.multiplayerSync.startSync();
+
+        this.matchmakingUI.setStatus(`${peerName} と接続中`);
+        const debugStatus = document.getElementById('debug-mp-status');
+        if (debugStatus) {
+            debugStatus.textContent = `${peerName} と接続中`;
+            debugStatus.style.color = '#4fc3f7';
+        }
+    }
+
+    _onPeerDisconnected(peerId) {
+        // クリーンアップ
+        if (this.multiplayerSync) {
+            this.multiplayerSync.dispose();
+            this.multiplayerSync = null;
+        }
+        if (this.peerPlayerRenderer) {
+            this.peerPlayerRenderer.dispose();
+            this.peerPlayerRenderer = null;
+        }
+
+        this.matchmakingUI.setStatus('切断されました');
+        const debugStatus = document.getElementById('debug-mp-status');
+        if (debugStatus) {
+            debugStatus.textContent = '切断';
+            debugStatus.style.color = '#ff5252';
+        }
+    }
+
+    _updateMatchmakingStatus(status) {
+        const statusMap = {
+            'registering': '登録中...',
+            'waiting': '相手を待っています...',
+            'connecting': '接続中...',
+            'connected': '接続済み',
+            'disconnected': '未接続'
+        };
+        const text = statusMap[status] || status;
+        this.matchmakingUI.setStatus(text);
+
+        const debugStatus = document.getElementById('debug-mp-status');
+        if (debugStatus) {
+            debugStatus.textContent = text;
+        }
+    }
+
     _requestPointerLock() {
         this.playerController.requestPointerLock(this.canvas);
         this.firstPersonCamera.requestPointerLock(this.canvas);
@@ -840,6 +979,11 @@ class GameTestApp {
         const pos = this.player.getPosition();
         this.chunkManager.updateViewPosition(pos.x, pos.z);
         this.chunkManager._processQueuesWithPriority();
+
+        // ピアプレイヤー更新
+        if (this.peerPlayerRenderer) {
+            this.peerPlayerRenderer.update(this.deltaTime);
+        }
 
         // パーティクル更新
         if (this.particleSystem) {

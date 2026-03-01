@@ -25,6 +25,7 @@ class BlockInteraction {
         this.currentTarget = null;
         this._onBlockDestroyed = null;
         this._onBlockPlaced = null;
+        this._onBlockPlacedAt = null;
         this._onWorkbenchInteract = null;
     }
 
@@ -294,6 +295,11 @@ class BlockInteraction {
         // ブロックを設置
         chunk.chunkData.setBlock(localX, localY, localZ, blockStrId);
 
+        // 設置コールバック発火（座標付き）
+        if (this._onBlockPlacedAt) {
+            this._onBlockPlacedAt(x, y, z, blockStrId);
+        }
+
         // ライトマップ更新（クロスチャンク対応）
         let affectedNeighbors = new Set();
         if (this.chunkManager.lightCalculator) {
@@ -376,6 +382,14 @@ class BlockInteraction {
      */
     onBlockPlaced(callback) {
         this._onBlockPlaced = callback;
+    }
+
+    /**
+     * ブロック設置時コールバックを設定（座標付き）
+     * @param {Function} callback - (x: number, y: number, z: number, blockStrId: string) => void
+     */
+    onBlockPlacedAt(callback) {
+        this._onBlockPlacedAt = callback;
     }
 
     /**

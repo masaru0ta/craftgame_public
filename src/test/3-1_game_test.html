@@ -150,6 +150,35 @@
         #touch-btn-sneak { bottom: 120px; left: 170px; width: 40px; height: 40px; font-size: 16px; }
         #touch-btn-fly { bottom: 175px; left: 170px; width: 40px; height: 40px; font-size: 16px; }
 
+        /* マッチングUI */
+        #matchmaking-container {
+            position: fixed; top: 10px; right: 10px;
+            z-index: 1003; display: none;
+        }
+        #matchmaking-status {
+            background: rgba(0,0,0,0.7); color: #aaa;
+            padding: 6px 12px; border-radius: 6px;
+            font-size: 12px; display: none;
+            margin-bottom: 6px;
+        }
+        #matchmaking-join-btn {
+            background: rgba(25,118,210,0.9); color: #fff;
+            padding: 10px 16px; border-radius: 8px;
+            font-size: 14px; cursor: pointer;
+            display: none; text-align: center;
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        #matchmaking-join-btn:hover { background: rgba(25,118,210,1); }
+
+        /* マルチプレイ設定（デバッグパネル内） */
+        .mp-input {
+            padding: 4px 8px; background: #333; border: 1px solid #555;
+            color: #fff; border-radius: 4px; font-size: 11px;
+            width: 100px;
+        }
+        .mp-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+        .mp-row label { min-width: 70px; color: #ccc; font-size: 11px; }
+
     </style>
 </head>
 <body>
@@ -263,6 +292,28 @@
             </div>
         </div>
 
+        <!-- マルチプレイ -->
+        <div class="debug-section collapsed">
+            <h4>マルチプレイ</h4>
+            <div class="debug-content">
+                <div class="mp-row">
+                    <label>名前:</label>
+                    <input type="text" id="mp-name" class="mp-input" placeholder="プレイヤー名">
+                </div>
+                <div class="mp-row">
+                    <label>あいことば:</label>
+                    <input type="text" id="mp-passphrase" class="mp-input" placeholder="あいことば">
+                </div>
+                <div class="debug-buttons" style="margin-top:5px;">
+                    <button id="mp-register-btn" class="debug-btn">登録</button>
+                </div>
+                <div class="debug-row" style="margin-top:5px;">
+                    <label>接続状態:</label>
+                    <span id="debug-mp-status">未接続</span>
+                </div>
+            </div>
+        </div>
+
         <!-- 操作 -->
         <div class="debug-section collapsed">
             <h4>操作</h4>
@@ -286,6 +337,12 @@
         <div id="touch-btn-inventory" class="touch-btn">&#x1F4E6;</div>
         <div id="touch-btn-sneak" class="touch-btn">&#x1F53D;</div>
         <div id="touch-btn-fly" class="touch-btn">&#x1F54A;</div>
+    </div>
+
+    <!-- マッチングUI -->
+    <div id="matchmaking-container">
+        <div id="matchmaking-status"></div>
+        <div id="matchmaking-join-btn"></div>
     </div>
 
     <div id="loading-indicator">Loading...</div>
@@ -329,6 +386,13 @@
     <script src="../game/CraftingScreen.js"></script>
     <script src="../game/voxel_particle_system.js"></script>
     <script src="../game/TouchController.js"></script>
+
+    <!-- マルチプレイ -->
+    <script src="../game/webrtc-gas.js"></script>
+    <script src="../game/MultiplayerManager.js"></script>
+    <script src="../game/PeerPlayerRenderer.js"></script>
+    <script src="../game/MultiplayerSync.js"></script>
+    <script src="../game/MatchmakingUI.js"></script>
 
     <!-- メイン処理 -->
     <script src="3-1_main.js"></script>

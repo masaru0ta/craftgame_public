@@ -3,7 +3,7 @@
  * 構造物（複数ブロック）の3D編集クラス
  * Three.jsシーン管理、カメラ操作、ブロック配置/削除を担当
  */
-class StructureEditor {
+class StructureEditor extends VoxelEditorBase {
   // 定数
   static CANVAS_SIZE = 32;     // 編集キャンバスサイズ（32x32x32）
   static VOXEL_SIZE = 1.0;     // 1ボクセル = 1.0単位
@@ -35,8 +35,7 @@ class StructureEditor {
    * @param {Function} options.onBlockChange - ブロック変更時コールバック (optional)
    */
   constructor(options) {
-    this.container = options.container;
-    this.THREE = options.THREE;
+    super(options);
     this.blocks = options.blocks || [];
     this.onBlockChange = options.onBlockChange || null;
 
@@ -261,6 +260,14 @@ class StructureEditor {
   }
 
   /**
+   * ズーム設定（VoxelEditorBase オーバーライド）
+   */
+  get _zoomConfig() {
+    const cam = StructureEditor.CAMERA_DEFAULTS;
+    return { zoomSpeed: cam.zoomSpeed, zoomMin: cam.zoomMin, zoomMax: cam.zoomMax };
+  }
+
+  /**
    * シーン・カメラ・レンダラーを初期化
    */
   init() {
@@ -397,28 +404,7 @@ class StructureEditor {
     };
   }
 
-  /**
-   * 背景色を切り替え
-   * @returns {string}
-   */
-  toggleBackgroundColor() {
-    this.bgColorIndex = (this.bgColorIndex + 1) % this.bgColors.length;
-    const color = this.bgColors[this.bgColorIndex];
-    this.renderer.setClearColor(new this.THREE.Color(color));
-    return color;
-  }
 
-  /**
-   * リサイズ処理
-   */
-  resize() {
-    if (!this.container || !this.camera || !this.renderer) return;
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height);
-  }
 
   /**
    * マテリアルを破棄
@@ -432,26 +418,12 @@ class StructureEditor {
     }
   }
 
+
   /**
-   * リソース解放
+   * 子クラス固有のリソース解放
+   * @protected
    */
-  dispose() {
-    this._stopContinuousPlacement();
-
-    if (this.animationId) {
-      cancelAnimationFrame(this.animationId);
-    }
-
-    this._detachEvents();
-
-    if (this.renderer) {
-      this.renderer.dispose();
-      if (this.renderer.domElement && this.renderer.domElement.parentNode) {
-        this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
-      }
-    }
-
-    // メッシュ解放
+  _disposeSubclass() {
     if (this.voxelGroup) {
       this.voxelGroup.traverse(obj => {
         if (obj.geometry) obj.geometry.dispose();
@@ -464,24 +436,7 @@ class StructureEditor {
   // プライベートメソッド
   // ========================================
 
-  /**
-   * シーンをセットアップ
-   * @private
-   */
-  _setupScene() {
-    this.scene = new this.THREE.Scene();
-  }
 
-  /**
-   * カメラをセットアップ
-   * @private
-   */
-  _setupCamera() {
-    const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
-    this.camera = new this.THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-    this._updateCameraPosition();
-  }
 
   /**
    * カメラドラッグのデルタを適用
@@ -511,30 +466,7 @@ class StructureEditor {
     this.camera.lookAt(0, 0, 0);
   }
 
-  /**
-   * レンダラーをセットアップ
-   * @private
-   */
-  _setupRenderer() {
-    this.renderer = new this.THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-    this.renderer.setClearColor(new this.THREE.Color(this.bgColors[this.bgColorIndex]));
-    this.renderer.domElement.style.touchAction = 'none';
-    this.container.appendChild(this.renderer.domElement);
-  }
 
-  /**
-   * ライトをセットアップ
-   * @private
-   */
-  _setupLights() {
-    const ambientLight = new this.THREE.AmbientLight(0xffffff, 0.6);
-    this.scene.add(ambientLight);
-
-    const directionalLight = new this.THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 10, 7.5);
-    this.scene.add(directionalLight);
-  }
 
   /**
    * グリッドをセットアップ（床面）
@@ -599,33 +531,6 @@ class StructureEditor {
     });
   }
 
-  /**
-   * テキストスプライトを作成
-   * @private
-   */
-  _createTextSprite(text) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 32;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0)';
-    ctx.fillRect(0, 0, 128, 32);
-
-    ctx.font = '20px Arial';
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, 64, 16);
-
-    const texture = new this.THREE.CanvasTexture(canvas);
-    const material = new this.THREE.SpriteMaterial({
-      map: texture,
-      transparent: true
-    });
-
-    return new this.THREE.Sprite(material);
-  }
 
   /**
    * ハイライト用オブジェクトをセットアップ
@@ -688,27 +593,7 @@ class StructureEditor {
     this.gridHighlight.geometry = new this.THREE.PlaneGeometry(size, size);
   }
 
-  /**
-   * レイキャスターをセットアップ
-   * @private
-   */
-  _setupRaycaster() {
-    this.raycaster = new this.THREE.Raycaster();
-    this.mouse = new this.THREE.Vector2();
-    this._floorPlane = new this.THREE.Plane(new this.THREE.Vector3(0, 1, 0), 0.5);
-    this._intersectionPoint = new this.THREE.Vector3();
-  }
 
-  /**
-   * マウスイベントからレイキャスターを更新
-   * @private
-   */
-  _updateRaycasterFromEvent(event) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.mouse, this.camera);
-  }
 
   /**
    * ボクセルグループ内のオブジェクトとレイキャスト（再帰的）
@@ -1038,23 +923,6 @@ class StructureEditor {
     }
   }
 
-  /**
-   * マウスダウンハンドラ
-   * @private
-   */
-  _handleMouseDown(event) {
-    if (event.button === 0) {
-      // 左クリックでカメラドラッグ開始
-      this.isDragging = true;
-      this.lastMouseX = event.clientX;
-      this.lastMouseY = event.clientY;
-      this.dragStartX = event.clientX;
-      this.dragStartY = event.clientY;
-    } else if (event.button === 2) {
-      // 右クリックでブロック配置＋連続設置開始
-      this._startContinuousPlacement(event);
-    }
-  }
 
   /**
    * マウス移動ハンドラ
@@ -1070,40 +938,7 @@ class StructureEditor {
     }
   }
 
-  /**
-   * マウスアップハンドラ
-   * @private
-   */
-  _handleMouseUp(event) {
-    if (this.isDragging && event.button === 0) {
-      const dx = event.clientX - this.dragStartX;
-      const dy = event.clientY - this.dragStartY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
 
-      if (distance < this.dragThreshold) {
-        this._removeVoxel(event);
-      }
-    }
-    this.isDragging = false;
-
-    if (event.button === 2) {
-      this._stopContinuousPlacement();
-    }
-  }
-
-  /**
-   * ホイールハンドラ（ズーム）
-   * @private
-   */
-  _handleWheel(event) {
-    event.preventDefault();
-
-    const cam = StructureEditor.CAMERA_DEFAULTS;
-    this.cameraDistance += event.deltaY * cam.zoomSpeed;
-    this.cameraDistance = Math.max(cam.zoomMin, Math.min(cam.zoomMax, this.cameraDistance));
-
-    this._updateCameraPosition();
-  }
 
   /**
    * コンテキストメニュー無効化
@@ -1157,15 +992,6 @@ class StructureEditor {
     this.isDragging = false;
   }
 
-  /**
-   * タッチ間の距離を計算
-   * @private
-   */
-  _getTouchDistance(touches) {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
 
   // ========================================
   // ハイライト・配置・削除
