@@ -360,12 +360,15 @@
         }
 
         // 状態に応じて処理
+        let handledSignal = false;
         if (response.type === 'offer') {
           // オファー受信
           await this._handleOffer(response);
+          handledSignal = true;
         } else if (response.type === 'answer') {
           // アンサー受信
           await this._handleAnswer(response);
+          handledSignal = true;
         } else if (response.type === 'ice') {
           // ICE受信
           await this._handleIce(response);
@@ -377,8 +380,8 @@
           }
         }
 
-        // ステータス更新: connected中またはシグナル処理中は上書きしない
-        if (this.status !== 'connected' && !this._isProcessingSignal) {
+        // ステータス更新: ハンドラが自身でステータスを設定済みの場合は上書きしない
+        if (!handledSignal && this.status !== 'connected') {
           this.status = response.next_status;
         }
 
@@ -546,12 +549,19 @@
       this._peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
           this._pendingCandidates.push(event.candidate);
+          console.log('[WebRTC-GAS] ICE candidate:', event.candidate.type, event.candidate.protocol, event.candidate.address);
         }
+      };
+
+      // ICE接続状態変化
+      this._peerConnection.oniceconnectionstatechange = () => {
+        console.log('[WebRTC-GAS] ICE connection state:', this._peerConnection.iceConnectionState);
       };
 
       // 接続状態変化
       this._peerConnection.onconnectionstatechange = () => {
         const state = this._peerConnection.connectionState;
+        console.log('[WebRTC-GAS] Connection state:', state);
         if (state === 'connected') {
           this.isConnected = true;
           this.status = 'connected';
