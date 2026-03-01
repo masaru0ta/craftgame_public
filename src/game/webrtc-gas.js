@@ -392,6 +392,8 @@
     async _handleOffer(response) {
       console.log('[WebRTC-GAS] _handleOffer start:', response.peer_id);
       this._isProcessingSignal = true; // シグナル処理中フラグON
+      // ICE収集中にポーリングがwait_offerを送り続けるのを防ぐ
+      this._stopPolling();
       try {
         this.peerId = response.peer_id;
         this.peerName = response.peer_name || '';
@@ -440,9 +442,15 @@
         console.log('[WebRTC-GAS] Answer response:', answerResponse);
 
         this._pendingCandidates = [];
+        this.status = 'exchange_ice';
         console.log('[WebRTC-GAS] _handleOffer complete');
+
+        // ポーリング再開
+        this._startPolling();
       } catch (error) {
         console.error('[WebRTC-GAS] _handleOffer error:', error);
+        // エラー時もポーリング再開
+        this._startPolling();
         throw error;
       } finally {
         this._isProcessingSignal = false; // シグナル処理中フラグOFF
