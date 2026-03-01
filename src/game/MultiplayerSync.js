@@ -108,25 +108,37 @@ class MultiplayerSync {
      * DataChannelがまだ開いていない場合に対応
      */
     _sendCharacterDataWithRetry() {
-        if (!this._characterData) return;
+        if (!this._characterData) {
+            console.warn('[MultiplayerSync] characterDataがありません');
+            return;
+        }
+
+        // CharacterDataインスタンスをJSON形式にシリアライズ
+        const jsonData = this._characterData.toJSON();
+        console.log('[MultiplayerSync] characterData toJSON完了, keys:', Object.keys(jsonData));
+
         let attempts = 0;
         const maxAttempts = 10;
         const trySend = () => {
-            if (attempts >= maxAttempts || !this._manager.isConnected()) return;
-            attempts++;
-            try {
-                this._manager.send({
-                    type: 'characterData',
-                    data: this._characterData
-                });
-                console.log('[MultiplayerSync] characterData送信成功');
-            } catch (e) {
-                console.log(`[MultiplayerSync] characterData送信リトライ (${attempts}/${maxAttempts})`);
-                setTimeout(trySend, 300);
+            if (attempts >= maxAttempts) {
+                console.warn('[MultiplayerSync] characterData送信: 最大リトライ回数に達しました');
+                return;
             }
+            if (!this._manager.isConnected()) {
+                console.log('[MultiplayerSync] characterData送信: 未接続、リトライ待ち');
+                attempts++;
+                setTimeout(trySend, 500);
+                return;
+            }
+            attempts++;
+            this._manager.send({
+                type: 'characterData',
+                data: jsonData
+            });
+            console.log(`[MultiplayerSync] characterData送信完了 (試行${attempts}/${maxAttempts})`);
         };
         // 初回は少し遅延させてDataChannel準備を待つ
-        setTimeout(trySend, 300);
+        setTimeout(trySend, 500);
     }
 
     // --- メッセージ送信 ---
@@ -362,8 +374,27 @@ class MultiplayerSync {
      * WebRTC経由のJSONからCharacterDataインスタンスに復元
      */
     _handleCharacterData(peerId, data) {
-        const charData = CharacterData.fromJSON(data.data);
-        this._peerPlayerRenderer.setCharacterData(peerId, charData);
+        console.log('[MultiplayerSync] characterData受信, peerId:', peerId, 'keys:', data.data ? Object.keys(data.data) : 'null');
+        try {
+            if (!data.data) {
+                console.warn('[MultiplayerSync] characterDataが空です');
+                return;
+            }
+            const charData = CharacterData.fromJSON(data.data);
+            console.log('[MultiplayerSync] CharacterData復元成功');
+            this._peerPlayerRenderer.setCharacterData(peerId, charData);
+            console.log('[MultiplayerSync] ピアキャラクター設定完了');
+        } catch (e) {
+            console.error('[MultiplayerSync] characterData処理エラー:', e);
+            // フォールバック: デフォルトのCharacterDataを使用
+            try {
+                const fallback = new CharacterData();
+                this._peerPlayerRenderer.setCharacterData(peerId, fallback);
+                console.log('[MultiplayerSync] フォールバックCharacterData設定完了');
+            } catch (e2) {
+                console.error('[MultiplayerSync] フォールバックも失敗:', e2);
+            }
+        }
     }
 
     // --- ブロック操作の即時適用 ---
