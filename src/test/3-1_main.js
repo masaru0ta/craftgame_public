@@ -723,6 +723,12 @@ class GameTestApp {
     }
 
     async _startMatchmaking(name, passphrase) {
+        // 既存のマネージャーを破棄（二重ポーリング防止）
+        if (this.multiplayerManager) {
+            this.multiplayerManager.dispose();
+            this.multiplayerManager = null;
+        }
+
         this._pendingMessages = [];
         this.multiplayerManager = new MultiplayerManager({
             onMessage: (peerId, data) => {
