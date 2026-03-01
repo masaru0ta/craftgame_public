@@ -314,6 +314,9 @@
      * @private
      */
     async _poll() {
+      // シグナル処理中(connect/handleOffer)はスキップ
+      if (this._isProcessingSignal) return;
+
       try {
         // exchange_ice中に未送信のICE候補があればトリクル送信
         if (this.status === 'exchange_ice' && this._pendingCandidates && this._pendingCandidates.length > 0 && this.peerId) {
