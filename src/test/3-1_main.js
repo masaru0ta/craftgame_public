@@ -772,7 +772,7 @@ class GameTestApp {
     async _joinAsGuest(peerId) {
         if (!this.multiplayerManager) return;
 
-        this.matchmakingUI.setStatus('接続中...');
+        this.matchmakingUI.setStatus('接続試行中...');
         this.matchmakingUI.hideJoinButton();
 
         try {
@@ -810,10 +810,10 @@ class GameTestApp {
             this._pendingMessages = [];
         }
 
-        this.matchmakingUI.setStatus(`${peerName} と接続中`);
+        this.matchmakingUI.setStatus(`${peerName} と接続済み`);
         const debugStatus = document.getElementById('debug-mp-status');
         if (debugStatus) {
-            debugStatus.textContent = `${peerName} と接続中`;
+            debugStatus.textContent = `${peerName} と接続済み`;
             debugStatus.style.color = '#4fc3f7';
         }
     }
@@ -841,7 +841,7 @@ class GameTestApp {
         const statusMap = {
             'registering': '登録中...',
             'waiting': '相手を待っています...',
-            'connecting': '接続中...',
+            'connecting': '接続試行中...',
             'connected': '接続済み',
             'disconnected': '未接続'
         };
