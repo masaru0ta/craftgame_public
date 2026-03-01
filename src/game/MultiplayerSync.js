@@ -338,9 +338,11 @@ class MultiplayerSync {
 
     /**
      * キャラクターデータを受信
+     * WebRTC経由のJSONからCharacterDataインスタンスに復元
      */
     _handleCharacterData(peerId, data) {
-        this._peerPlayerRenderer.setCharacterData(peerId, data.data);
+        const charData = CharacterData.fromJSON(data.data);
+        this._peerPlayerRenderer.setCharacterData(peerId, charData);
     }
 
     // --- ブロック操作の即時適用 ---
