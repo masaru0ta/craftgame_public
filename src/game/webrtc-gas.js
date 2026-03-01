@@ -450,6 +450,12 @@
       console.log('[WebRTC-GAS] _handleAnswer start');
       this._isProcessingSignal = true; // シグナル処理中フラグON
       try {
+        // PeerConnectionの状態チェック（have-local-offer以外では無視）
+        if (!this._peerConnection || this._peerConnection.signalingState !== 'have-local-offer') {
+          console.warn('[WebRTC-GAS] _handleAnswer skipped: state is', this._peerConnection?.signalingState || 'no connection');
+          return;
+        }
+
         // アンサーを設定
         console.log('[WebRTC-GAS] Setting remote description (answer)...');
         await this._peerConnection.setRemoteDescription(response.sdp);
