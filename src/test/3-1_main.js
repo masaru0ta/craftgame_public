@@ -207,6 +207,7 @@ class GameTestApp {
         );
         const hotbarContainer = document.getElementById('hotbar-container');
         this.blockInteraction.init([], hotbarContainer);
+        this.blockInteraction._blocks = placeableBlocks;
         this.hotbar = this.blockInteraction.hotbar;
 
         // 17. Inventory初期化（全ブロック99個ずつ）

@@ -35,6 +35,8 @@ class BlockInteraction {
      * @param {HTMLElement} hotbarContainer - ホットバーのコンテナ要素
      */
     init(blocks, hotbarContainer) {
+        this._blocks = blocks;
+
         // ホットバー初期化
         this.hotbar = new Hotbar(hotbarContainer, blocks);
 
@@ -109,7 +111,28 @@ class BlockInteraction {
         const selectedBlock = this.hotbar.getSelectedBlock();
         if (!selectedBlock) return false;
 
-        const placed = this.placeBlock(target.adjacentX, target.adjacentY, target.adjacentZ, selectedBlock.block_str_id);
+        // バケツ選択時 → 水汲み取りチェック
+        if (selectedBlock.block_str_id === 'bucket') {
+            const origin = this.player.getEyePosition();
+            const direction = this.player.getLookDirection();
+            const waterHit = this._raycastWater(origin, direction, BlockInteraction.MAX_REACH);
+            if (waterHit) {
+                return this._scoopWater(waterHit);
+            }
+            // 水が無ければ通常設置にフォールバック
+        }
+
+        // 水入りバケツ選択時 → 水設置
+        if (selectedBlock.block_str_id === 'bucket_of_water') {
+            return this._pourWater(target);
+        }
+
+        // カスタムブロックの場合はorientation計算
+        const orientation = (selectedBlock.shape_type === 'custom')
+            ? this._calculateOrientation(target.face, this.player.getYaw())
+            : 0;
+
+        const placed = this.placeBlock(target.adjacentX, target.adjacentY, target.adjacentZ, selectedBlock.block_str_id, orientation);
         if (placed && this._onBlockPlaced) {
             this._onBlockPlaced(selectedBlock.block_str_id);
         }
@@ -161,11 +184,33 @@ class BlockInteraction {
             const selectedBlock = this.hotbar.getSelectedBlock();
             if (!selectedBlock) return false;
 
+            // バケツ選択時 → 水汲み取りチェック
+            if (selectedBlock.block_str_id === 'bucket') {
+                const origin = this.player.getEyePosition();
+                const direction = this.player.getLookDirection();
+                const waterHit = this._raycastWater(origin, direction, BlockInteraction.MAX_REACH);
+                if (waterHit) {
+                    return this._scoopWater(waterHit);
+                }
+                // 水が無ければ通常設置にフォールバック
+            }
+
+            // 水入りバケツ選択時 → 水設置
+            if (selectedBlock.block_str_id === 'bucket_of_water') {
+                return this._pourWater(this.currentTarget);
+            }
+
+            // カスタムブロックの場合はorientation計算
+            const orientation = (selectedBlock.shape_type === 'custom')
+                ? this._calculateOrientation(this.currentTarget.face, this.player.getYaw())
+                : 0;
+
             const placed = this.placeBlock(
                 this.currentTarget.adjacentX,
                 this.currentTarget.adjacentY,
                 this.currentTarget.adjacentZ,
-                selectedBlock.block_str_id
+                selectedBlock.block_str_id,
+                orientation
             );
             if (placed && this._onBlockPlaced) {
                 this._onBlockPlaced(selectedBlock.block_str_id);
@@ -257,9 +302,10 @@ class BlockInteraction {
      * @param {number} y - ワールドY座標
      * @param {number} z - ワールドZ座標
      * @param {string} blockStrId - 設置するブロックID
+     * @param {number} [orientation=0] - ブロックの向き（0〜23）。カスタムブロック用
      * @returns {boolean} 成功したか
      */
-    placeBlock(x, y, z, blockStrId) {
+    placeBlock(x, y, z, blockStrId, orientation = 0) {
         // 現在のブロックをチェック（airでなければ設置不可）
         const currentBlock = this.physicsWorld.getBlockAt(x, y, z);
         if (currentBlock && currentBlock !== 'air') {
@@ -292,12 +338,12 @@ class BlockInteraction {
             return false;
         }
 
-        // ブロックを設置
-        chunk.chunkData.setBlock(localX, localY, localZ, blockStrId);
+        // ブロックを設置（orientation付き）
+        chunk.chunkData.setBlock(localX, localY, localZ, blockStrId, orientation);
 
-        // 設置コールバック発火（座標付き）
+        // 設置コールバック発火（座標付き、orientation付き）
         if (this._onBlockPlacedAt) {
-            this._onBlockPlacedAt(x, y, z, blockStrId);
+            this._onBlockPlacedAt(x, y, z, blockStrId, orientation);
         }
 
         // ライトマップ更新（クロスチャンク対応）
@@ -386,7 +432,7 @@ class BlockInteraction {
 
     /**
      * ブロック設置時コールバックを設定（座標付き）
-     * @param {Function} callback - (x: number, y: number, z: number, blockStrId: string) => void
+     * @param {Function} callback - (x: number, y: number, z: number, blockStrId: string, orientation: number) => void
      */
     onBlockPlacedAt(callback) {
         this._onBlockPlacedAt = callback;
@@ -398,6 +444,167 @@ class BlockInteraction {
      */
     onWorkbenchInteract(callback) {
         this._onWorkbenchInteract = callback;
+    }
+
+    /**
+     * ブロック定義をblock_str_idで検索
+     * @param {string} blockStrId
+     * @returns {Object|null}
+     */
+    _getBlockDef(blockStrId) {
+        if (!this._blocks) return null;
+        return this._blocks.find(b => b.block_str_id === blockStrId) || null;
+    }
+
+    /**
+     * 水ブロック専用レイキャスト
+     * 通常レイキャストと同じステップ走査だが、waterをヒット対象とする
+     * @param {Object} origin - 開始位置 {x, y, z}
+     * @param {Object} direction - 方向ベクトル {x, y, z}
+     * @param {number} maxDistance - 最大到達距離
+     * @returns {Object|null} { hit, blockX, blockY, blockZ }
+     */
+    _raycastWater(origin, direction, maxDistance) {
+        const step = 0.05;
+        const steps = Math.ceil(maxDistance / step);
+        let prevX = NaN, prevY = NaN, prevZ = NaN;
+        for (let i = 0; i <= steps; i++) {
+            const t = i * step;
+            const x = Math.floor(origin.x + direction.x * t);
+            const y = Math.floor(origin.y + direction.y * t);
+            const z = Math.floor(origin.z + direction.z * t);
+            if (x === prevX && y === prevY && z === prevZ) continue;
+            prevX = x; prevY = y; prevZ = z;
+            if (this.physicsWorld.getBlockAt(x, y, z) === 'water') {
+                return { hit: true, blockX: x, blockY: y, blockZ: z };
+            }
+        }
+        return null;
+    }
+
+    /**
+     * バケツで水を汲み取る
+     * @param {Object} waterHit - 水ブロックのレイキャスト結果
+     * @returns {boolean} 成功したか
+     */
+    _scoopWater(waterHit) {
+        if (!waterHit || !waterHit.hit) return false;
+
+        const { blockX: x, blockY: y, blockZ: z } = waterHit;
+
+        // 水ブロックを除去
+        const chunkX = Math.floor(x / 16);
+        const chunkZ = Math.floor(z / 16);
+        const localX = ((x % 16) + 16) % 16;
+        const localZ = ((z % 16) + 16) % 16;
+        const chunkKey = `${chunkX},${chunkZ}`;
+        const chunk = this.chunkManager.chunks.get(chunkKey);
+        if (!chunk || !chunk.chunkData) return false;
+
+        const localY = y - chunk.chunkData.baseY;
+        chunk.chunkData.setBlock(localX, localY, localZ, 'air');
+
+        // ホットバーをbucket_of_waterに変更
+        const slot = this.hotbar.getSelectedSlot();
+        const waterBucketDef = this._getBlockDef('bucket_of_water');
+        if (waterBucketDef) {
+            this.hotbar.setSlotBlock(slot, waterBucketDef);
+        }
+
+        // メッシュ再構築
+        this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
+
+        // IndexedDBに保存
+        this._saveChunk(chunkX, chunkZ, chunk.chunkData);
+
+        return true;
+    }
+
+    /**
+     * 水入りバケツから水を設置する
+     * @param {Object} target - 通常レイキャスト結果（隣接位置に設置）
+     * @returns {boolean} 成功したか
+     */
+    _pourWater(target) {
+        if (!target || !target.hit) return false;
+
+        const x = target.adjacentX;
+        const y = target.adjacentY;
+        const z = target.adjacentZ;
+
+        // 設置制限チェック: 既存ブロック
+        const currentBlock = this.physicsWorld.getBlockAt(x, y, z);
+        if (currentBlock && currentBlock !== 'air') return false;
+
+        // 設置制限チェック: プレイヤー重複
+        if (this._intersectsPlayer(x, y, z)) return false;
+
+        // 設置制限チェック: Y座標範囲
+        if (y < 0 || y >= 128) return false;
+
+        // 水ブロックを設置
+        const chunkX = Math.floor(x / 16);
+        const chunkZ = Math.floor(z / 16);
+        const localX = ((x % 16) + 16) % 16;
+        const localZ = ((z % 16) + 16) % 16;
+        const chunkKey = `${chunkX},${chunkZ}`;
+        const chunk = this.chunkManager.chunks.get(chunkKey);
+        if (!chunk || !chunk.chunkData) return false;
+
+        const localY = y - chunk.chunkData.baseY;
+        if (localY < 0 || localY >= 128) return false;
+
+        chunk.chunkData.setBlock(localX, localY, localZ, 'water');
+
+        // ホットバーをbucketに変更
+        const slot = this.hotbar.getSelectedSlot();
+        const bucketDef = this._getBlockDef('bucket');
+        if (bucketDef) {
+            this.hotbar.setSlotBlock(slot, bucketDef);
+        }
+
+        // 設置コールバック発火（マルチプレイ同期用）
+        if (this._onBlockPlacedAt) {
+            this._onBlockPlacedAt(x, y, z, 'water', 0);
+        }
+
+        // メッシュ再構築
+        this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
+
+        // IndexedDBに保存
+        this._saveChunk(chunkX, chunkZ, chunk.chunkData);
+
+        return true;
+    }
+
+    /**
+     * カスタムブロックの設置方向（orientation）を計算
+     * クリック面とプレイヤーの視線方向から、orientation(0〜23)を決定する
+     * @param {string} faceStr - クリック面 ('top'|'bottom'|'north'|'south'|'east'|'west')
+     * @param {number} playerYaw - プレイヤーのYaw角（ラジアン、0=北/Z+方向）
+     * @returns {number} orientation (0〜23)
+     */
+    _calculateOrientation(faceStr, playerYaw) {
+        // face文字列 → face数値（0〜5）
+        const faceMap = { top: 0, bottom: 1, north: 2, south: 3, east: 4, west: 5 };
+        const face = faceMap[faceStr] || 0;
+
+        // プレイヤーの視線方向からrotation（0〜3）を決定
+        // Player.getLookDirection(): x = -sin(yaw), z = cos(yaw)
+        const camDirX = -Math.sin(playerYaw);
+        const camDirZ = Math.cos(playerYaw);
+        const angle = Math.atan2(camDirX, camDirZ) * 180 / Math.PI;
+
+        let rotation;
+        if (angle >= -45 && angle < 45) rotation = 0;
+        else if (angle >= 45 && angle < 135) rotation = 1;
+        else if (angle >= -135 && angle < -45) rotation = 3;
+        else rotation = 2;
+
+        // 180度反転: ブロックの正面がプレイヤー側を向くようにする
+        rotation = (rotation + 2) % 4;
+
+        return face * 4 + rotation;
     }
 
     /**

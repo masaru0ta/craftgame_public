@@ -29,6 +29,68 @@ class ChunkMeshBuilder {
     // AOレベル → 乗算係数
     static AO_TABLE = [1.0, 0.75, 0.55, 0.35];
 
+    /**
+     * orientation(0〜23)に対応する3x3回転行列テーブル
+     * orientation = face * 4 + rotation
+     * face: ブロック+Y面の向き（0:+Y, 1:-Y, 2:+Z, 3:-Z, 4:+X, 5:-X）
+     * rotation: Y軸周りの回転（0:0°, 1:90°, 2:180°, 3:270°）
+     * 行列は [m00,m01,m02, m10,m11,m12, m20,m21,m22] のフラット配列
+     */
+    static ORIENTATION_MATRICES = (() => {
+        const matrices = new Array(24);
+        const PI = Math.PI;
+        const HP = PI / 2;
+
+        // 3x3回転行列を軸-角度から生成
+        const fromAxisAngle = (ax, ay, az, angle) => {
+            const c = Math.cos(angle), s = Math.sin(angle), t = 1 - c;
+            return [
+                t*ax*ax + c,    t*ax*ay - s*az, t*ax*az + s*ay,
+                t*ax*ay + s*az, t*ay*ay + c,    t*ay*az - s*ax,
+                t*ax*az - s*ay, t*ay*az + s*ax, t*az*az + c
+            ];
+        };
+
+        // 3x3行列の積
+        const mul = (a, b) => [
+            a[0]*b[0]+a[1]*b[3]+a[2]*b[6], a[0]*b[1]+a[1]*b[4]+a[2]*b[7], a[0]*b[2]+a[1]*b[5]+a[2]*b[8],
+            a[3]*b[0]+a[4]*b[3]+a[5]*b[6], a[3]*b[1]+a[4]*b[4]+a[5]*b[7], a[3]*b[2]+a[4]*b[5]+a[5]*b[8],
+            a[6]*b[0]+a[7]*b[3]+a[8]*b[6], a[6]*b[1]+a[7]*b[4]+a[8]*b[7], a[6]*b[2]+a[7]*b[5]+a[8]*b[8]
+        ];
+
+        const identity = [1,0,0, 0,1,0, 0,0,1];
+
+        // face回転行列（StructureEditor._applyOrientationと同一ロジック）
+        const faceMatrices = [
+            identity,                           // face 0: +Y（デフォルト）
+            fromAxisAngle(1, 0, 0, PI),         // face 1: -Y（X軸π回転）
+            fromAxisAngle(1, 0, 0, HP),         // face 2: +Z（X軸+π/2回転）
+            fromAxisAngle(1, 0, 0, -HP),        // face 3: -Z（X軸-π/2回転）
+            fromAxisAngle(0, 0, 1, -HP),        // face 4: +X（Z軸-π/2回転）
+            fromAxisAngle(0, 0, 1, HP)          // face 5: -X（Z軸+π/2回転）
+        ];
+
+        for (let face = 0; face < 6; face++) {
+            for (let rot = 0; rot < 4; rot++) {
+                const rotM = (rot === 0) ? identity : fromAxisAngle(0, 1, 0, rot * HP);
+                // StructureEditorと同じ合成順: faceQ * rotQ
+                matrices[face * 4 + rot] = mul(faceMatrices[face], rotM);
+            }
+        }
+
+        // 浮動小数点誤差を除去（-1, 0, 1 にスナップ）
+        for (let i = 0; i < 24; i++) {
+            for (let j = 0; j < 9; j++) {
+                const v = matrices[i][j];
+                if (Math.abs(v) < 1e-10) matrices[i][j] = 0;
+                else if (Math.abs(v - 1) < 1e-10) matrices[i][j] = 1;
+                else if (Math.abs(v + 1) < 1e-10) matrices[i][j] = -1;
+            }
+        }
+
+        return matrices;
+    })();
+
     // LoD0シェーダーと同じライティングパラメータ（方向性ライティング）
     static LIGHT_AMBIENT = 0.4;
     static LIGHT_DIRECTIONAL = 1.0;
@@ -275,9 +337,10 @@ class ChunkMeshBuilder {
 
             const blockDef = this.textureLoader.getBlockDef(blockStrId);
 
-            // カスタムブロック: ボクセルメッシュ用に収集
+            // カスタムブロック: ボクセルメッシュ用に収集（orientation付き）
             if (blockDef && blockDef.shape_type === 'custom') {
-                customBlocks.push({ blockDef, x, y, z });
+                const orientation = chunkData.getOrientation(x, y, z);
+                customBlocks.push({ blockDef, x, y, z, orientation });
                 return;
             }
 
@@ -329,12 +392,12 @@ class ChunkMeshBuilder {
             }
         }
 
-        // カスタムブロックのボクセルメッシュ生成（アトラス統合）
-        for (const { blockDef, x, y, z } of customBlocks) {
+        // カスタムブロックのボクセルメッシュ生成（アトラス統合、orientation回転対応）
+        for (const { blockDef, x, y, z, orientation } of customBlocks) {
             vertexOffset = this._buildCustomBlockVoxels(
                 blockDef, x, y, z, chunkData,
                 positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices,
-                vertexOffset, neighborChunks
+                vertexOffset, neighborChunks, orientation
             );
         }
 
@@ -1112,7 +1175,7 @@ class ChunkMeshBuilder {
         return matAtlasUVs;
     }
 
-    _buildCustomBlockVoxels(blockDef, bx, by, bz, chunkData, positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset, neighborChunks) {
+    _buildCustomBlockVoxels(blockDef, bx, by, bz, chunkData, positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset, neighborChunks, orientation = 0) {
         const voxelDataBase64 = blockDef.voxel_look;
         if (!voxelDataBase64) return vertexOffset;
 
@@ -1137,6 +1200,9 @@ class ChunkMeshBuilder {
         ];
         const blockBase = [bx, by, bz];
 
+        // orientation回転適用のため、メッシュ生成前の頂点数を記録
+        const startVertexCount = positions.length / 3;
+
         for (const config of faceConfigs) {
             const lf = faceLightFactors[config.faceName];
             for (let d = 0; d < gs; d++) {
@@ -1148,7 +1214,52 @@ class ChunkMeshBuilder {
             }
         }
 
+        // orientation回転適用（0以外の場合のみ）
+        if (orientation !== 0) {
+            const endVertexCount = positions.length / 3;
+            this._applyOrientationToVertices(
+                positions, normals, startVertexCount, endVertexCount,
+                bx + 0.5, by + 0.5, bz + 0.5, orientation
+            );
+        }
+
         return vertexOffset;
+    }
+
+    /**
+     * 生成済み頂点座標と法線にorientation回転を適用
+     * @param {Array} positions - 頂点座標配列（フラット、xyz×N）
+     * @param {Array} normals - 法線配列（フラット、xyz×N）
+     * @param {number} startIdx - 開始頂点インデックス
+     * @param {number} endIdx - 終了頂点インデックス（排他的）
+     * @param {number} cx - 回転中心X（ブロック中心）
+     * @param {number} cy - 回転中心Y（ブロック中心）
+     * @param {number} cz - 回転中心Z（ブロック中心）
+     * @param {number} orientation - 向き値（0〜23）
+     */
+    _applyOrientationToVertices(positions, normals, startIdx, endIdx, cx, cy, cz, orientation) {
+        const m = ChunkMeshBuilder.ORIENTATION_MATRICES[orientation];
+        if (!m) return;
+
+        for (let i = startIdx; i < endIdx; i++) {
+            const pi = i * 3;
+
+            // 頂点座標: ブロック中心を原点として回転
+            const dx = positions[pi]     - cx;
+            const dy = positions[pi + 1] - cy;
+            const dz = positions[pi + 2] - cz;
+            positions[pi]     = cx + m[0] * dx + m[1] * dy + m[2] * dz;
+            positions[pi + 1] = cy + m[3] * dx + m[4] * dy + m[5] * dz;
+            positions[pi + 2] = cz + m[6] * dx + m[7] * dy + m[8] * dz;
+
+            // 法線: 回転のみ（平行移動なし）
+            const nx = normals[pi];
+            const ny = normals[pi + 1];
+            const nz = normals[pi + 2];
+            normals[pi]     = m[0] * nx + m[1] * ny + m[2] * nz;
+            normals[pi + 1] = m[3] * nx + m[4] * ny + m[5] * nz;
+            normals[pi + 2] = m[6] * nx + m[7] * ny + m[8] * nz;
+        }
     }
 
     /**

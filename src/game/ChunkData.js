@@ -36,6 +36,10 @@ class ChunkData {
         // ハイトマップ（各(x,z)列の最高不透明ブロックY座標、-1=全て空気）
         this._heightMap = new Int8Array(ChunkData.SIZE_X * ChunkData.SIZE_Z);
         this._heightMap.fill(-1);
+
+        // orientation格納（スパース管理: カスタムブロックのみ使用）
+        // key: ボクセルインデックス, value: orientation(0-23)
+        this._orientationMap = new Map();
     }
 
     /**
@@ -171,8 +175,9 @@ class ChunkData {
      * @param {number} y - Y座標 (0-127)
      * @param {number} z - ローカルZ座標 (0-15)
      * @param {string} blockStrId - ブロックID
+     * @param {number} [orientation=0] - ブロックの向き（0〜23）。カスタムブロック用
      */
-    setBlock(x, y, z, blockStrId) {
+    setBlock(x, y, z, blockStrId, orientation = 0) {
         if (!this._isInBounds(x, y, z)) {
             return;
         }
@@ -193,6 +198,26 @@ class ChunkData {
 
         const index = this._getIndex(x, y, z);
         this._writeBits(index, paletteIdx);
+
+        // orientation管理（スパース: 0以外のみ格納、air時は削除）
+        if (blockStrId === 'air' || orientation === 0) {
+            this._orientationMap.delete(index);
+        } else {
+            this._orientationMap.set(index, orientation);
+        }
+    }
+
+    /**
+     * ブロックの向きを取得
+     * @param {number} x - ローカルX座標 (0-15)
+     * @param {number} y - Y座標 (0-127)
+     * @param {number} z - ローカルZ座標 (0-15)
+     * @returns {number} orientation（0〜23、未設定は0）
+     */
+    getOrientation(x, y, z) {
+        if (!this._isInBounds(x, y, z)) return 0;
+        const index = this._getIndex(x, y, z);
+        return this._orientationMap.get(index) || 0;
     }
 
     /**
@@ -341,12 +366,19 @@ class ChunkData {
      * シリアライズ用にデータを取得（ChunkStorage用）
      */
     getSerializedData() {
-        return {
+        const result = {
             palette: this._palette.slice(),
             bitsPerBlock: this._bitsPerBlock,
             data: new Uint8Array(this._data),
             baseY: this.baseY
         };
+
+        // orientationMapが空でなければシリアライズ
+        if (this._orientationMap.size > 0) {
+            result.orientationData = Array.from(this._orientationMap.entries());
+        }
+
+        return result;
     }
 
     /**
@@ -364,6 +396,11 @@ class ChunkData {
         serialized.palette.forEach((block, index) => {
             chunk._paletteIndex.set(block, index);
         });
+
+        // orientationData復元（後方互換: フィールドがなければ空Map）
+        if (serialized.orientationData) {
+            chunk._orientationMap = new Map(serialized.orientationData);
+        }
 
         return chunk;
     }

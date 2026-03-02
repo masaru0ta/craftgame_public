@@ -215,11 +215,12 @@ class MultiplayerSync {
      * @param {number} z - ワールドZ座標
      * @param {string} blockId - 設置されたブロックID
      */
-    _sendBlockPlace(x, y, z, blockId) {
+    _sendBlockPlace(x, y, z, blockId, orientation = 0) {
         const msg = {
             type: 'blockPlace',
             x: x, y: y, z: z,
             blockId: blockId,
+            orientation: orientation,
             senderId: this._manager.getLocalId()
         };
 
@@ -265,7 +266,8 @@ class MultiplayerSync {
      * ブロック設置を受信
      */
     _handleBlockPlace(peerId, data) {
-        const { x, y, z, blockId, senderId } = data;
+        const { x, y, z, blockId, orientation, senderId } = data;
+        const ori = orientation || 0; // 後方互換: orientationがない旧メッセージは0
 
         // チャンクがロード済みか確認
         const chunkX = Math.floor(x / 16);
@@ -275,10 +277,10 @@ class MultiplayerSync {
 
         if (chunk && chunk.chunkData) {
             // チャンクロード済み → 即時適用
-            this._applyBlockPlace(x, y, z, blockId, chunk, chunkX, chunkZ);
+            this._applyBlockPlace(x, y, z, blockId, chunk, chunkX, chunkZ, ori);
         } else {
             // 未ロード → pending に保留
-            this._addPendingChange(chunkKey, { x, y, z, blockId, isDestroy: false });
+            this._addPendingChange(chunkKey, { x, y, z, blockId, orientation: ori, isDestroy: false });
         }
 
         // ホストの場合: 他のゲストにブロードキャスト
@@ -430,13 +432,13 @@ class MultiplayerSync {
     /**
      * ブロック設置を適用
      */
-    _applyBlockPlace(x, y, z, blockId, chunk, chunkX, chunkZ) {
+    _applyBlockPlace(x, y, z, blockId, chunk, chunkX, chunkZ, orientation = 0) {
         const localX = ((x % 16) + 16) % 16;
         const localZ = ((z % 16) + 16) % 16;
         const localY = y - chunk.chunkData.baseY;
         if (localY < 0 || localY >= 128) return;
 
-        chunk.chunkData.setBlock(localX, localY, localZ, blockId);
+        chunk.chunkData.setBlock(localX, localY, localZ, blockId, orientation);
 
         // ライトマップ更新
         let affectedNeighbors = new Set();
@@ -482,7 +484,7 @@ class MultiplayerSync {
             if (change.isDestroy) {
                 this._applyBlockDestroy(change.x, change.y, change.z, chunk, chunkX, chunkZ);
             } else {
-                this._applyBlockPlace(change.x, change.y, change.z, change.blockId, chunk, chunkX, chunkZ);
+                this._applyBlockPlace(change.x, change.y, change.z, change.blockId, chunk, chunkX, chunkZ, change.orientation || 0);
             }
         }
 
@@ -508,16 +510,16 @@ class MultiplayerSync {
             }
         });
 
-        // 設置コールバック（座標付き）
+        // 設置コールバック（座標付き、orientation付き）
         this._originalOnBlockPlacedAt = this._blockInteraction._onBlockPlacedAt;
-        this._blockInteraction.onBlockPlacedAt((x, y, z, blockId) => {
+        this._blockInteraction.onBlockPlacedAt((x, y, z, blockId, orientation) => {
             // 元のコールバックを呼ぶ
             if (this._originalOnBlockPlacedAt) {
-                this._originalOnBlockPlacedAt(x, y, z, blockId);
+                this._originalOnBlockPlacedAt(x, y, z, blockId, orientation);
             }
             // マルチプレイ送信
             if (this._manager.isConnected()) {
-                this._sendBlockPlace(x, y, z, blockId);
+                this._sendBlockPlace(x, y, z, blockId, orientation || 0);
             }
         });
     }
