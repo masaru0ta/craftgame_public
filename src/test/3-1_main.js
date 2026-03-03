@@ -47,6 +47,9 @@ class GameTestApp {
         this.multiplayerSync = null;
         this.matchmakingUI = null;
 
+        // ランダムティック
+        this.randomTickEngine = null;
+
         // エフェクト
         this.particleSystem = null;
 
@@ -349,6 +352,28 @@ class GameTestApp {
 
         // 29. マッチングUI初期化
         this._initMatchmaking();
+
+        // 30. ランダムティックエンジン初期化
+        this.randomTickEngine = new RandomTickEngine();
+        this.randomTickEngine.register('grass', grassTickHandler);
+        this.randomTickEngine.register('leaf_block', leavesTickHandler);
+        this.randomTickEngine.onBlockDecayed((wx, wy, wz, blockStrId) => {
+            if (this.particleSystem) {
+                const color = this._blockColorMap[blockStrId] || 0x808080;
+                this.particleSystem.emit(wx + 0.5, wy + 0.5, -(wz + 0.5), color);
+            }
+        });
+
+        // ティック速度デバッグUI連携
+        const tickSpeedInput = document.getElementById('debug-tick-speed');
+        if (tickSpeedInput) {
+            tickSpeedInput.addEventListener('change', () => {
+                const v = parseInt(tickSpeedInput.value, 10);
+                this.randomTickEngine.speed = isNaN(v) ? 3 : v;
+                document.getElementById('debug-tick-status').textContent =
+                    this.randomTickEngine.speed === 0 ? '停止中' : '動作中';
+            });
+        }
 
         // 初期化完了
         this.isReady = true;
@@ -1007,6 +1032,11 @@ class GameTestApp {
         // パーティクル更新
         if (this.particleSystem) {
             this.particleSystem.update(this.deltaTime);
+        }
+
+        // ランダムティック
+        if (this.randomTickEngine) {
+            this.randomTickEngine.tick(this.chunkManager);
         }
 
         // 描画

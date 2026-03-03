@@ -314,6 +314,18 @@
             </div>
         </div>
 
+        <!-- ランダムティック -->
+        <div class="debug-section collapsed">
+            <h4>ランダムティック</h4>
+            <div class="debug-content">
+                <div class="control-row">
+                    <label>ティック速度:</label>
+                    <input type="number" id="debug-tick-speed" class="debug-input" value="3" min="0" max="50">
+                </div>
+                <div class="debug-row"><label>状態:</label><span id="debug-tick-status">動作中</span></div>
+            </div>
+        </div>
+
         <!-- 操作 -->
         <div class="debug-section collapsed">
             <h4>操作</h4>
@@ -386,6 +398,12 @@
     <script src="../game/CraftingScreen.js"></script>
     <script src="../game/voxel_particle_system.js"></script>
     <script src="../game/TouchController.js"></script>
+
+    <!-- ランダムティック -->
+    <script src="../game/ticks/tickHelpers.js"></script>
+    <script src="../game/ticks/grassTick.js"></script>
+    <script src="../game/ticks/leavesTick.js"></script>
+    <script src="../game/RandomTickEngine.js"></script>
 
     <!-- マルチプレイ -->
     <script src="../game/webrtc-gas.js"></script>
