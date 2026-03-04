@@ -231,6 +231,33 @@ class Hotbar {
             }
         }
     }
+
+    /**
+     * ハーフ設置モードのインジケータを更新する
+     * @param {number} slotIndex - スロットインデックス
+     * @param {boolean} isHalf - ハーフモードか
+     */
+    setHalfMode(slotIndex, isHalf) {
+        const slot = this.slots[slotIndex];
+        if (!slot) return;
+
+        // data 属性とクラスを更新
+        slot.dataset.halfMode = isHalf ? 'true' : 'false';
+        slot.classList.toggle('half-mode', isHalf);
+
+        // "½" インジケータ要素を追加または削除
+        let indicator = slot.querySelector('.half-mode-indicator');
+        if (isHalf) {
+            if (!indicator) {
+                indicator = document.createElement('span');
+                indicator.className = 'half-mode-indicator';
+                indicator.textContent = '½';
+                slot.appendChild(indicator);
+            }
+        } else {
+            if (indicator) indicator.remove();
+        }
+    }
 }
 
 // グローバルに公開

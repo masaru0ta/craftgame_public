@@ -5,6 +5,12 @@
 class BlockInteraction {
     static MAX_REACH = 10;  // 最大到達距離（ブロック）
 
+    /** 横4方向 + 真上の隣接オフセット（水フロー・decay スケジュール用） */
+    static _ADJACENT_5 = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]];
+
+    /** カスタムブロック orientation 計算用 face 文字列 → 数値マップ */
+    static _FACE_TO_INT = { top: 0, bottom: 1, north: 2, south: 3, east: 4, west: 5 };
+
     /**
      * コンストラクタ
      * @param {Player} player - プレイヤー
@@ -27,6 +33,10 @@ class BlockInteraction {
         this._onBlockPlaced = null;
         this._onBlockPlacedAt = null;
         this._onWorkbenchInteract = null;
+
+        // ハーフブロック設置モード（スロットごとに管理）
+        this._halfPlacementModes = new Map(); // Map<slotIndex, boolean>
+        this._longPressTimer = null;          // 長押し検出タイマー
     }
 
     /**
@@ -127,10 +137,19 @@ class BlockInteraction {
             return this._pourWater(target);
         }
 
-        // カスタムブロックの場合はorientation計算
-        const orientation = (selectedBlock.shape_type === 'custom')
-            ? this._calculateOrientation(target.face, this.player.getYaw())
-            : 0;
+        // orientation 計算
+        let orientation = 0;
+        if (selectedBlock.shape_type === 'custom') {
+            orientation = this._calculateOrientation(target.face, this.player.getYaw());
+        } else if (selectedBlock.half_placeable) {
+            const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
+            const isHalfMode = this._halfPlacementModes.get(slotIndex) || false;
+            if (isHalfMode) {
+                orientation = this._calculateHalfOrientation(
+                    target.face, target.hitY, target.adjacentY
+                );
+            }
+        }
 
         const placed = this.placeBlock(target.adjacentX, target.adjacentY, target.adjacentZ, selectedBlock.block_str_id, orientation);
         if (placed && this._onBlockPlaced) {
@@ -149,24 +168,63 @@ class BlockInteraction {
 
     /**
      * マウスダウンイベント処理
+     * 右クリック長押し（300ms）で half_placeable ブロックの設置モードを切り替える
      * @param {MouseEvent} event
      * @returns {boolean} 処理が実行されたか
      */
     handleMouseDown(event) {
         event.preventDefault();
 
-        if (!this.currentTarget) {
+        if (event.button === 2) {
+            const selectedBlock = this.hotbar ? this.hotbar.getSelectedBlock() : null;
+
+            if (selectedBlock && selectedBlock.half_placeable) {
+                // half_placeable=true: 長押しタイマー開始（設置は mouseup 時に行う）
+                const slotIndex = this.hotbar.selectedSlot;
+                clearTimeout(this._longPressTimer);
+                this._longPressTimer = setTimeout(() => {
+                    this._longPressTimer = null;
+                    // 300ms 経過 → モード切り替え（設置しない）
+                    const current = this._halfPlacementModes.get(slotIndex) || false;
+                    const next = !current;
+                    this._halfPlacementModes.set(slotIndex, next);
+                    this.hotbar.setHalfMode(slotIndex, next);
+                }, 300);
+                return true;
+            }
+
+            // half_placeable=false: 従来通り即時設置
+            if (this.currentTarget) {
+                return this.placeBlockAt(this.currentTarget);
+            }
             return false;
         }
+
+        if (!this.currentTarget) return false;
 
         if (event.button === 0) {
             // 左クリック - 破壊
             return this.destroyBlockAt(this.currentTarget);
-        } else if (event.button === 2) {
-            // 右クリック - 設置
-            return this.placeBlockAt(this.currentTarget);
         }
 
+        return false;
+    }
+
+    /**
+     * マウスアップイベント処理
+     * 長押しタイマーが残っている（＝短押し）場合は通常設置を行う
+     * @param {MouseEvent} event
+     * @returns {boolean} 処理が実行されたか
+     */
+    handleMouseUp(event) {
+        if (event.button === 2 && this._longPressTimer !== null) {
+            clearTimeout(this._longPressTimer);
+            this._longPressTimer = null;
+            // 短押し（< 300ms）→ 現在のモードでブロック設置
+            if (this.currentTarget) {
+                return this.placeBlockAt(this.currentTarget);
+            }
+        }
         return false;
     }
 
@@ -421,7 +479,7 @@ class BlockInteraction {
     _scheduleAdjacentWaterFlow(x, y, z) {
         if (!this.scheduleTickEngine) return;
         const cm = this.chunkManager;
-        for (const [dx, dy, dz] of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]]) {
+        for (const [dx, dy, dz] of BlockInteraction._ADJACENT_5) {
             const nx = x + dx, ny = y + dy, nz = z + dz;
             if (TickHelpers.getBlock(cm, nx, ny, nz) !== 'water') continue;
             const orientation = TickHelpers.getOrientation(cm, nx, ny, nz);
@@ -479,8 +537,7 @@ class BlockInteraction {
         //   流れ水（orientation>0）→ decayトリガー（水源を失い連鎖消滅）
         if (this.scheduleTickEngine) {
             const cm = this.chunkManager;
-            // 横4方向 + 真上
-            for (const [dx, dy, dz] of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]]) {
+            for (const [dx, dy, dz] of BlockInteraction._ADJACENT_5) {
                 const nx = x + dx, ny = y + dy, nz = z + dz;
                 if (TickHelpers.getBlock(cm, nx, ny, nz) !== 'water') continue;
                 const ori = TickHelpers.getOrientation(cm, nx, ny, nz);
@@ -578,9 +635,7 @@ class BlockInteraction {
      * @returns {number} orientation (0〜23)
      */
     _calculateOrientation(faceStr, playerYaw) {
-        // face文字列 → face数値（0〜5）
-        const faceMap = { top: 0, bottom: 1, north: 2, south: 3, east: 4, west: 5 };
-        const face = faceMap[faceStr] || 0;
+        const face = BlockInteraction._FACE_TO_INT[faceStr] || 0;
 
         // プレイヤーの視線方向からrotation（0〜3）を決定
         // Player.getLookDirection(): x = -sin(yaw), z = cos(yaw)
@@ -598,6 +653,20 @@ class BlockInteraction {
         rotation = (rotation + 2) % 4;
 
         return face * 4 + rotation;
+    }
+
+    /**
+     * ハーフブロックの orientation を決定する
+     * @param {string} face - クリック面 ('top'|'bottom'|その他の側面)
+     * @param {number} hitY - レイが交差した Y 座標
+     * @param {number} adjacentY - 設置先ブロックの Y 座標
+     * @returns {number} 1（下ハーフ）または 2（上ハーフ）
+     */
+    _calculateHalfOrientation(face, hitY, adjacentY) {
+        if (face === 'top') return 1;    // 上面クリック → 下ハーフ
+        if (face === 'bottom') return 2; // 下面クリック → 上ハーフ
+        // 側面: hitY の位置で下半・上半を判断
+        return (hitY <= adjacentY + 0.5) ? 1 : 2;
     }
 
     /**

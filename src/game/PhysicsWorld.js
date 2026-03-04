@@ -480,6 +480,27 @@ class PhysicsWorld {
             }];
         }
 
+        // ハーフブロック対応（half_placeable=true かつ orientation > 0）
+        if (blockDef.half_placeable && blockDef.shape_type !== 'custom') {
+            const localX = ((blockX % 16) + 16) % 16;
+            const localZ = ((blockZ % 16) + 16) % 16;
+            const orientation = chunk.chunkData.getOrientation(localX, localY, localZ);
+            if (orientation === 1) {
+                // 下ハーフ: y 〜 y+0.5
+                return [{
+                    minX: blockX, minY: blockY,       minZ: blockZ,
+                    maxX: blockX + 1, maxY: blockY + 0.5, maxZ: blockZ + 1
+                }];
+            }
+            if (orientation === 2) {
+                // 上ハーフ: y+0.5 〜 y+1
+                return [{
+                    minX: blockX, minY: blockY + 0.5, minZ: blockZ,
+                    maxX: blockX + 1, maxY: blockY + 1, maxZ: blockZ + 1
+                }];
+            }
+        }
+
         // 標準ブロックは1x1x1のAABB
         if (blockDef.shape_type === 'standard' || !blockDef.shape_type) {
             return [{
@@ -798,6 +819,7 @@ class PhysicsWorld {
                                 blockZ,
                                 face: customHit.face,
                                 distance: dist,
+                                hitY: y,
                                 adjacentX: adjacent.x,
                                 adjacentY: adjacent.y,
                                 adjacentZ: adjacent.z
@@ -818,6 +840,7 @@ class PhysicsWorld {
                         blockZ,
                         face,
                         distance: dist,
+                        hitY: y,
                         adjacentX: adjacent.x,
                         adjacentY: adjacent.y,
                         adjacentZ: adjacent.z

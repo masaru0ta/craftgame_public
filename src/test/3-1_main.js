@@ -216,10 +216,21 @@ class GameTestApp {
         const placeableBlocks = this.textureLoader.blocks.filter(
             b => b.block_str_id !== 'air'
         );
+
+        // ハーフブロック設置を許可するブロックに half_placeable フラグを付与（テスト用）
+        const stoneBlock = placeableBlocks.find(b => b.block_str_id === 'stone');
+        if (stoneBlock) stoneBlock.half_placeable = true;
+
         const hotbarContainer = document.getElementById('hotbar-container');
         this.blockInteraction.init([], hotbarContainer);
         this.blockInteraction._blocks = placeableBlocks;
         this.hotbar = this.blockInteraction.hotbar;
+
+        // ホットバーに最初の9ブロックを自動設定
+        placeableBlocks.slice(0, Hotbar.SLOT_COUNT).forEach((block, i) => {
+            this.hotbar.setSlotBlock(i, block);
+            this.hotbar.setSlotCount(i, 99);
+        });
 
         // 17. Inventory初期化（全ブロック99個ずつ）
         this.inventory = new Inventory({
@@ -518,6 +529,14 @@ class GameTestApp {
                     (!this.inventory || !this.inventory.isOpen()) &&
                     (!this.craftingScreen || !this.craftingScreen.isOpen())) {
                     this.blockInteraction.handleMouseDown(e);
+                }
+            });
+            document.addEventListener('mouseup', (e) => {
+                if (e.button === 2 &&
+                    this.playerController.isPointerLocked() &&
+                    (!this.inventory || !this.inventory.isOpen()) &&
+                    (!this.craftingScreen || !this.craftingScreen.isOpen())) {
+                    this.blockInteraction.handleMouseUp(e);
                 }
             });
             this.canvas.addEventListener('wheel', (e) => {

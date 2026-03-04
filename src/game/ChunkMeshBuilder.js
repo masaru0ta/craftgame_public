@@ -3,14 +3,14 @@
  * 左手座標系対応、面カリング、グリーディー・メッシング機能を持つ
  */
 class ChunkMeshBuilder {
-    // 面の方向定義（左手座標系）
+    // 面の方向定義（左手座標系）。dx/dy/dz は隣接ブロックへのオフセット
     static FACES = {
-        right:  { axis: 'x', dir:  1, normal: [ 1,  0,  0] }, // 東（X+）
-        left:   { axis: 'x', dir: -1, normal: [-1,  0,  0] }, // 西（X-）
-        top:    { axis: 'y', dir:  1, normal: [ 0,  1,  0] }, // 上（Y+）
-        bottom: { axis: 'y', dir: -1, normal: [ 0, -1,  0] }, // 下（Y-）
-        front:  { axis: 'z', dir: -1, normal: [ 0,  0, -1] }, // 南（Z-）
-        back:   { axis: 'z', dir:  1, normal: [ 0,  0,  1] }  // 北（Z+）
+        right:  { axis: 'x', dir:  1, normal: [ 1,  0,  0], dx:  1, dy:  0, dz:  0 }, // 東（X+）
+        left:   { axis: 'x', dir: -1, normal: [-1,  0,  0], dx: -1, dy:  0, dz:  0 }, // 西（X-）
+        top:    { axis: 'y', dir:  1, normal: [ 0,  1,  0], dx:  0, dy:  1, dz:  0 }, // 上（Y+）
+        bottom: { axis: 'y', dir: -1, normal: [ 0, -1,  0], dx:  0, dy: -1, dz:  0 }, // 下（Y-）
+        front:  { axis: 'z', dir: -1, normal: [ 0,  0, -1], dx:  0, dy:  0, dz: -1 }, // 南（Z-）
+        back:   { axis: 'z', dir:  1, normal: [ 0,  0,  1], dx:  0, dy:  0, dz:  1 }  // 北（Z+）
     };
 
     /**
@@ -352,6 +352,8 @@ class ChunkMeshBuilder {
         const blockFacesMap = new Map(); // "blockStrId:faceName" -> faces[]
         // カスタムブロック情報を収集
         const customBlocks = [];
+        // ハーフブロック情報を収集（グリーディーメッシング除外）
+        const halfBlocks = [];
 
         // 全ブロックを走査（水ブロックは別メッシュで処理）
         chunkData.forEachBlock((x, y, z, blockStrId) => {
@@ -364,6 +366,15 @@ class ChunkMeshBuilder {
                 const orientation = chunkData.getOrientation(x, y, z);
                 customBlocks.push({ blockDef, x, y, z, orientation });
                 return;
+            }
+
+            // ハーフブロック: グリーディーメッシングから除外して個別描画
+            if (blockDef && blockDef.half_placeable) {
+                const orientation = chunkData.getOrientation(x, y, z);
+                if (orientation > 0) {
+                    halfBlocks.push({ blockStrId, x, y, z, orientation });
+                    return;
+                }
             }
 
             // 各面をチェック
@@ -420,6 +431,14 @@ class ChunkMeshBuilder {
                 blockDef, x, y, z, chunkData,
                 positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices,
                 vertexOffset, neighborChunks, orientation
+            );
+        }
+
+        // ハーフブロックの個別描画
+        for (const { blockStrId, x, y, z, orientation } of halfBlocks) {
+            vertexOffset = this._buildHalfBlockAtlas(
+                x, y, z, orientation, blockStrId, chunkData, neighborChunks,
+                positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset
             );
         }
 
@@ -634,13 +653,8 @@ class ChunkMeshBuilder {
      * @private
      */
     _isWaterFaceVisible(chunkData, x, y, z, faceName, neighborChunks) {
-        const faceInfo = ChunkMeshBuilder.FACES[faceName];
-        let nx = x, ny = y, nz = z;
-        switch (faceInfo.axis) {
-            case 'x': nx += faceInfo.dir; break;
-            case 'y': ny += faceInfo.dir; break;
-            case 'z': nz += faceInfo.dir; break;
-        }
+        const { dx, dy, dz } = ChunkMeshBuilder.FACES[faceName];
+        const nx = x + dx, ny = y + dy, nz = z + dz;
         if (ny < 0) return false;
         if (ny >= ChunkData.SIZE_Y) return true;
         const loc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, ny, nz, neighborChunks);
@@ -672,13 +686,8 @@ class ChunkMeshBuilder {
      * 面をカリングすべきか判定
      */
     _shouldCullFace(chunkData, x, y, z, faceName, neighborChunks) {
-        const faceInfo = ChunkMeshBuilder.FACES[faceName];
-        let nx = x, ny = y, nz = z;
-        switch (faceInfo.axis) {
-            case 'x': nx += faceInfo.dir; break;
-            case 'y': ny += faceInfo.dir; break;
-            case 'z': nz += faceInfo.dir; break;
-        }
+        const { dx, dy, dz } = ChunkMeshBuilder.FACES[faceName];
+        const nx = x + dx, ny = y + dy, nz = z + dz;
         if (ny < 0 || ny >= ChunkData.SIZE_Y) return false;
         const loc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, ny, nz, neighborChunks);
         if (!loc) return false;
@@ -686,6 +695,99 @@ class ChunkMeshBuilder {
         // 水ブロック・カスタムブロックは透過扱い（面をカリングしない）
         if (neighbor === 'air' || neighbor === 'water' || neighbor === null) return false;
         if (this._isCustomBlock(neighbor)) return false;
+        // ハーフブロック（orientation > 0）は面を隠しきれないのでカリングしない
+        // orientation を先に確認し、0 の場合は getBlockDef 呼び出しをスキップ
+        const nOrientation = loc.chunk.getOrientation(loc.localX, loc.localY, loc.localZ);
+        if (nOrientation > 0) {
+            const neighborDef = this.textureLoader.getBlockDef(neighbor);
+            if (neighborDef && neighborDef.half_placeable) return false;
+        }
+        return true;
+    }
+
+    /**
+     * ハーフブロック（orientation=1:下ハーフ / orientation=2:上ハーフ）の個別メッシュ生成
+     */
+    _buildHalfBlockAtlas(bx, by, bz, orientation, blockStrId, chunkData, neighborChunks, positions, normals, uvs, atlasInfos, lightLevels, aoLevelsArr, indices, vertexOffset) {
+        const yMin = orientation === 2 ? by + 0.5 : by;
+        const yMax = orientation === 2 ? by + 1   : by + 0.5;
+
+        // 6面の定義（外向き法線・頂点順: 時計回り）
+        const halfFacesDef = [
+            { name: 'top',    normal: [ 0, 1, 0], corners: [
+                { x: bx,   y: yMax, z: bz + 1 }, { x: bx+1, y: yMax, z: bz+1 },
+                { x: bx+1, y: yMax, z: bz   }, { x: bx,   y: yMax, z: bz   }
+            ]},
+            { name: 'bottom', normal: [ 0,-1, 0], corners: [
+                { x: bx,   y: yMin, z: bz   }, { x: bx+1, y: yMin, z: bz   },
+                { x: bx+1, y: yMin, z: bz+1 }, { x: bx,   y: yMin, z: bz+1 }
+            ]},
+            { name: 'front',  normal: [ 0, 0,-1], corners: [
+                { x: bx+1, y: yMin, z: bz   }, { x: bx,   y: yMin, z: bz   },
+                { x: bx,   y: yMax, z: bz   }, { x: bx+1, y: yMax, z: bz   }
+            ]},
+            { name: 'back',   normal: [ 0, 0, 1], corners: [
+                { x: bx,   y: yMin, z: bz+1 }, { x: bx+1, y: yMin, z: bz+1 },
+                { x: bx+1, y: yMax, z: bz+1 }, { x: bx,   y: yMax, z: bz+1 }
+            ]},
+            { name: 'right',  normal: [ 1, 0, 0], corners: [
+                { x: bx+1, y: yMin, z: bz+1 }, { x: bx+1, y: yMin, z: bz   },
+                { x: bx+1, y: yMax, z: bz   }, { x: bx+1, y: yMax, z: bz+1 }
+            ]},
+            { name: 'left',   normal: [-1, 0, 0], corners: [
+                { x: bx,   y: yMin, z: bz   }, { x: bx,   y: yMin, z: bz+1 },
+                { x: bx,   y: yMax, z: bz+1 }, { x: bx,   y: yMax, z: bz   }
+            ]},
+        ];
+
+        for (const face of halfFacesDef) {
+            if (this._shouldCullHalfFace(chunkData, bx, by, bz, face.name, neighborChunks)) continue;
+
+            const atlasUV = this.textureLoader.getAtlasUV(blockStrId, face.name);
+            const light = this._getFaceLightLevel(chunkData, bx, by, bz, face.name, neighborChunks);
+            const lf = ChunkMeshBuilder._lightFactor(light);
+
+            for (const corner of face.corners) {
+                positions.push(corner.x, corner.y, corner.z);
+                normals.push(...face.normal);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                if (lightLevels) lightLevels.push(lf);
+                if (aoLevelsArr) aoLevelsArr.push(1.0); // AOなし（初期実装）
+            }
+
+            // 側面は圧縮せず、orientation に応じてテクスチャの対応部分を切り出す
+            const isSide = face.name !== 'top' && face.name !== 'bottom';
+            if (isSide) {
+                // 下ハーフ: V=0.0〜0.5（テクスチャ下半分）/ 上ハーフ: V=0.5〜1.0（テクスチャ上半分）
+                const vLo = orientation === 1 ? 0.0 : 0.5;
+                const vHi = orientation === 1 ? 0.5 : 1.0;
+                uvs.push(1, vLo,  0, vLo,  0, vHi,  1, vHi);
+            } else {
+                this._addTilingUVs(uvs, face.name, 1, 1);
+            }
+            ChunkMeshBuilder._addQuadIndices(indices, vertexOffset, [0, 0, 0, 0]);
+            vertexOffset += 4;
+        }
+
+        return vertexOffset;
+    }
+
+    /**
+     * ハーフブロックの面カリング判定
+     * 完全な固体ブロック（half_placeable=false）に隣接する面のみカリング
+     */
+    _shouldCullHalfFace(chunkData, x, y, z, faceName, neighborChunks) {
+        const { dx, dy, dz } = ChunkMeshBuilder.FACES[faceName];
+        const nx = x + dx, ny = y + dy, nz = z + dz;
+        if (ny < 0 || ny >= ChunkData.SIZE_Y) return false;
+        const loc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, ny, nz, neighborChunks);
+        if (!loc) return false;
+        const neighbor = loc.chunk.getBlock(loc.localX, loc.localY, loc.localZ);
+        if (neighbor === 'air' || neighbor === 'water' || neighbor === null) return false;
+        if (this._isCustomBlock(neighbor)) return false;
+        // ハーフブロック同士はカリングしない（初期実装）
+        const neighborDef = this.textureLoader.getBlockDef(neighbor);
+        if (neighborDef && neighborDef.half_placeable) return false;
         return true;
     }
 
@@ -1172,18 +1274,30 @@ class ChunkMeshBuilder {
      * @returns {number} ライトレベル（0〜15）
      */
     _getFaceLightLevel(chunkData, x, y, z, faceName, neighborChunks) {
-        const faceInfo = ChunkMeshBuilder.FACES[faceName];
-        let nx = x, ny = y, nz = z;
-        switch (faceInfo.axis) {
-            case 'x': nx += faceInfo.dir; break;
-            case 'y': ny += faceInfo.dir; break;
-            case 'z': nz += faceInfo.dir; break;
-        }
+        const { dx, dy, dz } = ChunkMeshBuilder.FACES[faceName];
+        const nx = x + dx, ny = y + dy, nz = z + dz;
         if (ny < 0) return 0;
         if (ny >= ChunkData.SIZE_Y) return 15;
         const loc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, ny, nz, neighborChunks);
         if (!loc) return 15;
-        return loc.chunk.getLight(loc.localX, loc.localY, loc.localZ);
+        const light = loc.chunk.getLight(loc.localX, loc.localY, loc.localZ);
+
+        // ハーフブロック（orientation > 0）は固体扱いで光レベルが 0 になるため、
+        // 上のブロックの光レベルとの最大値を使って面が真っ黒になるのを防ぐ。
+        // orientation を先に確認し、0（大多数の通常ブロック）は getBlockDef をスキップ
+        const orientation = loc.chunk.getOrientation(loc.localX, loc.localY, loc.localZ);
+        if (orientation > 0 && ny + 1 < ChunkData.SIZE_Y) {
+            const block = loc.chunk.getBlock(loc.localX, loc.localY, loc.localZ);
+            const blockDef = block ? this.textureLoader.getBlockDef(block) : null;
+            if (blockDef && blockDef.half_placeable) {
+                const aboveLoc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, ny + 1, nz, neighborChunks);
+                if (aboveLoc) {
+                    return Math.max(light, aboveLoc.chunk.getLight(aboveLoc.localX, aboveLoc.localY, aboveLoc.localZ));
+                }
+            }
+        }
+
+        return light;
     }
 
     /**
