@@ -222,7 +222,7 @@ class GameTestApp {
         if (stoneBlock) stoneBlock.half_placeable = true;
 
         const hotbarContainer = document.getElementById('hotbar-container');
-        this.blockInteraction.init([], hotbarContainer);
+        this.blockInteraction.init([], hotbarContainer, this.textureLoader);
         this.blockInteraction._blocks = placeableBlocks;
         this.hotbar = this.blockInteraction.hotbar;
 

@@ -43,8 +43,9 @@ class BlockInteraction {
      * 初期化
      * @param {Array} blocks - ブロック定義の配列
      * @param {HTMLElement} hotbarContainer - ホットバーのコンテナ要素
+     * @param {TextureLoader} [textureLoader] - テクスチャローダー（設置予測用）
      */
-    init(blocks, hotbarContainer) {
+    init(blocks, hotbarContainer, textureLoader) {
         this._blocks = blocks;
 
         // ホットバー初期化
@@ -52,6 +53,11 @@ class BlockInteraction {
 
         // ハイライト初期化
         this.highlight = new BlockHighlight(this.scene);
+
+        // 設置予測初期化
+        if (typeof PlacementPreview !== 'undefined' && textureLoader) {
+            this.placementPreview = new PlacementPreview(this.scene, textureLoader);
+        }
     }
 
     /**
@@ -65,6 +71,51 @@ class BlockInteraction {
 
         // ハイライト更新
         this.highlight.update(this.currentTarget);
+
+        // 設置予測更新
+        this._updatePlacementPreview();
+    }
+
+    /**
+     * 設置予測表示を更新
+     */
+    _updatePlacementPreview() {
+        if (!this.placementPreview) return;
+
+        const selectedBlock = this.hotbar ? this.hotbar.getSelectedBlock() : null;
+        const isSpecialItem = selectedBlock &&
+            (selectedBlock.block_str_id === 'bucket' ||
+             selectedBlock.block_str_id === 'bucket_of_water');
+
+        if (!this.currentTarget || !this.currentTarget.hit || !selectedBlock || isSpecialItem) {
+            this.placementPreview.hide();
+            return;
+        }
+
+        // orientation 事前計算
+        let orientation = 0;
+        if (selectedBlock.shape_type === 'custom') {
+            orientation = this._calculateOrientation(this.currentTarget.face, this.player.getYaw());
+        } else if (selectedBlock.half_placeable) {
+            const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
+            const isHalfMode = this._halfPlacementModes.get(slotIndex) || false;
+            if (isHalfMode) {
+                orientation = this._calculateHalfOrientation(
+                    this.currentTarget.face, this.currentTarget.hitY, this.currentTarget.adjacentY
+                );
+            }
+        }
+
+        // 設置可否判定
+        const ax = this.currentTarget.adjacentX;
+        const ay = this.currentTarget.adjacentY;
+        const az = this.currentTarget.adjacentZ;
+        const existingBlock = this.physicsWorld.getBlockAt(ax, ay, az);
+        const canPlace = (!existingBlock || existingBlock === 'air')
+            && !this._intersectsPlayer(ax, ay, az)
+            && ay >= 0 && ay < 128;
+
+        this.placementPreview.update(this.currentTarget, selectedBlock, orientation, canPlace);
     }
 
     /**
@@ -675,6 +726,9 @@ class BlockInteraction {
     dispose() {
         if (this.highlight) {
             this.highlight.dispose();
+        }
+        if (this.placementPreview) {
+            this.placementPreview.dispose();
         }
     }
 }
