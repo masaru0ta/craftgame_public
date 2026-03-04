@@ -50,6 +50,9 @@ class GameTestApp {
         // ランダムティック
         this.randomTickEngine = null;
 
+        // スケジュールティック
+        this.scheduleTickEngine = null;
+
         // エフェクト
         this.particleSystem = null;
 
@@ -374,6 +377,12 @@ class GameTestApp {
                     this.randomTickEngine.speed === 0 ? '停止中' : '動作中';
             });
         }
+
+        // 31. スケジュールティックエンジン初期化
+        this.scheduleTickEngine = new ScheduleTickEngine();
+        this.scheduleTickEngine.Register('water', waterTickHandler);
+        this.scheduleTickEngine.Update(0, this.chunkManager); // _chunkManager を初期化時にセット
+        this.blockInteraction.scheduleTickEngine = this.scheduleTickEngine;
 
         // 初期化完了
         this.isReady = true;
@@ -1039,6 +1048,11 @@ class GameTestApp {
             this.randomTickEngine.tick(this.chunkManager);
         }
 
+        // スケジュールティック
+        if (this.scheduleTickEngine) {
+            this.scheduleTickEngine.Update(this.deltaTime, this.chunkManager);
+        }
+
         // 描画
         this.renderer.render(this.scene, this.camera);
 
@@ -1138,6 +1152,12 @@ class GameTestApp {
                 <div class="lod-count-item"><span style="color:#00FF00">LoD0:</span> <span>${counts.lod0}</span></div>
                 <div class="lod-count-item"><span style="color:#FFFF00">LoD1:</span> <span>${counts.lod1}</span></div>
             `;
+        }
+
+        // スケジュールティックキュー件数
+        if (this.scheduleTickEngine) {
+            document.getElementById('debug-schedule-tick-count').textContent =
+                this.scheduleTickEngine.pendingCount;
         }
     }
 }

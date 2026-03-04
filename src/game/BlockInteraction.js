@@ -161,61 +161,10 @@ class BlockInteraction {
 
         if (event.button === 0) {
             // 左クリック - 破壊
-            return this.destroyBlock(
-                this.currentTarget.blockX,
-                this.currentTarget.blockY,
-                this.currentTarget.blockZ
-            );
+            return this.destroyBlockAt(this.currentTarget);
         } else if (event.button === 2) {
-            // 右クリック - 作業台チェック
-            const targetBlockId = this.physicsWorld.getBlockAt(
-                this.currentTarget.blockX,
-                this.currentTarget.blockY,
-                this.currentTarget.blockZ
-            );
-            if (targetBlockId === 'workbench') {
-                if (this._onWorkbenchInteract) {
-                    this._onWorkbenchInteract();
-                }
-                return true;
-            }
-
             // 右クリック - 設置
-            const selectedBlock = this.hotbar.getSelectedBlock();
-            if (!selectedBlock) return false;
-
-            // バケツ選択時 → 水汲み取りチェック
-            if (selectedBlock.block_str_id === 'bucket') {
-                const origin = this.player.getEyePosition();
-                const direction = this.player.getLookDirection();
-                const waterHit = this._raycastWater(origin, direction, BlockInteraction.MAX_REACH);
-                if (waterHit) {
-                    return this._scoopWater(waterHit);
-                }
-                // 水が無ければ通常設置にフォールバック
-            }
-
-            // 水入りバケツ選択時 → 水設置
-            if (selectedBlock.block_str_id === 'bucket_of_water') {
-                return this._pourWater(this.currentTarget);
-            }
-
-            // カスタムブロックの場合はorientation計算
-            const orientation = (selectedBlock.shape_type === 'custom')
-                ? this._calculateOrientation(this.currentTarget.face, this.player.getYaw())
-                : 0;
-
-            const placed = this.placeBlock(
-                this.currentTarget.adjacentX,
-                this.currentTarget.adjacentY,
-                this.currentTarget.adjacentZ,
-                selectedBlock.block_str_id,
-                orientation
-            );
-            if (placed && this._onBlockPlaced) {
-                this._onBlockPlaced(selectedBlock.block_str_id);
-            }
-            return placed;
+            return this.placeBlockAt(this.currentTarget);
         }
 
         return false;
@@ -290,6 +239,9 @@ class BlockInteraction {
             this.chunkManager.rebuildChunkMesh(nx, nz);
         }
 
+        // 隣接・真上の水ブロックにフロートリガーをスケジュール（壁・床破壊で水が流れ出す）
+        this._scheduleAdjacentWaterFlow(x, y, z);
+
         // IndexedDBに保存（非同期）
         this._saveChunk(chunkX, chunkZ, chunk.chunkData);
 
@@ -340,6 +292,11 @@ class BlockInteraction {
 
         // ブロックを設置（orientation付き）
         chunk.chunkData.setBlock(localX, localY, localZ, blockStrId, orientation);
+
+        // 水ブロック設置時はスケジュールティックに登録（水の流れ）
+        if (blockStrId === 'water' && this.scheduleTickEngine) {
+            this.scheduleTickEngine.schedule(x, y, z, 'water', 0, { dist: 0 });
+        }
 
         // 設置コールバック発火（座標付き、orientation付き）
         if (this._onBlockPlacedAt) {
@@ -457,6 +414,22 @@ class BlockInteraction {
     }
 
     /**
+     * (x,y,z) の横4方向と真上にある水ブロックにフロートリガーをスケジュールする。
+     * ブロック破壊・水汲み取り後に呼ぶことで、隣接水が空きスペースへ流れ込む。
+     * @param {number} x @param {number} y @param {number} z
+     */
+    _scheduleAdjacentWaterFlow(x, y, z) {
+        if (!this.scheduleTickEngine) return;
+        const cm = this.chunkManager;
+        for (const [dx, dy, dz] of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]]) {
+            const nx = x + dx, ny = y + dy, nz = z + dz;
+            if (TickHelpers.getBlock(cm, nx, ny, nz) !== 'water') continue;
+            const orientation = TickHelpers.getOrientation(cm, nx, ny, nz);
+            this.scheduleTickEngine.schedule(nx, ny, nz, 'water', 2, { dist: orientation });
+        }
+    }
+
+    /**
      * 水ブロック専用レイキャスト
      * 通常レイキャストと同じステップ走査だが、waterをヒット対象とする
      * @param {Object} origin - 開始位置 {x, y, z}
@@ -502,7 +475,18 @@ class BlockInteraction {
         if (!chunk || !chunk.chunkData) return false;
 
         const localY = y - chunk.chunkData.baseY;
+
+        // 水源（orientation=0）のみ汲み取り可能
+        if (chunk.chunkData.getOrientation(localX, localY, localZ) !== 0) return false;
+
         chunk.chunkData.setBlock(localX, localY, localZ, 'air');
+
+        // 隣接・真上の水ブロックにフロートリガー、真下に decay をスケジュール
+        this._scheduleAdjacentWaterFlow(x, y, z);
+        if (this.scheduleTickEngine) {
+            // 真下（落下水の連鎖消滅）
+            this.scheduleTickEngine.schedule(x, y - 1, z, 'water', 2, { decay: true });
+        }
 
         // ホットバーをbucket_of_waterに変更
         const slot = this.hotbar.getSelectedSlot();
@@ -555,6 +539,11 @@ class BlockInteraction {
         if (localY < 0 || localY >= 128) return false;
 
         chunk.chunkData.setBlock(localX, localY, localZ, 'water');
+
+        // スケジュールティックに登録（水の流れ）
+        if (this.scheduleTickEngine) {
+            this.scheduleTickEngine.schedule(x, y, z, 'water', 0, { dist: 0 });
+        }
 
         // ホットバーをbucketに変更
         const slot = this.hotbar.getSelectedSlot();

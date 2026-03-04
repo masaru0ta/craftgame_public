@@ -326,6 +326,14 @@
             </div>
         </div>
 
+        <!-- スケジュールティック -->
+        <div class="debug-section collapsed">
+            <h4>スケジュールティック</h4>
+            <div class="debug-content">
+                <div class="debug-row"><label>キュー件数:</label><span id="debug-schedule-tick-count">0</span></div>
+            </div>
+        </div>
+
         <!-- 操作 -->
         <div class="debug-section collapsed">
             <h4>操作</h4>
@@ -404,6 +412,10 @@
     <script src="../game/ticks/grassTick.js"></script>
     <script src="../game/ticks/leavesTick.js"></script>
     <script src="../game/RandomTickEngine.js"></script>
+
+    <!-- スケジュールティック -->
+    <script src="../game/ticks/waterTick.js"></script>
+    <script src="../game/ScheduleTickEngine.js"></script>
 
     <!-- マルチプレイ -->
     <script src="../game/webrtc-gas.js"></script>

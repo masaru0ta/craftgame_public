@@ -455,6 +455,9 @@ class ChunkMeshBuilder {
         chunkData.forEachBlock((x, y, z, blockStrId) => {
             if (blockStrId !== 'water') return;
 
+            // dist（水源からの距離）を orientation に保存している
+            const level = chunkData.getOrientation(x, y, z); // 0-7
+
             for (const [faceName, faceInfo] of Object.entries(ChunkMeshBuilder.FACES)) {
                 if (faceName === 'bottom' && y === 0) continue;
 
@@ -472,10 +475,11 @@ class ChunkMeshBuilder {
                     : [0, 0, 0, 0];
                 const aoKey = ao.join(',');
 
-                // グループ化キー: 面名 + ライトレベル + AOパターン
-                const key = `${faceName}:${light}:${aoKey}`;
+                // グループ化キー: 面名 + ライトレベル + AOパターン（+ 水位：bottom 以外）
+                const levelKey = faceName === 'bottom' ? '' : `:${level}`;
+                const key = `${faceName}:${light}:${aoKey}${levelKey}`;
                 if (!waterFacesMap.has(key)) {
-                    waterFacesMap.set(key, { faceName, light, ao, faces: [] });
+                    waterFacesMap.set(key, { faceName, light, ao, level, faces: [] });
                 }
                 waterFacesMap.get(key).faces.push({ x, y, z });
             }
@@ -484,11 +488,18 @@ class ChunkMeshBuilder {
         // グリーディメッシングで各グループを処理
         const rgb = this._hexToRgb(waterColor);
 
+        /** 水位（level）から上面の高さ割合を求める */
+        const WaterMaxDist = 7;
+        const waterLevelH = lvl => lvl > WaterMaxDist ? 1.0 : (WaterMaxDist + 1 - lvl) / (WaterMaxDist + 1);
+
         for (const [, groupData] of waterFacesMap) {
-            const { faceName, light, ao, faces } = groupData;
+            const { faceName, light, ao, level, faces } = groupData;
             const faceInfo = ChunkMeshBuilder.FACES[faceName];
             const lf = ChunkMeshBuilder._lightFactor(light);
             const dl = ChunkMeshBuilder._faceLightingFactor(faceInfo.normal);
+
+            // 水位に応じた高さ（bottom・WaterFalling(>7) は 1.0、横フローは可変）
+            const waterH = faceName === 'bottom' ? 1.0 : waterLevelH(level);
 
             // グリーディメッシング: 面をグリッドに変換→矩形検出
             const grid = this._facesToGrid(faces, faceName);
@@ -498,7 +509,7 @@ class ChunkMeshBuilder {
                 const { x: meshX, y: meshY, z: meshZ, meshWidth, meshHeight } =
                     ChunkMeshBuilder._gridToMeshCoords(faceName, rect.x, rect.y, rect.depth, rect.width, rect.height);
 
-                const corners = this._getFaceCorners(meshX, meshY, meshZ, faceName, meshWidth, meshHeight);
+                const corners = this._getFaceCorners(meshX, meshY, meshZ, faceName, meshWidth, meshHeight, waterH);
                 for (let vi = 0; vi < corners.length; vi++) {
                     const corner = corners[vi];
                     const af = ChunkMeshBuilder.AO_TABLE[ao[vi]] ?? 1.0;
@@ -511,6 +522,62 @@ class ChunkMeshBuilder {
                 vertexOffset += 4;
             }
         }
+
+        // 段差面: 隣接する水ブロックとの水位差がある場合に垂直面を追加
+        const SIDE_FACE_DIRS = [
+            { name: 'front', dx: 0, dz: -1, normal: [0, 0, -1] },
+            { name: 'back',  dx: 0, dz:  1, normal: [0, 0,  1] },
+            { name: 'right', dx: 1, dz:  0, normal: [1, 0,  0] },
+            { name: 'left',  dx: -1, dz: 0, normal: [-1, 0, 0] },
+        ];
+
+        chunkData.forEachBlock((x, y, z, blockStrId) => {
+            if (blockStrId !== 'water') return;
+            const level = chunkData.getOrientation(x, y, z);
+            const thisH = waterLevelH(level);
+
+            for (const { name, dx, dz, normal } of SIDE_FACE_DIRS) {
+                const nx = x + dx, nz = z + dz;
+                const loc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, y, nz, neighborChunks);
+                if (!loc) continue;
+                const neighborBlock = loc.chunk.getBlock(loc.localX, loc.localY, loc.localZ);
+                if (neighborBlock !== 'water') continue;
+
+                const neighborLevel = loc.chunk.getOrientation(loc.localX, loc.localY, loc.localZ);
+                const neighborH = waterLevelH(neighborLevel);
+                if (thisH <= neighborH) continue; // 隣が同じか高いなら不要
+
+                const botY = y + neighborH;
+                const topY = y + thisH;
+
+                const light = this._getFaceLightLevel(chunkData, x, y, z, name, neighborChunks);
+                const lf = ChunkMeshBuilder._lightFactor(light);
+                const dl = ChunkMeshBuilder._faceLightingFactor(normal);
+
+                let c0, c1, c2, c3;
+                if (name === 'front') {
+                    c0 = [x + 1, botY, z]; c1 = [x, botY, z];
+                    c2 = [x, topY, z];     c3 = [x + 1, topY, z];
+                } else if (name === 'back') {
+                    c0 = [x, botY, z + 1]; c1 = [x + 1, botY, z + 1];
+                    c2 = [x + 1, topY, z + 1]; c3 = [x, topY, z + 1];
+                } else if (name === 'right') {
+                    c0 = [x + 1, botY, z + 1]; c1 = [x + 1, botY, z];
+                    c2 = [x + 1, topY, z];     c3 = [x + 1, topY, z + 1];
+                } else { // left
+                    c0 = [x, botY, z]; c1 = [x, botY, z + 1];
+                    c2 = [x, topY, z + 1]; c3 = [x, topY, z];
+                }
+
+                for (const [cx, cy, cz] of [c0, c1, c2, c3]) {
+                    positions.push(cx, cy, cz);
+                    normals.push(...normal);
+                    colors.push(rgb.r * lf * dl, rgb.g * lf * dl, rgb.b * lf * dl);
+                }
+                ChunkMeshBuilder._addQuadIndices(indices, vertexOffset, [0, 0, 0, 0]);
+                vertexOffset += 4;
+            }
+        });
 
         if (positions.length === 0) return null;
 
@@ -642,31 +709,34 @@ class ChunkMeshBuilder {
      * @param {number} height - 高さ
      * @returns {Array<{x: number, y: number, z: number}>} 4頂点の配列
      */
-    _getFaceCorners(x, y, z, faceName, width, height) {
+    _getFaceCorners(x, y, z, faceName, width, height, waterH = 1.0) {
         // 全ての面を時計回り（CW）で定義（Z軸反転対応）
+        // waterH: 水位による上端高さ係数（1.0=満水、<1.0=減少）
         switch (faceName) {
-            case 'front': // 南（Z-）
+            case 'front': { // 南（Z-）
+                const topY = y + height - 1 + waterH;
                 return [
-                    { x: x + width, y: y, z: z },           // 右下
-                    { x: x, y: y, z: z },                   // 左下
-                    { x: x, y: y + height, z: z },          // 左上
-                    { x: x + width, y: y + height, z: z }   // 右上
+                    { x: x + width, y: y, z: z },    // 右下
+                    { x: x, y: y, z: z },             // 左下
+                    { x: x, y: topY, z: z },          // 左上
+                    { x: x + width, y: topY, z: z }   // 右上
                 ];
-
-            case 'back': // 北（Z+）
+            }
+            case 'back': { // 北（Z+）
+                const topY = y + height - 1 + waterH;
                 return [
-                    { x: x, y: y, z: z + 1 },                       // 左下
-                    { x: x + width, y: y, z: z + 1 },               // 右下
-                    { x: x + width, y: y + height, z: z + 1 },      // 右上
-                    { x: x, y: y + height, z: z + 1 }               // 左上
+                    { x: x, y: y, z: z + 1 },               // 左下
+                    { x: x + width, y: y, z: z + 1 },       // 右下
+                    { x: x + width, y: topY, z: z + 1 },    // 右上
+                    { x: x, y: topY, z: z + 1 }             // 左上
                 ];
-
+            }
             case 'top': // 上（Y+）
                 return [
-                    { x: x, y: y + 1, z: z + height },              // 後左
-                    { x: x + width, y: y + 1, z: z + height },      // 後右
-                    { x: x + width, y: y + 1, z: z },               // 前右
-                    { x: x, y: y + 1, z: z }                        // 前左
+                    { x: x, y: y + waterH, z: z + height },         // 後左
+                    { x: x + width, y: y + waterH, z: z + height }, // 後右
+                    { x: x + width, y: y + waterH, z: z },          // 前右
+                    { x: x, y: y + waterH, z: z }                   // 前左
                 ];
 
             case 'bottom': // 下（Y-）
@@ -677,21 +747,24 @@ class ChunkMeshBuilder {
                     { x: x, y: y, z: z + height }                   // 後左
                 ];
 
-            case 'right': // 東（X+）
+            case 'right': { // 東（X+）
+                const topY = y + width - 1 + waterH;
                 return [
-                    { x: x + 1, y: y, z: z + height },              // 後下
-                    { x: x + 1, y: y, z: z },                       // 前下
-                    { x: x + 1, y: y + width, z: z },               // 前上
-                    { x: x + 1, y: y + width, z: z + height }       // 後上
+                    { x: x + 1, y: y, z: z + height },     // 後下
+                    { x: x + 1, y: y, z: z },              // 前下
+                    { x: x + 1, y: topY, z: z },           // 前上
+                    { x: x + 1, y: topY, z: z + height }   // 後上
                 ];
-
-            case 'left': // 西（X-）
+            }
+            case 'left': { // 西（X-）
+                const topY = y + width - 1 + waterH;
                 return [
-                    { x: x, y: y, z: z },                           // 前下
-                    { x: x, y: y, z: z + height },                  // 後下
-                    { x: x, y: y + width, z: z + height },          // 後上
-                    { x: x, y: y + width, z: z }                    // 前上
+                    { x: x, y: y, z: z },               // 前下
+                    { x: x, y: y, z: z + height },      // 後下
+                    { x: x, y: topY, z: z + height },   // 後上
+                    { x: x, y: topY, z: z }             // 前上
                 ];
+            }
         }
     }
 

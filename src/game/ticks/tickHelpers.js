@@ -26,6 +26,12 @@ const TickHelpers = {
         return r ? r.cd.getBlock(r.lx, r.ly, r.lz) : null;
     },
 
+    /** ワールド座標のブロック orientation を取得する @returns {number} */
+    getOrientation(cm, wx, wy, wz) {
+        const r = this._resolve(cm, wx, wy, wz);
+        return r ? r.cd.getOrientation(r.lx, r.ly, r.lz) : 0;
+    },
+
     /** ワールド座標のライトレベルを取得する @returns {number} 0-15 */
     getLight(cm, wx, wy, wz) {
         const r = this._resolve(cm, wx, wy, wz);
@@ -37,10 +43,10 @@ const TickHelpers = {
      * ライトマップも更新する（air ならonBlockRemoved、それ以外はonBlockPlaced）
      * @returns {boolean} 成功したか
      */
-    setBlock(cm, wx, wy, wz, blockId, dirty) {
+    setBlock(cm, wx, wy, wz, blockId, dirty, orientation = 0) {
         const r = this._resolve(cm, wx, wy, wz);
         if (!r) return false;
-        r.cd.setBlock(r.lx, r.ly, r.lz, blockId);
+        r.cd.setBlock(r.lx, r.ly, r.lz, blockId, orientation);
         if (dirty) dirty.add(r.key);
 
         if (cm.lightCalculator && cm._getNeighborChunks) {
