@@ -465,27 +465,31 @@ class BlockInteraction {
 
         const { blockX: x, blockY: y, blockZ: z } = waterHit;
 
+        // チャンク座標解決 & 水源（orientation=0）チェック
+        const r = TickHelpers._resolve(this.chunkManager, x, y, z);
+        if (!r) return false;
+        if (r.cd.getOrientation(r.lx, r.ly, r.lz) !== 0) return false;
+
         // 水ブロックを除去
-        const chunkX = Math.floor(x / 16);
-        const chunkZ = Math.floor(z / 16);
-        const localX = ((x % 16) + 16) % 16;
-        const localZ = ((z % 16) + 16) % 16;
-        const chunkKey = `${chunkX},${chunkZ}`;
-        const chunk = this.chunkManager.chunks.get(chunkKey);
-        if (!chunk || !chunk.chunkData) return false;
+        const { cx: chunkX, cz: chunkZ } = r;
+        r.cd.setBlock(r.lx, r.ly, r.lz, 'air');
 
-        const localY = y - chunk.chunkData.baseY;
-
-        // 水源（orientation=0）のみ汲み取り可能
-        if (chunk.chunkData.getOrientation(localX, localY, localZ) !== 0) return false;
-
-        chunk.chunkData.setBlock(localX, localY, localZ, 'air');
-
-        // 隣接・真上の水ブロックにフロートリガー、真下に decay をスケジュール
-        this._scheduleAdjacentWaterFlow(x, y, z);
+        // 隣接水に対してトリガーをスケジュール:
+        //   水源（orientation=0）→ フロートリガー（空き位置に流れ込む）
+        //   流れ水（orientation>0）→ decayトリガー（水源を失い連鎖消滅）
         if (this.scheduleTickEngine) {
-            // 真下（落下水の連鎖消滅）
-            this.scheduleTickEngine.schedule(x, y - 1, z, 'water', 2, { decay: true });
+            const cm = this.chunkManager;
+            // 横4方向 + 真上
+            for (const [dx, dy, dz] of [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]]) {
+                const nx = x + dx, ny = y + dy, nz = z + dz;
+                if (TickHelpers.getBlock(cm, nx, ny, nz) !== 'water') continue;
+                const ori = TickHelpers.getOrientation(cm, nx, ny, nz);
+                const meta = ori === 0 ? { dist: 0 } : { decay: true };
+                this.scheduleTickEngine.schedule(nx, ny, nz, 'water', 2, meta);
+            }
+            // 真下は常に decay（支えを失った落下水が消える）
+            if (TickHelpers.getBlock(cm, x, y - 1, z) === 'water')
+                this.scheduleTickEngine.schedule(x, y - 1, z, 'water', 2, { decay: true });
         }
 
         // ホットバーをbucket_of_waterに変更
@@ -499,7 +503,7 @@ class BlockInteraction {
         this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
 
         // IndexedDBに保存
-        this._saveChunk(chunkX, chunkZ, chunk.chunkData);
+        this._saveChunk(chunkX, chunkZ, r.cd);
 
         return true;
     }

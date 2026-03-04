@@ -334,6 +334,17 @@
             </div>
         </div>
 
+        <!-- 天候 -->
+        <div class="debug-section collapsed">
+            <h4>天候</h4>
+            <div class="debug-content">
+                <div class="debug-row"><label>天候:</label><span id="debug-weather-state">clear</span></div>
+                <div class="debug-buttons">
+                    <button id="btn-weather-toggle" class="debug-btn">雨を降らせる</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 操作 -->
         <div class="debug-section collapsed">
             <h4>操作</h4>
@@ -416,6 +427,10 @@
     <!-- スケジュールティック -->
     <script src="../game/ticks/waterTick.js"></script>
     <script src="../game/ScheduleTickEngine.js"></script>
+
+    <!-- 天候システム -->
+    <script src="../game/WeatherSystem.js"></script>
+    <script src="../game/RainParticleSystem.js"></script>
 
     <!-- マルチプレイ -->
     <script src="../game/webrtc-gas.js"></script>

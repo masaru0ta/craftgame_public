@@ -53,6 +53,11 @@ class GameTestApp {
         // スケジュールティック
         this.scheduleTickEngine = null;
 
+        // 天候システム
+        this.weatherSystem = null;
+        this.rainParticleSystem = null;
+        this._baseTickSpeed = 3;
+
         // エフェクト
         this.particleSystem = null;
 
@@ -384,6 +389,23 @@ class GameTestApp {
         this.scheduleTickEngine.Update(0, this.chunkManager); // _chunkManager を初期化時にセット
         this.blockInteraction.scheduleTickEngine = this.scheduleTickEngine;
 
+        // 32. 天候システム初期化
+        this._baseTickSpeed = this.randomTickEngine.speed;
+        this.weatherSystem = new WeatherSystem();
+        this.weatherSystem.scheduleTickEngine = this.scheduleTickEngine;
+        this.weatherSystem.OnWeatherChange((state) => this._applyWeatherVisuals(state));
+        this.rainParticleSystem = new RainParticleSystem(this.scene);
+        this.rainParticleSystem.chunkManager = this.chunkManager;
+
+        // 天候デバッグUI連携
+        const weatherToggleBtn = document.getElementById('btn-weather-toggle');
+        if (weatherToggleBtn) {
+            weatherToggleBtn.addEventListener('click', () => {
+                const next = this.weatherSystem.IsRaining ? 'clear' : 'rain';
+                this.weatherSystem.SetWeather(next);
+            });
+        }
+
         // 初期化完了
         this.isReady = true;
 
@@ -424,6 +446,7 @@ class GameTestApp {
 
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         this.scene.add(ambientLight);
+        this._ambientLight = ambientLight;
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(50, 100, 50);
         this.scene.add(directionalLight);
@@ -900,6 +923,31 @@ class GameTestApp {
         this.firstPersonCamera.requestPointerLock(this.canvas);
     }
 
+    /**
+     * 天候状態に応じて視覚・ゲームプレイを更新する
+     * @param {'clear'|'rain'} state
+     */
+    _applyWeatherVisuals(state) {
+        if (state === 'rain') {
+            this.scene.background.setHex(0x5a6575);
+            this._fogInstance.color.setHex(0x5a6575);
+            this._ambientLight.intensity = 0.35;
+            this.rainParticleSystem.SetVisible(true);
+            if (this.randomTickEngine) this.randomTickEngine.speed = this._baseTickSpeed * 3;
+        } else {
+            this.scene.background.setHex(0x87ceeb);
+            this._fogInstance.color.setHex(0x87ceeb);
+            this._ambientLight.intensity = 0.6;
+            this.rainParticleSystem.SetVisible(false);
+            if (this.randomTickEngine) this.randomTickEngine.speed = this._baseTickSpeed;
+        }
+        // デバッグUI更新
+        const el = document.getElementById('debug-weather-state');
+        if (el) el.textContent = state;
+        const btn = document.getElementById('btn-weather-toggle');
+        if (btn) btn.textContent = state === 'rain' ? '雨を止める' : '雨を降らせる';
+    }
+
     _updateFog(chunkRange) {
         const fogNear = chunkRange * 16 * 0.5;
         const fogFar = chunkRange * 16 * 0.9;
@@ -1053,6 +1101,16 @@ class GameTestApp {
             this.scheduleTickEngine.Update(this.deltaTime, this.chunkManager);
         }
 
+        // 天候システム
+        if (this.weatherSystem && this.scheduleTickEngine) {
+            this.weatherSystem.Update(this.scheduleTickEngine.currentTick);
+        }
+
+        // 雨粒パーティクル
+        if (this.rainParticleSystem) {
+            this.rainParticleSystem.Update(this.deltaTime, this.camera.position);
+        }
+
         // 描画
         this.renderer.render(this.scene, this.camera);
 
@@ -1158,6 +1216,12 @@ class GameTestApp {
         if (this.scheduleTickEngine) {
             document.getElementById('debug-schedule-tick-count').textContent =
                 this.scheduleTickEngine.pendingCount;
+        }
+
+        // 天候
+        if (this.weatherSystem) {
+            const el = document.getElementById('debug-weather-state');
+            if (el) el.textContent = this.weatherSystem.State;
         }
     }
 }

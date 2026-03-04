@@ -109,10 +109,10 @@ function _isWaterSupported(chunkManager, wx, wy, wz, orientation) {
     }
     // 横フロー（1〜7）: 横に自分より orientation が小さい水（源に近い）があれば有効
     for (const [dx, dz] of _WaterFlowDirs) {
-        if (TickHelpers.getBlock(chunkManager, wx + dx, wy, wz + dz) === 'water') {
-            const n = TickHelpers.getOrientation(chunkManager, wx + dx, wy, wz + dz);
-            if (n < orientation) return true; // WaterSource(0) も含む
-        }
+        const r = TickHelpers._resolve(chunkManager, wx + dx, wy, wz + dz);
+        if (!r) continue;
+        if (r.cd.getBlock(r.lx, r.ly, r.lz) !== 'water') continue;
+        if (r.cd.getOrientation(r.lx, r.ly, r.lz) < orientation) return true; // WaterSource(0) も含む
     }
     return false;
 }
@@ -135,8 +135,8 @@ function _scheduleDecay(chunkManager, wx, wy, wz, schedule) {
  * 指定ワールド座標が LoD0 範囲内かどうかを確認する
  */
 function _isInLod0(chunkManager, wx, wz) {
-    const cx = Math.floor(wx / 16);
-    const cz = Math.floor(wz / 16);
+    const cx = wx >> 4;
+    const cz = wz >> 4;
     const centerCX = chunkManager.lastChunkX;
     const centerCZ = chunkManager.lastChunkZ;
     if (centerCX === null || centerCZ === null) return true;

@@ -29,6 +29,28 @@ class ChunkMeshBuilder {
     // AOレベル → 乗算係数
     static AO_TABLE = [1.0, 0.75, 0.55, 0.35];
 
+    /** 横フロー最大距離（Minecraft準拠） */
+    static WaterMaxDist = 7;
+
+    /**
+     * 水の段差面コーナー定義テーブル
+     * 各エントリは4コーナーの [xOffset, yFlag, zOffset]。yFlag=0→botY, 1→topY
+     */
+    static _WATER_STEP_CORNERS = {
+        front: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]],
+        back:  [[0,0,1],[1,0,1],[1,1,1],[0,1,1]],
+        right: [[1,0,1],[1,0,0],[1,1,0],[1,1,1]],
+        left:  [[0,0,0],[0,0,1],[0,1,1],[0,1,0]],
+    };
+
+    /** 段差面方向テーブル */
+    static _WATER_SIDE_DIRS = [
+        { name: 'front', dx: 0, dz: -1, normal: [0, 0, -1] },
+        { name: 'back',  dx: 0, dz:  1, normal: [0, 0,  1] },
+        { name: 'right', dx: 1, dz:  0, normal: [1, 0,  0] },
+        { name: 'left',  dx:-1, dz:  0, normal:[-1, 0,  0] },
+    ];
+
     /**
      * orientation(0〜23)に対応する3x3回転行列テーブル
      * orientation = face * 4 + rotation
@@ -449,6 +471,17 @@ class ChunkMeshBuilder {
         // 頂点カラー（LoD0/LoD1共通：テクスチャなし、方向性ライティング×ライトマップ×AO焼き込み）
         const colors = [];
 
+        // 水位計算ヘルパー（以下のforEachBlockより前に定義する必要がある）
+        const WaterMaxDist = ChunkMeshBuilder.WaterMaxDist;
+        const SurfaceH = WaterMaxDist / (WaterMaxDist + 1); // 7/8
+        const waterLevelH = (lvl, surface = false) => {
+            // 満水ブロック（水源/落下水）: 水面なら 7/8、水没なら 1.0
+            if (lvl === 0 || lvl > WaterMaxDist) return surface ? SurfaceH : 1.0;
+            // 横フロー（dist 1〜7）: 水源（7/8）と区別するため1段階ずらして計算
+            // dist=1→6/8, dist=2→5/8, …, dist=6→1/8, dist=7→最小(1/16)
+            return Math.max(1 / 16, (WaterMaxDist - lvl) / (WaterMaxDist + 1));
+        };
+
         // 面名 + ライトレベル + AOパターンでグループ化（グリーディメッシング用）
         const waterFacesMap = new Map();
 
@@ -456,7 +489,13 @@ class ChunkMeshBuilder {
             if (blockStrId !== 'water') return;
 
             // dist（水源からの距離）を orientation に保存している
-            const level = chunkData.getOrientation(x, y, z); // 0-7
+            const level = chunkData.getOrientation(x, y, z); // 0〜7 or 8(WaterFalling)
+
+            // 水面判定: 満水ブロック（level=0 or WaterFalling）のみ上ブロックをチェック
+            // 上が water でなければ「水面」→ 高さ 7/8、water なら「水没」→ 高さ 1.0
+            const isFullWater = level === 0 || level > WaterMaxDist;
+            const blockAbove = isFullWater && y + 1 < 128 ? chunkData.getBlock(x, y + 1, z) : null;
+            const isSurface = isFullWater && blockAbove !== 'water';
 
             for (const [faceName, faceInfo] of Object.entries(ChunkMeshBuilder.FACES)) {
                 if (faceName === 'bottom' && y === 0) continue;
@@ -475,11 +514,13 @@ class ChunkMeshBuilder {
                     : [0, 0, 0, 0];
                 const aoKey = ao.join(',');
 
-                // グループ化キー: 面名 + ライトレベル + AOパターン（+ 水位：bottom 以外）
+                // グループ化キー: 面名 + ライトレベル + AOパターン + 水位 + 水面フラグ
+                // 満水ブロックは水面/水没で高さが異なるため別グループにする
                 const levelKey = faceName === 'bottom' ? '' : `:${level}`;
-                const key = `${faceName}:${light}:${aoKey}${levelKey}`;
+                const surfaceKey = isFullWater && faceName !== 'bottom' ? `:${isSurface ? 's' : 'u'}` : '';
+                const key = `${faceName}:${light}:${aoKey}${levelKey}${surfaceKey}`;
                 if (!waterFacesMap.has(key)) {
-                    waterFacesMap.set(key, { faceName, light, ao, level, faces: [] });
+                    waterFacesMap.set(key, { faceName, light, ao, level, isSurface, faces: [] });
                 }
                 waterFacesMap.get(key).faces.push({ x, y, z });
             }
@@ -488,18 +529,14 @@ class ChunkMeshBuilder {
         // グリーディメッシングで各グループを処理
         const rgb = this._hexToRgb(waterColor);
 
-        /** 水位（level）から上面の高さ割合を求める */
-        const WaterMaxDist = 7;
-        const waterLevelH = lvl => lvl > WaterMaxDist ? 1.0 : (WaterMaxDist + 1 - lvl) / (WaterMaxDist + 1);
-
         for (const [, groupData] of waterFacesMap) {
-            const { faceName, light, ao, level, faces } = groupData;
+            const { faceName, light, ao, level, isSurface, faces } = groupData;
             const faceInfo = ChunkMeshBuilder.FACES[faceName];
             const lf = ChunkMeshBuilder._lightFactor(light);
             const dl = ChunkMeshBuilder._faceLightingFactor(faceInfo.normal);
 
-            // 水位に応じた高さ（bottom・WaterFalling(>7) は 1.0、横フローは可変）
-            const waterH = faceName === 'bottom' ? 1.0 : waterLevelH(level);
+            // 水位に応じた高さ（満水水面=7/8、水没=1.0、横フロー=距離計算）
+            const waterH = faceName === 'bottom' ? 1.0 : waterLevelH(level, isSurface);
 
             // グリーディメッシング: 面をグリッドに変換→矩形検出
             const grid = this._facesToGrid(faces, faceName);
@@ -524,55 +561,47 @@ class ChunkMeshBuilder {
         }
 
         // 段差面: 隣接する水ブロックとの水位差がある場合に垂直面を追加
-        const SIDE_FACE_DIRS = [
-            { name: 'front', dx: 0, dz: -1, normal: [0, 0, -1] },
-            { name: 'back',  dx: 0, dz:  1, normal: [0, 0,  1] },
-            { name: 'right', dx: 1, dz:  0, normal: [1, 0,  0] },
-            { name: 'left',  dx: -1, dz: 0, normal: [-1, 0, 0] },
-        ];
+        const sideDirs = ChunkMeshBuilder._WATER_SIDE_DIRS;
+        const stepCorners = ChunkMeshBuilder._WATER_STEP_CORNERS;
 
         chunkData.forEachBlock((x, y, z, blockStrId) => {
             if (blockStrId !== 'water') return;
             const level = chunkData.getOrientation(x, y, z);
-            const thisH = waterLevelH(level);
+            // 水面判定（満水ブロックのみ上ブロックをチェック）
+            const isFullW = level === 0 || level > WaterMaxDist;
+            const aboveBlock = isFullW && y + 1 < 128 ? chunkData.getBlock(x, y + 1, z) : null;
+            const thisH = waterLevelH(level, isFullW && aboveBlock !== 'water');
 
-            for (const { name, dx, dz, normal } of SIDE_FACE_DIRS) {
+            for (const { name, dx, dz, normal } of sideDirs) {
                 const nx = x + dx, nz = z + dz;
                 const loc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, y, nz, neighborChunks);
                 if (!loc) continue;
-                const neighborBlock = loc.chunk.getBlock(loc.localX, loc.localY, loc.localZ);
-                if (neighborBlock !== 'water') continue;
+                if (loc.chunk.getBlock(loc.localX, loc.localY, loc.localZ) !== 'water') continue;
 
                 const neighborLevel = loc.chunk.getOrientation(loc.localX, loc.localY, loc.localZ);
-                const neighborH = waterLevelH(neighborLevel);
+                // 隣接ブロックの水面判定
+                const isFullN = neighborLevel === 0 || neighborLevel > WaterMaxDist;
+                const locAbove = isFullN
+                    ? ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, y + 1, nz, neighborChunks)
+                    : null;
+                const aboveNeighbor = locAbove
+                    ? locAbove.chunk.getBlock(locAbove.localX, locAbove.localY, locAbove.localZ)
+                    : null;
+                const neighborH = waterLevelH(neighborLevel, isFullN && aboveNeighbor !== 'water');
                 if (thisH <= neighborH) continue; // 隣が同じか高いなら不要
 
                 const botY = y + neighborH;
                 const topY = y + thisH;
-
-                const light = this._getFaceLightLevel(chunkData, x, y, z, name, neighborChunks);
-                const lf = ChunkMeshBuilder._lightFactor(light);
+                const lf = ChunkMeshBuilder._lightFactor(
+                    this._getFaceLightLevel(chunkData, x, y, z, name, neighborChunks)
+                );
                 const dl = ChunkMeshBuilder._faceLightingFactor(normal);
+                const cr = rgb.r * lf * dl, cg = rgb.g * lf * dl, cb = rgb.b * lf * dl;
 
-                let c0, c1, c2, c3;
-                if (name === 'front') {
-                    c0 = [x + 1, botY, z]; c1 = [x, botY, z];
-                    c2 = [x, topY, z];     c3 = [x + 1, topY, z];
-                } else if (name === 'back') {
-                    c0 = [x, botY, z + 1]; c1 = [x + 1, botY, z + 1];
-                    c2 = [x + 1, topY, z + 1]; c3 = [x, topY, z + 1];
-                } else if (name === 'right') {
-                    c0 = [x + 1, botY, z + 1]; c1 = [x + 1, botY, z];
-                    c2 = [x + 1, topY, z];     c3 = [x + 1, topY, z + 1];
-                } else { // left
-                    c0 = [x, botY, z]; c1 = [x, botY, z + 1];
-                    c2 = [x, topY, z + 1]; c3 = [x, topY, z];
-                }
-
-                for (const [cx, cy, cz] of [c0, c1, c2, c3]) {
-                    positions.push(cx, cy, cz);
+                for (const [xo, yf, zo] of stepCorners[name]) {
+                    positions.push(x + xo, yf ? topY : botY, z + zo);
                     normals.push(...normal);
-                    colors.push(rgb.r * lf * dl, rgb.g * lf * dl, rgb.b * lf * dl);
+                    colors.push(cr, cg, cb);
                 }
                 ChunkMeshBuilder._addQuadIndices(indices, vertexOffset, [0, 0, 0, 0]);
                 vertexOffset += 4;
