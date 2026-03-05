@@ -180,6 +180,7 @@ class GameTestApp {
         this.playerController = new PlayerController(this.player, this.physicsWorld, {
             mouseSensitivity: sensitivity
         });
+        this.playerController.SetCanvasSize(this.canvas.width, this.canvas.height);
 
         // 12. FirstPersonCamera初期化
         this.firstPersonCamera = new FirstPersonCamera(this.camera, this.player);
@@ -466,6 +467,7 @@ class GameTestApp {
             this.camera.aspect = window.innerWidth / window.innerHeight;
             this.camera.updateProjectionMatrix();
             this.renderer.setSize(window.innerWidth, window.innerHeight);
+            this.playerController.SetCanvasSize(this.canvas.width, this.canvas.height);
         });
     }
 
@@ -523,26 +525,35 @@ class GameTestApp {
 
         // ブロック操作のマウスイベント
         if (this.blockInteraction) {
+            const isUIBlocked = () =>
+                !this.playerController.isPointerLocked() ||
+                (this.inventory && this.inventory.isOpen()) ||
+                (this.craftingScreen && this.craftingScreen.isOpen());
+
             document.addEventListener('mousedown', (e) => {
-                if ((e.button === 0 || e.button === 2) &&
-                    this.playerController.isPointerLocked() &&
-                    (!this.inventory || !this.inventory.isOpen()) &&
-                    (!this.craftingScreen || !this.craftingScreen.isOpen())) {
+                if (isUIBlocked()) return;
+                if (e.button === 0 || e.button === 2) {
                     this.blockInteraction.handleMouseDown(e);
                 }
             });
             document.addEventListener('mouseup', (e) => {
-                if (e.button === 2 &&
-                    this.playerController.isPointerLocked() &&
-                    (!this.inventory || !this.inventory.isOpen()) &&
-                    (!this.craftingScreen || !this.craftingScreen.isOpen())) {
+                if (isUIBlocked()) return;
+                if (e.button === 2) {
                     this.blockInteraction.handleMouseUp(e);
                 }
             });
             this.canvas.addEventListener('wheel', (e) => {
                 if ((!this.inventory || !this.inventory.isOpen()) &&
                     (!this.craftingScreen || !this.craftingScreen.isOpen())) {
-                    this.blockInteraction.handleWheel(e);
+                    // しゃがみ + 3人称 → カメラ距離変更
+                    if (this.playerController.keys.shift &&
+                        this.viewpointManager && this.viewpointManager.getMode() === ViewpointManager.MODE_THIRD_PERSON) {
+                        const d = this.thirdPersonCamera.getDistance();
+                        const step = e.deltaY > 0 ? 1.5 : -1.5;
+                        this.thirdPersonCamera.setDistance(d + step);
+                    } else {
+                        this.blockInteraction.handleWheel(e);
+                    }
                 }
             });
         }
@@ -980,6 +991,26 @@ class GameTestApp {
         flyBtn.classList.toggle('active', this.player.isFlying());
     }
 
+    /**
+     * クロスヘアの位置を仮想カーソル位置に更新
+     */
+    _updateCrosshairPosition(screenX, screenY) {
+        const el = this._crosshairEl || (this._crosshairEl = document.getElementById('crosshair'));
+        if (!el) return;
+        el.style.left = screenX + 'px';
+        el.style.top = screenY + 'px';
+    }
+
+    /**
+     * クロスヘアを画面中央に戻す
+     */
+    _resetCrosshairPosition() {
+        const el = this._crosshairEl || (this._crosshairEl = document.getElementById('crosshair'));
+        if (!el) return;
+        el.style.left = '50%';
+        el.style.top = '50%';
+    }
+
     async _loadCharacterFromGAS(characterStrId) {
         try {
             const GAS_URL = 'https://script.google.com/macros/s/AKfycbzG0rjt6etezPMgtHZRhHsGSX2km1T4aoX7FYKPSpK8pMcuaAE2W__yY1HMkI0MkidH/exec';
@@ -1073,17 +1104,59 @@ class GameTestApp {
 
         // ブロック操作更新（タッチデバイスでは常時レイキャスト/ハイライトを行わない）
         if (this.blockInteraction && !this.touchController) {
-            if (this.viewpointManager.getMode() === ViewpointManager.MODE_THIRD_PERSON) {
-                const cam = this.camera;
-                const camDir = new THREE.Vector3();
-                cam.getWorldDirection(camDir);
-                const origin = { x: cam.position.x, y: cam.position.y, z: -cam.position.z };
-                const direction = { x: camDir.x, y: camDir.y, z: -camDir.z };
-                this.blockInteraction.currentTarget = this.physicsWorld.raycast(
-                    origin, direction, BlockInteraction.MAX_REACH
+            const k = this.playerController.keys;
+            const isMoving = k.w || k.s || k.a || k.d;
+            const isThirdPerson = this.viewpointManager.getMode() === ViewpointManager.MODE_THIRD_PERSON;
+
+            // 仮想カーソルの有効/無効切替
+            const shouldEnableVirtualCursor = isThirdPerson && !isMoving;
+            if (shouldEnableVirtualCursor !== this.playerController.IsVirtualCursorEnabled()) {
+                this.playerController.SetVirtualCursorEnabled(shouldEnableVirtualCursor);
+                if (!shouldEnableVirtualCursor) {
+                    this._resetCrosshairPosition();
+                }
+            }
+
+            if (isMoving) {
+                // 移動中はハイライト・ゴーストを非表示
+                this.blockInteraction.currentTarget = null;
+                this.blockInteraction.highlight.update(null);
+                this.blockInteraction._updatePlacementPreview();
+            } else if (isThirdPerson && k.shift) {
+                // 3人称 + しゃがみ中: 仮想カーソル位置からスクリーンレイキャスト
+                const cursorPos = this.playerController.GetVirtualCursorPosition();
+                const rect = this.canvas.getBoundingClientRect();
+                this.blockInteraction.currentTarget = this.blockInteraction.raycastFromScreen(
+                    cursorPos.x + rect.left, cursorPos.y + rect.top,
+                    this.camera, this.canvas
                 );
                 this.blockInteraction.highlight.update(this.blockInteraction.currentTarget);
+                this.blockInteraction._updatePlacementPreview();
+
+                // クロスヘア位置を仮想カーソルに追従
+                this._updateCrosshairPosition(cursorPos.x, cursorPos.y);
+
+                // ターゲット方向にキャラクタの体を向ける（カメラには影響しない）
+                const target = this.blockInteraction.currentTarget;
+                if (target && target.hit && this.characterRenderer) {
+                    const pos = this.player.getPosition();
+                    const dx = (target.blockX + 0.5) - pos.x;
+                    const dz = (target.blockZ + 0.5) - pos.z;
+                    this.characterRenderer._bodyYaw = Math.atan2(dx, dz);
+                }
+            } else if (isThirdPerson) {
+                // 3人称 + 非しゃがみ: 画面中央からレイキャスト（視点移動モード）
+                const rect = this.canvas.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                this.blockInteraction.currentTarget = this.blockInteraction.raycastFromScreen(
+                    centerX, centerY, this.camera, this.canvas
+                );
+                this.blockInteraction.highlight.update(this.blockInteraction.currentTarget);
+                this.blockInteraction._updatePlacementPreview();
+                this._resetCrosshairPosition();
             } else {
+                // 1人称: 従来通り
                 this.blockInteraction.update();
             }
         }

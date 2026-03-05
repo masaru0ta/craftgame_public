@@ -6,7 +6,7 @@
 class ThirdPersonCamera {
     // 距離の範囲
     static MIN_DISTANCE = 1.5;
-    static MAX_DISTANCE = 15.0;
+    static MAX_DISTANCE = 30.0;
 
     // 仰角の範囲
     static MIN_ELEVATION = 0.1;
@@ -19,7 +19,7 @@ class ThirdPersonCamera {
     constructor(camera, player) {
         this._camera = camera;
         this._player = player;
-        this._distance = 5.0;
+        this._distance = 18.0;
         this._elevation = 0.4;
     }
 
@@ -44,8 +44,8 @@ class ThirdPersonCamera {
         // Three.js右手系への変換（Z軸反転）
         this._camera.position.set(camX, camY, -camZ);
 
-        // 注視点 = プレイヤー目線位置（Z反転）
-        this._camera.lookAt(eyePos.x, eyePos.y, -eyePos.z);
+        // 注視点 = プレイヤー目線位置から1ブロック上（Z反転）
+        this._camera.lookAt(eyePos.x, eyePos.y + 1, -eyePos.z);
     }
 
     /** @returns {number} */

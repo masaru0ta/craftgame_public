@@ -706,44 +706,69 @@ class ChunkMeshBuilder {
     }
 
     /**
-     * ハーフブロック（orientation=1:下ハーフ / orientation=2:上ハーフ）の個別メッシュ生成
+     * 側面ハーフのテクスチャ面リマップ（物理面→テクスチャ面）
+     * ブロックの底面が設置面に向く回転に対応
+     */
+    static _SideHalfTexRemap = {
+        // orientation 3: 南付き(-Z) Rx(+90°)
+        3: { top: 'front', bottom: 'back', front: 'bottom', back: 'top', left: 'left', right: 'right' },
+        // orientation 4: 北付き(+Z) Rx(-90°)
+        4: { top: 'back', bottom: 'front', front: 'top', back: 'bottom', left: 'left', right: 'right' },
+        // orientation 5: 西付き(-X) Rz(-90°)
+        5: { top: 'left', bottom: 'right', front: 'front', back: 'back', left: 'bottom', right: 'top' },
+        // orientation 6: 東付き(+X) Rz(+90°)
+        6: { top: 'right', bottom: 'left', front: 'front', back: 'back', left: 'top', right: 'bottom' },
+    };
+
+    /**
+     * ハーフブロック（orientation 1-6）の個別メッシュ生成
      */
     _buildHalfBlockAtlas(bx, by, bz, orientation, blockStrId, chunkData, neighborChunks, positions, normals, uvs, atlasInfos, lightLevels, aoLevelsArr, indices, vertexOffset) {
-        const yMin = orientation === 2 ? by + 0.5 : by;
-        const yMax = orientation === 2 ? by + 1   : by + 0.5;
+        // orientation に応じた AABB 範囲
+        let xMin = bx, xMax = bx + 1, yMin = by, yMax = by + 1, zMin = bz, zMax = bz + 1;
+        switch (orientation) {
+            case 1: yMax = by + 0.5; break;      // 下ハーフ
+            case 2: yMin = by + 0.5; break;      // 上ハーフ
+            case 3: zMax = bz + 0.5; break;      // 南付き(-Z)
+            case 4: zMin = bz + 0.5; break;      // 北付き(+Z)
+            case 5: xMax = bx + 0.5; break;      // 西付き(-X)
+            case 6: xMin = bx + 0.5; break;      // 東付き(+X)
+        }
 
         // 6面の定義（外向き法線・頂点順: 時計回り）
         const halfFacesDef = [
             { name: 'top',    normal: [ 0, 1, 0], corners: [
-                { x: bx,   y: yMax, z: bz + 1 }, { x: bx+1, y: yMax, z: bz+1 },
-                { x: bx+1, y: yMax, z: bz   }, { x: bx,   y: yMax, z: bz   }
+                { x: xMin, y: yMax, z: zMax }, { x: xMax, y: yMax, z: zMax },
+                { x: xMax, y: yMax, z: zMin }, { x: xMin, y: yMax, z: zMin }
             ]},
             { name: 'bottom', normal: [ 0,-1, 0], corners: [
-                { x: bx,   y: yMin, z: bz   }, { x: bx+1, y: yMin, z: bz   },
-                { x: bx+1, y: yMin, z: bz+1 }, { x: bx,   y: yMin, z: bz+1 }
+                { x: xMin, y: yMin, z: zMin }, { x: xMax, y: yMin, z: zMin },
+                { x: xMax, y: yMin, z: zMax }, { x: xMin, y: yMin, z: zMax }
             ]},
             { name: 'front',  normal: [ 0, 0,-1], corners: [
-                { x: bx+1, y: yMin, z: bz   }, { x: bx,   y: yMin, z: bz   },
-                { x: bx,   y: yMax, z: bz   }, { x: bx+1, y: yMax, z: bz   }
+                { x: xMax, y: yMin, z: zMin }, { x: xMin, y: yMin, z: zMin },
+                { x: xMin, y: yMax, z: zMin }, { x: xMax, y: yMax, z: zMin }
             ]},
             { name: 'back',   normal: [ 0, 0, 1], corners: [
-                { x: bx,   y: yMin, z: bz+1 }, { x: bx+1, y: yMin, z: bz+1 },
-                { x: bx+1, y: yMax, z: bz+1 }, { x: bx,   y: yMax, z: bz+1 }
+                { x: xMin, y: yMin, z: zMax }, { x: xMax, y: yMin, z: zMax },
+                { x: xMax, y: yMax, z: zMax }, { x: xMin, y: yMax, z: zMax }
             ]},
             { name: 'right',  normal: [ 1, 0, 0], corners: [
-                { x: bx+1, y: yMin, z: bz+1 }, { x: bx+1, y: yMin, z: bz   },
-                { x: bx+1, y: yMax, z: bz   }, { x: bx+1, y: yMax, z: bz+1 }
+                { x: xMax, y: yMin, z: zMax }, { x: xMax, y: yMin, z: zMin },
+                { x: xMax, y: yMax, z: zMin }, { x: xMax, y: yMax, z: zMax }
             ]},
             { name: 'left',   normal: [-1, 0, 0], corners: [
-                { x: bx,   y: yMin, z: bz   }, { x: bx,   y: yMin, z: bz+1 },
-                { x: bx,   y: yMax, z: bz+1 }, { x: bx,   y: yMax, z: bz   }
+                { x: xMin, y: yMin, z: zMin }, { x: xMin, y: yMin, z: zMax },
+                { x: xMin, y: yMax, z: zMax }, { x: xMin, y: yMax, z: zMin }
             ]},
         ];
 
+        const texRemap = ChunkMeshBuilder._SideHalfTexRemap[orientation];
         for (const face of halfFacesDef) {
             if (this._shouldCullHalfFace(chunkData, bx, by, bz, face.name, neighborChunks)) continue;
 
-            const atlasUV = this.textureLoader.getAtlasUV(blockStrId, face.name);
+            const texFace = texRemap ? texRemap[face.name] : face.name;
+            const atlasUV = this.textureLoader.getAtlasUV(blockStrId, texFace);
             const light = this._getFaceLightLevel(chunkData, bx, by, bz, face.name, neighborChunks);
             const lf = ChunkMeshBuilder._lightFactor(light);
 
@@ -755,13 +780,23 @@ class ChunkMeshBuilder {
                 if (aoLevelsArr) aoLevelsArr.push(1.0); // AOなし（初期実装）
             }
 
-            // 側面は圧縮せず、orientation に応じてテクスチャの対応部分を切り出す
-            const isSide = face.name !== 'top' && face.name !== 'bottom';
-            if (isSide) {
-                // 下ハーフ: V=0.0〜0.5（テクスチャ下半分）/ 上ハーフ: V=0.5〜1.0（テクスチャ上半分）
-                const vLo = orientation === 1 ? 0.0 : 0.5;
-                const vHi = orientation === 1 ? 0.5 : 1.0;
-                uvs.push(1, vLo,  0, vLo,  0, vHi,  1, vHi);
+            // 薄い面（ハーフ方向に直交する面）はテクスチャの対応部分を切り出す
+            let isThinFace = false;
+            if (orientation <= 2) {
+                isThinFace = face.name !== 'top' && face.name !== 'bottom';
+            } else if (orientation <= 4) {
+                isThinFace = face.name !== 'front' && face.name !== 'back';
+            } else {
+                isThinFace = face.name !== 'left' && face.name !== 'right';
+            }
+            if (isThinFace) {
+                const vLo = orientation === 2 ? 0.5 : 0.0;
+                const vHi = orientation === 2 ? 1.0 : 0.5;
+                if (face.name === 'top' || face.name === 'bottom') {
+                    uvs.push(0, vHi, 1, vHi, 1, vLo, 0, vLo);
+                } else {
+                    uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
+                }
             } else {
                 this._addTilingUVs(uvs, face.name, 1, 1);
             }

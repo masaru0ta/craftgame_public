@@ -3,7 +3,7 @@
  * ブロック操作統合クラス - レイキャスト、ハイライト、破壊・設置を管理
  */
 class BlockInteraction {
-    static MAX_REACH = 10;  // 最大到達距離（ブロック）
+    static MAX_REACH = 20;  // 最大到達距離（ブロック）
 
     /** 横4方向 + 真上の隣接オフセット（水フロー・decay スケジュール用） */
     static _ADJACENT_5 = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]];
@@ -95,14 +95,12 @@ class BlockInteraction {
         // orientation 事前計算
         let orientation = 0;
         if (selectedBlock.shape_type === 'custom') {
-            orientation = this._calculateOrientation(this.currentTarget.face, this.player.getYaw());
+            orientation = this._calculateOrientation(this.currentTarget, this.player.getYaw());
         } else if (selectedBlock.half_placeable) {
             const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
             const isHalfMode = this._halfPlacementModes.get(slotIndex) || false;
             if (isHalfMode) {
-                orientation = this._calculateHalfOrientation(
-                    this.currentTarget.face, this.currentTarget.hitY, this.currentTarget.adjacentY
-                );
+                orientation = this._calculateHalfOrientation(this.currentTarget.face);
             }
         }
 
@@ -141,7 +139,18 @@ class BlockInteraction {
         const origin = { x: camera.position.x, y: camera.position.y, z: -camera.position.z };
         const direction = { x: rayDir.x, y: rayDir.y, z: -rayDir.z };
 
-        return this.physicsWorld.raycast(origin, direction, BlockInteraction.MAX_REACH);
+        // レイキャストは十分な距離で実行し、プレイヤーからの距離でフィルタ
+        const result = this.physicsWorld.raycast(origin, direction, BlockInteraction.MAX_REACH * 2);
+        if (!result || !result.hit) return result;
+
+        const eyePos = this.player.getEyePosition();
+        const dx = (result.blockX + 0.5) - eyePos.x;
+        const dy = (result.blockY + 0.5) - eyePos.y;
+        const dz = (result.blockZ + 0.5) - eyePos.z;
+        if (dx * dx + dy * dy + dz * dz > BlockInteraction.MAX_REACH * BlockInteraction.MAX_REACH) {
+            return null;
+        }
+        return result;
     }
 
     /**
@@ -191,14 +200,12 @@ class BlockInteraction {
         // orientation 計算
         let orientation = 0;
         if (selectedBlock.shape_type === 'custom') {
-            orientation = this._calculateOrientation(target.face, this.player.getYaw());
+            orientation = this._calculateOrientation(target, this.player.getYaw());
         } else if (selectedBlock.half_placeable) {
             const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
             const isHalfMode = this._halfPlacementModes.get(slotIndex) || false;
             if (isHalfMode) {
-                orientation = this._calculateHalfOrientation(
-                    target.face, target.hitY, target.adjacentY
-                );
+                orientation = this._calculateHalfOrientation(target.face);
             }
         }
 
@@ -680,16 +687,21 @@ class BlockInteraction {
 
     /**
      * カスタムブロックの設置方向（orientation）を計算
-     * クリック面とプレイヤーの視線方向から、orientation(0〜23)を決定する
-     * @param {string} faceStr - クリック面 ('top'|'bottom'|'north'|'south'|'east'|'west')
+     * - 上面・下面: プレイヤーの視線方向で正面がプレイヤー側を向く
+     * - 側面: 面上のヒット位置（上/下/左/右）で正面方向が決まる
+     * @param {Object} target - レイキャスト結果（face, hitX, hitY, hitZ, adjacentX, adjacentY, adjacentZ）
      * @param {number} playerYaw - プレイヤーのYaw角（ラジアン、0=北/Z+方向）
      * @returns {number} orientation (0〜23)
      */
-    _calculateOrientation(faceStr, playerYaw) {
-        const face = BlockInteraction._FACE_TO_INT[faceStr] || 0;
+    _calculateOrientation(target, playerYaw) {
+        const face = BlockInteraction._FACE_TO_INT[target.face] || 0;
 
-        // プレイヤーの視線方向からrotation（0〜3）を決定
-        // Player.getLookDirection(): x = -sin(yaw), z = cos(yaw)
+        if (face >= 2) {
+            // 側面: ヒット位置の上/下/左/右で rotation を決定（プレイヤー向き不問）
+            return face * 4 + BlockInteraction._sideRotationFromHit(face, target);
+        }
+
+        // 上面・下面: プレイヤーの視線方向から rotation を決定
         const camDirX = -Math.sin(playerYaw);
         const camDirZ = Math.cos(playerYaw);
         const angle = Math.atan2(camDirX, camDirZ) * 180 / Math.PI;
@@ -700,24 +712,53 @@ class BlockInteraction {
         else if (angle >= -135 && angle < -45) rotation = 3;
         else rotation = 2;
 
-        // 180度反転: ブロックの正面がプレイヤー側を向くようにする
-        rotation = (rotation + 2) % 4;
+        // 上面(face=0): Ry(π)反転でプレイヤーの向き方向に正面を合わせる
+        // 下面(face=1): Rx(π)がZを反転するため、回転方向を逆にして補正
+        rotation = (face === 0) ? (rotation + 2) % 4 : (4 - rotation) % 4;
 
         return face * 4 + rotation;
     }
 
+    // 側面の rotation 対応表（配列: [face-2] → [上ヒット, 下ヒット, +水平軸ヒット, -水平軸ヒット]）
+    // ヒット方向と逆側に正面を向ける（上を狙う→正面は下、右を狙う→正面は左）
+    static _SideRotations = [
+        [2, 0, 1, 3], // face=2 north: 上→DOWN, 下→UP, +X→-X, -X→+X
+        [0, 2, 1, 3], // face=3 south: 上→DOWN, 下→UP, +X→-X, -X→+X
+        [3, 1, 0, 2], // face=4 east:  上→DOWN, 下→UP, +Z→-Z, -Z→+Z
+        [1, 3, 0, 2], // face=5 west:  上→DOWN, 下→UP, +Z→-Z, -Z→+Z
+    ];
+
+    /**
+     * 側面のヒット位置から rotation を決定
+     * 面の中心からの上下/左右の偏りが大きい方向に正面を向ける
+     */
+    static _sideRotationFromHit(face, target) {
+        const dy = target.hitY - (target.adjacentY + 0.5);
+        const dh = (face <= 3)
+            ? target.hitX - (target.adjacentX + 0.5)   // north/south: 水平軸=X
+            : target.hitZ - (target.adjacentZ + 0.5);  // east/west:   水平軸=Z
+        const rots = BlockInteraction._SideRotations[face - 2];
+        if (Math.abs(dy) >= Math.abs(dh)) {
+            return dy > 0 ? rots[0] : rots[1];
+        }
+        return dh > 0 ? rots[2] : rots[3];
+    }
+
     /**
      * ハーフブロックの orientation を決定する
-     * @param {string} face - クリック面 ('top'|'bottom'|その他の側面)
-     * @param {number} hitY - レイが交差した Y 座標
-     * @param {number} adjacentY - 設置先ブロックの Y 座標
-     * @returns {number} 1（下ハーフ）または 2（上ハーフ）
+     * @param {string} face - クリック面
+     * @returns {number} 1〜6（orientation）
      */
-    _calculateHalfOrientation(face, hitY, adjacentY) {
-        if (face === 'top') return 1;    // 上面クリック → 下ハーフ
-        if (face === 'bottom') return 2; // 下面クリック → 上ハーフ
-        // 側面: hitY の位置で下半・上半を判断
-        return (hitY <= adjacentY + 0.5) ? 1 : 2;
+    _calculateHalfOrientation(face) {
+        switch (face) {
+            case 'top':    return 1; // 下ハーフ
+            case 'bottom': return 2; // 上ハーフ
+            case 'north':  return 3; // 南付き（-Z）
+            case 'south':  return 4; // 北付き（+Z）
+            case 'east':   return 5; // 西付き（-X）
+            case 'west':   return 6; // 東付き（+X）
+            default:       return 1;
+        }
     }
 
     /**

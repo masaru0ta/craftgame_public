@@ -485,19 +485,20 @@ class PhysicsWorld {
             const localX = ((blockX % 16) + 16) % 16;
             const localZ = ((blockZ % 16) + 16) % 16;
             const orientation = chunk.chunkData.getOrientation(localX, localY, localZ);
-            if (orientation === 1) {
-                // 下ハーフ: y 〜 y+0.5
-                return [{
-                    minX: blockX, minY: blockY,       minZ: blockZ,
-                    maxX: blockX + 1, maxY: blockY + 0.5, maxZ: blockZ + 1
-                }];
-            }
-            if (orientation === 2) {
-                // 上ハーフ: y+0.5 〜 y+1
-                return [{
-                    minX: blockX, minY: blockY + 0.5, minZ: blockZ,
+            if (orientation >= 1 && orientation <= 6) {
+                const aabb = {
+                    minX: blockX, minY: blockY, minZ: blockZ,
                     maxX: blockX + 1, maxY: blockY + 1, maxZ: blockZ + 1
-                }];
+                };
+                switch (orientation) {
+                    case 1: aabb.maxY = blockY + 0.5; break; // 下ハーフ
+                    case 2: aabb.minY = blockY + 0.5; break; // 上ハーフ
+                    case 3: aabb.maxZ = blockZ + 0.5; break; // 南付き（-Z）
+                    case 4: aabb.minZ = blockZ + 0.5; break; // 北付き（+Z）
+                    case 5: aabb.maxX = blockX + 0.5; break; // 西付き（-X）
+                    case 6: aabb.minX = blockX + 0.5; break; // 東付き（+X）
+                }
+                return [aabb];
             }
         }
 
@@ -819,7 +820,7 @@ class PhysicsWorld {
                                 blockZ,
                                 face: customHit.face,
                                 distance: dist,
-                                hitY: y,
+                                hitX: x, hitY: y, hitZ: z,
                                 adjacentX: adjacent.x,
                                 adjacentY: adjacent.y,
                                 adjacentZ: adjacent.z
@@ -840,7 +841,7 @@ class PhysicsWorld {
                         blockZ,
                         face,
                         distance: dist,
-                        hitY: y,
+                        hitX: x, hitY: y, hitZ: z,
                         adjacentX: adjacent.x,
                         adjacentY: adjacent.y,
                         adjacentZ: adjacent.z

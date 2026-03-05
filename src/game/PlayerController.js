@@ -62,6 +62,12 @@ class PlayerController {
         // オートジャンプ設定（デフォルトON）
         this.autoJumpEnabled = true;
 
+        // 仮想カーソル状態（3人称建築モード用）
+        this._virtualCursorEnabled = false;
+        this._virtualCursorX = 0;
+        this._virtualCursorY = 0;
+        this._canvasWidth = 0;
+        this._canvasHeight = 0;
         // イベントハンドラをバインド
         this._boundKeyDown = this.handleKeyDown.bind(this);
         this._boundKeyUp = this.handleKeyUp.bind(this);
@@ -204,13 +210,64 @@ class PlayerController {
         const movementX = event.movementX || 0;
         const movementY = event.movementY || 0;
 
-        // Yaw（左右回転）: 左に動かすとYaw増加
-        const yaw = this._player.getYaw();
-        this._player.setYaw(yaw - movementX * this._mouseSensitivity);
+        if (this._virtualCursorEnabled && this.keys.shift) {
+            // 仮想カーソルモード（しゃがみ時）: movementをカーソル座標に加算
+            const margin = 10;
+            this._virtualCursorX = Math.max(margin, Math.min(this._canvasWidth - margin,
+                this._virtualCursorX + movementX));
+            this._virtualCursorY = Math.max(margin, Math.min(this._canvasHeight - margin,
+                this._virtualCursorY + movementY));
+        } else {
+            // 通常モード: yaw/pitch回転
+            const yaw = this._player.getYaw();
+            this._player.setYaw(yaw - movementX * this._mouseSensitivity);
 
-        // Pitch（上下回転）: 上に動かすとPitch増加
-        const pitch = this._player.getPitch();
-        this._player.setPitch(pitch - movementY * this._mouseSensitivity);
+            const pitch = this._player.getPitch();
+            this._player.setPitch(pitch - movementY * this._mouseSensitivity);
+        }
+    }
+
+    // ========================================
+    // 仮想カーソル（3人称建築モード）
+    // ========================================
+
+    /**
+     * 仮想カーソルモードの有効/無効を切り替える
+     * 有効にすると画面中央にリセットされる
+     * @param {boolean} enabled
+     */
+    SetVirtualCursorEnabled(enabled) {
+        this._virtualCursorEnabled = enabled;
+        if (enabled) {
+            this._virtualCursorX = this._canvasWidth / 2;
+            this._virtualCursorY = this._canvasHeight / 2;
+        }
+    }
+
+    /**
+     * キャンバスサイズを設定（クランプ用）
+     * @param {number} width
+     * @param {number} height
+     */
+    SetCanvasSize(width, height) {
+        this._canvasWidth = width;
+        this._canvasHeight = height;
+    }
+
+    /**
+     * 仮想カーソルの現在位置を取得
+     * @returns {{ x: number, y: number }}
+     */
+    GetVirtualCursorPosition() {
+        return { x: this._virtualCursorX, y: this._virtualCursorY };
+    }
+
+    /**
+     * 仮想カーソルモードが有効かどうか
+     * @returns {boolean}
+     */
+    IsVirtualCursorEnabled() {
+        return this._virtualCursorEnabled;
     }
 
     // ========================================

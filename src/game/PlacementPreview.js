@@ -26,12 +26,16 @@ class PlacementPreview {
      * @param {THREE.Scene} scene
      * @param {TextureLoader} textureLoader
      */
+    static ShowDelay = 500; // ハイライトからゴースト表示までの遅延(ms)
+
     constructor(scene, textureLoader) {
         this._scene = scene;
         this._textureLoader = textureLoader;
         this._currentMesh = null;   // ゴーストメッシュ (THREE.Group)
         this._cacheKey = '';
         this._canPlace = true;
+        this._lastAdjacentKey = '';  // 前フレームの設置先座標キー
+        this._highlightStartTime = 0; // ハイライト開始時刻
         this._material = this._createMaterial();
         this._wireMaterial = new THREE.LineBasicMaterial({
             color: PlacementPreview.WireColorNormal,
@@ -97,6 +101,22 @@ class PlacementPreview {
     update(raycastResult, selectedBlock, orientation, canPlace) {
         if (!raycastResult || !raycastResult.hit || !selectedBlock) {
             this.hide();
+            this._lastAdjacentKey = '';
+            return;
+        }
+
+        // 設置先座標が変わったらタイマーリセット
+        const adjacentKey = `${raycastResult.adjacentX},${raycastResult.adjacentY},${raycastResult.adjacentZ}`;
+        const now = performance.now();
+        if (adjacentKey !== this._lastAdjacentKey) {
+            this._lastAdjacentKey = adjacentKey;
+            this._highlightStartTime = now;
+            this.hide();
+            return;
+        }
+
+        // 遅延時間に達していなければ非表示のまま
+        if (now - this._highlightStartTime < PlacementPreview.ShowDelay) {
             return;
         }
 
@@ -162,7 +182,7 @@ class PlacementPreview {
 
         if (blockDef.shape_type === 'custom' && blockDef.voxel_look) {
             vertexOffset = this._buildCustomMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
-        } else if (blockDef.half_placeable && (orientation === 1 || orientation === 2)) {
+        } else if (blockDef.half_placeable && orientation >= 1 && orientation <= 6) {
             vertexOffset = this._buildHalfMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         } else {
             vertexOffset = this._buildFullMesh(blockDef, positions, normals, uvs, atlasInfos, indices, vertexOffset);
@@ -192,18 +212,16 @@ class PlacementPreview {
     }
 
     /**
-     * ボックス形状の面定義を取得（Three.js座標系: Z反転済み）
-     * @param {number} yMin - Y最小値
-     * @param {number} yMax - Y最大値
+     * 任意範囲のボックス面定義（Three.js座標系: Z は反転済みの値を渡す）
      */
-    static _BoxFaces(yMin, yMax) {
+    static _BoxFaces3D(xMin, xMax, yMin, yMax, zMin, zMax) {
         return [
-            { name: 'top',    n: [0,1,0],  corners: [[0,yMax,-1],[1,yMax,-1],[1,yMax,0],[0,yMax,0]] },
-            { name: 'bottom', n: [0,-1,0], corners: [[0,yMin,0],[1,yMin,0],[1,yMin,-1],[0,yMin,-1]] },
-            { name: 'front',  n: [0,0,1],  corners: [[1,yMin,0],[0,yMin,0],[0,yMax,0],[1,yMax,0]] },
-            { name: 'back',   n: [0,0,-1], corners: [[0,yMin,-1],[1,yMin,-1],[1,yMax,-1],[0,yMax,-1]] },
-            { name: 'right',  n: [1,0,0],  corners: [[1,yMin,-1],[1,yMin,0],[1,yMax,0],[1,yMax,-1]] },
-            { name: 'left',   n: [-1,0,0], corners: [[0,yMin,0],[0,yMin,-1],[0,yMax,-1],[0,yMax,0]] },
+            { name: 'top',    n: [0,1,0],  corners: [[xMin,yMax,zMin],[xMax,yMax,zMin],[xMax,yMax,zMax],[xMin,yMax,zMax]] },
+            { name: 'bottom', n: [0,-1,0], corners: [[xMin,yMin,zMax],[xMax,yMin,zMax],[xMax,yMin,zMin],[xMin,yMin,zMin]] },
+            { name: 'front',  n: [0,0,1],  corners: [[xMax,yMin,zMax],[xMin,yMin,zMax],[xMin,yMax,zMax],[xMax,yMax,zMax]] },
+            { name: 'back',   n: [0,0,-1], corners: [[xMin,yMin,zMin],[xMax,yMin,zMin],[xMax,yMax,zMin],[xMin,yMax,zMin]] },
+            { name: 'right',  n: [1,0,0],  corners: [[xMax,yMin,zMin],[xMax,yMin,zMax],[xMax,yMax,zMax],[xMax,yMax,zMin]] },
+            { name: 'left',   n: [-1,0,0], corners: [[xMin,yMin,zMax],[xMin,yMin,zMin],[xMin,yMax,zMin],[xMin,yMax,zMax]] },
         ];
     }
 
@@ -211,36 +229,60 @@ class PlacementPreview {
      * フルブロック（1×1×1）のジオメトリを生成
      */
     _buildFullMesh(blockDef, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
-        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces(0, 1), 0, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), 0, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
-     * ハーフブロック（1×0.5×1）のジオメトリを生成
-     * orientation=1: 下ハーフ (Y=0〜0.5), orientation=2: 上ハーフ (Y=0.5〜1)
+     * ハーフブロック のジオメトリを生成
+     * orientation 1-2: Y方向ハーフ, 3-6: 側面ハーフ
      */
     _buildHalfMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
-        const yMin = orientation === 2 ? 0.5 : 0;
-        const yMax = orientation === 2 ? 1.0 : 0.5;
-        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces(yMin, yMax), orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        // orientation ごとの AABB（Three.js座標系: Z反転）
+        const bounds = [
+            null,                        // 0: unused
+            [0, 1, 0, 0.5, -1, 0],       // 1: 下ハーフ
+            [0, 1, 0.5, 1, -1, 0],       // 2: 上ハーフ
+            [0, 1, 0, 1, -0.5, 0],       // 3: 南付き(-Z)
+            [0, 1, 0, 1, -1, -0.5],      // 4: 北付き(+Z)
+            [0, 0.5, 0, 1, -1, 0],       // 5: 西付き(-X)
+            [0.5, 1, 0, 1, -1, 0],       // 6: 東付き(+X)
+        ];
+        const b = bounds[orientation];
+        const faces = PlacementPreview._BoxFaces3D(b[0], b[1], b[2], b[3], b[4], b[5]);
+        return this._buildBoxFaces(blockDef, faces, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
      * ボックス面定義配列から頂点を生成する共通処理
      */
     _buildBoxFaces(blockDef, faces, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+        const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
+            ? ChunkMeshBuilder._SideHalfTexRemap[orientation] : null;
         for (const face of faces) {
-            const atlasUV = this._textureLoader.getAtlasUV(blockDef.block_str_id, face.name);
+            const texFace = texRemap ? texRemap[face.name] : face.name;
+            const atlasUV = this._textureLoader.getAtlasUV(blockDef.block_str_id, texFace);
             for (const c of face.corners) {
                 positions.push(c[0], c[1], c[2]);
                 normals.push(face.n[0], face.n[1], face.n[2]);
                 atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
             }
-            // ハーフブロック側面はテクスチャ切り出し
-            const isHalfSide = orientation > 0 && face.name !== 'top' && face.name !== 'bottom';
-            if (isHalfSide) {
-                const vLo = orientation === 1 ? 0.0 : 0.5;
-                const vHi = orientation === 1 ? 0.5 : 1.0;
-                uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
+            // 薄い面はテクスチャの対応部分を切り出す
+            let isThinFace = false;
+            if (orientation >= 1 && orientation <= 2) {
+                isThinFace = face.name !== 'top' && face.name !== 'bottom';
+            } else if (orientation >= 3 && orientation <= 4) {
+                isThinFace = face.name !== 'front' && face.name !== 'back';
+            } else if (orientation >= 5 && orientation <= 6) {
+                isThinFace = face.name !== 'left' && face.name !== 'right';
+            }
+            if (isThinFace) {
+                const vLo = orientation === 2 ? 0.5 : 0.0;
+                const vHi = orientation === 2 ? 1.0 : 0.5;
+                if (face.name === 'top' || face.name === 'bottom') {
+                    uvs.push(0, vHi, 1, vHi, 1, vLo, 0, vLo);
+                } else {
+                    uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
+                }
             } else {
                 this._addFaceUVs(uvs, face.name);
             }
@@ -265,9 +307,9 @@ class PlacementPreview {
         const nc = [0, 0, 0];
         const pos = [0, 0, 0];
 
+        // ゲーム座標系（Z非反転）で頂点を生成（ChunkMeshBuilderと同じ座標系）
         for (const cfg of PlacementPreview._FaceConfigs) {
             const nDir = cfg.offset === 1 ? 1 : -1;
-            const nFlipX = cfg.n[0], nFlipY = cfg.n[1], nFlipZ = -cfg.n[2];
             for (let d = 0; d < gs; d++) {
                 for (let cv = 0; cv < gs; cv++) {
                     for (let cu = 0; cu < gs; cu++) {
@@ -286,19 +328,18 @@ class PlacementPreview {
                         const cuVs = cu * vs, cvVs = cv * vs;
                         const cu1Vs = cuVs + vs, cv1Vs = cvVs + vs;
 
-                        // 4コーナーをインライン展開（配列アロケーション回避）
-                        // (cu,cv), (cu+1,cv), (cu+1,cv+1), (cu,cv+1)
+                        // 4コーナーをインライン展開（ゲーム座標系: Z非反転）
                         pos[cfg.axis] = faceD;
                         pos[cfg.u] = cuVs;  pos[cfg.v] = cvVs;
-                        positions.push(pos[0], pos[1], -pos[2]);
+                        positions.push(pos[0], pos[1], pos[2]);
                         pos[cfg.u] = cu1Vs; pos[cfg.v] = cvVs;
-                        positions.push(pos[0], pos[1], -pos[2]);
+                        positions.push(pos[0], pos[1], pos[2]);
                         pos[cfg.u] = cu1Vs; pos[cfg.v] = cv1Vs;
-                        positions.push(pos[0], pos[1], -pos[2]);
+                        positions.push(pos[0], pos[1], pos[2]);
                         pos[cfg.u] = cuVs;  pos[cfg.v] = cv1Vs;
-                        positions.push(pos[0], pos[1], -pos[2]);
+                        positions.push(pos[0], pos[1], pos[2]);
                         for (let ci = 0; ci < 4; ci++) {
-                            normals.push(nFlipX, nFlipY, nFlipZ);
+                            normals.push(cfg.n[0], cfg.n[1], cfg.n[2]);
                             atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
                         }
                         uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
@@ -309,23 +350,29 @@ class PlacementPreview {
             }
         }
 
-        // orientation回転適用（0以外の場合）
-        if (orientation !== 0 && typeof ChunkMeshBuilder !== 'undefined') {
-            const m = ChunkMeshBuilder.ORIENTATION_MATRICES[orientation];
-            if (m) {
-                const endVertexCount = positions.length / 3;
-                const cx = 0.5, cy = 0.5, cz = -0.5;
-                for (let i = startVertexCount; i < endVertexCount; i++) {
-                    const pi = i * 3;
-                    const dx = positions[pi] - cx, dy = positions[pi + 1] - cy, dz = positions[pi + 2] - cz;
-                    positions[pi]     = cx + m[0] * dx + m[1] * dy + m[2] * dz;
-                    positions[pi + 1] = cy + m[3] * dx + m[4] * dy + m[5] * dz;
-                    positions[pi + 2] = cz + m[6] * dx + m[7] * dy + m[8] * dz;
-                    const nx = normals[pi], ny = normals[pi + 1], nz = normals[pi + 2];
-                    normals[pi]     = m[0] * nx + m[1] * ny + m[2] * nz;
-                    normals[pi + 1] = m[3] * nx + m[4] * ny + m[5] * nz;
-                    normals[pi + 2] = m[6] * nx + m[7] * ny + m[8] * nz;
-                }
+        // 回転 + Three.js座標系変換（Z反転）を1パスで処理
+        const endVertexCount = positions.length / 3;
+        const m = (orientation !== 0 && typeof ChunkMeshBuilder !== 'undefined')
+            ? ChunkMeshBuilder.ORIENTATION_MATRICES[orientation] : null;
+
+        if (m) {
+            const cx = 0.5, cy = 0.5, cz = 0.5;
+            for (let i = startVertexCount; i < endVertexCount; i++) {
+                const pi = i * 3;
+                const dx = positions[pi] - cx, dy = positions[pi + 1] - cy, dz = positions[pi + 2] - cz;
+                positions[pi]     =  (cx + m[0] * dx + m[1] * dy + m[2] * dz);
+                positions[pi + 1] =  (cy + m[3] * dx + m[4] * dy + m[5] * dz);
+                positions[pi + 2] = -(cz + m[6] * dx + m[7] * dy + m[8] * dz);
+                const nx = normals[pi], ny = normals[pi + 1], nz = normals[pi + 2];
+                normals[pi]     =  (m[0] * nx + m[1] * ny + m[2] * nz);
+                normals[pi + 1] =  (m[3] * nx + m[4] * ny + m[5] * nz);
+                normals[pi + 2] = -(m[6] * nx + m[7] * ny + m[8] * nz);
+            }
+        } else {
+            for (let i = startVertexCount; i < endVertexCount; i++) {
+                const pi = i * 3;
+                positions[pi + 2] = -positions[pi + 2];
+                normals[pi + 2] = -normals[pi + 2];
             }
         }
 
