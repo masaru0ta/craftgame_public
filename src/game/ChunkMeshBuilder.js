@@ -736,8 +736,8 @@ class ChunkMeshBuilder {
         // 0: 上面クリック → bottom上、top下（デフォルト配置なのでリマップ不要）
         // 1: 下面クリック → bottom下、top上（上下反転）
         1: { top: 'bottom', bottom: 'top', front: 'front', back: 'back', left: 'left', right: 'right' },
-        // 2: 北面(Z-)クリック → bottom北(front)、top南(back)
-        2: { top: 'back', bottom: 'front', front: 'bottom', back: 'top', left: 'left', right: 'right' },
+        // 2: 北面(Z-)クリック → bottom南(back)、top北(front)
+        2: { top: 'back', bottom: 'front', front: 'top', back: 'bottom', left: 'left', right: 'right' },
         // 3: 南面(Z+)クリック → bottom南(back)、top北(front)
         3: { top: 'front', bottom: 'back', front: 'top', back: 'bottom', left: 'left', right: 'right' },
         // 4: 東面(X+)クリック → bottom東(right)、top西(left)
