@@ -480,11 +480,12 @@ class PhysicsWorld {
             }];
         }
 
-        // ハーフブロック対応（half_placeable=true かつ orientation > 0）
+        // ハーフブロック対応（half_placeable=true かつ orientation 101-106）
         if (blockDef.half_placeable && blockDef.shape_type !== 'custom') {
             const localX = ((blockX % 16) + 16) % 16;
             const localZ = ((blockZ % 16) + 16) % 16;
-            const orientation = chunk.chunkData.getOrientation(localX, localY, localZ);
+            const rawOrientation = chunk.chunkData.getOrientation(localX, localY, localZ);
+            const orientation = rawOrientation - 100;
             if (orientation >= 1 && orientation <= 6) {
                 const aabb = {
                     minX: blockX, minY: blockY, minZ: blockZ,

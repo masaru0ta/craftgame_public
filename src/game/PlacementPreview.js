@@ -182,8 +182,8 @@ class PlacementPreview {
 
         if (blockDef.shape_type === 'custom' && blockDef.voxel_look) {
             vertexOffset = this._buildCustomMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
-        } else if (blockDef.half_placeable && orientation >= 1 && orientation <= 6) {
-            vertexOffset = this._buildHalfMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        } else if (blockDef.half_placeable && orientation >= 101 && orientation <= 106) {
+            vertexOffset = this._buildHalfMesh(blockDef, orientation - 100, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         } else {
             vertexOffset = this._buildFullMesh(blockDef, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         }

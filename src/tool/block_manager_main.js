@@ -450,10 +450,11 @@ function selectBlock(blockId) {
     elements.halfPlaceable.checked = block.half_placeable || false;
     elements.orientable.checked = block.orientable || false;
 
-    // ハーフ設置はnormalブロックのみ表示
+    // ハーフ設置はnormalブロックのみ、設置方向可変はcustom以外で表示
     const isNormal = (block.shape_type || 'normal') === 'normal';
+    const isCustom = (block.shape_type || 'normal') === 'custom';
     elements.halfPlaceableGroup.style.display = isNormal ? '' : 'none';
-    elements.orientableGroup.style.display = isNormal ? '' : 'none';
+    elements.orientableGroup.style.display = isCustom ? 'none' : '';
 
     // BlockEditorUI にブロックをロード
     if (state.editorUI) {
@@ -478,9 +479,9 @@ function handleBlockTypeChange(e) {
     }
     state.isModified = true;
 
-    // ハーフ設置チェックボックスの表示切り替え
+    // チェックボックスの表示切り替え
     elements.halfPlaceableGroup.style.display = newType === 'normal' ? '' : 'none';
-    elements.orientableGroup.style.display = newType === 'normal' ? '' : 'none';
+    elements.orientableGroup.style.display = newType === 'custom' ? 'none' : '';
 
     // BlockEditorUI を再ロード
     if (state.editorUI) {

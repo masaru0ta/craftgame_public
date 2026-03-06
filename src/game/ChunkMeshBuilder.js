@@ -382,8 +382,8 @@ class ChunkMeshBuilder {
             // ハーフブロック: グリーディーメッシングから除外して個別描画
             if (blockDef && blockDef.half_placeable) {
                 const orientation = chunkData.getOrientation(x, y, z);
-                if (orientation > 0) {
-                    halfBlocks.push({ blockStrId, x, y, z, orientation });
+                if (orientation >= 101 && orientation <= 106) {
+                    halfBlocks.push({ blockStrId, x, y, z, orientation: orientation - 100 });
                     return;
                 }
             }
@@ -706,10 +706,9 @@ class ChunkMeshBuilder {
         // 水ブロック・カスタムブロックは透過扱い（面をカリングしない）
         if (neighbor === 'air' || neighbor === 'water' || neighbor === null) return false;
         if (this._isCustomBlock(neighbor)) return false;
-        // ハーフブロック（orientation > 0）は面を隠しきれないのでカリングしない
-        // orientation を先に確認し、0 の場合は getBlockDef 呼び出しをスキップ
+        // ハーフブロック（orientation 101-106）は面を隠しきれないのでカリングしない
         const nOrientation = loc.chunk.getOrientation(loc.localX, loc.localY, loc.localZ);
-        if (nOrientation > 0) {
+        if (nOrientation >= 101 && nOrientation <= 106) {
             const neighborDef = this.textureLoader.getBlockDef(neighbor);
             if (neighborDef && neighborDef.half_placeable) return false;
         }
@@ -1328,11 +1327,10 @@ class ChunkMeshBuilder {
         if (!loc) return 15;
         const light = loc.chunk.getLight(loc.localX, loc.localY, loc.localZ);
 
-        // ハーフブロック（orientation > 0）は固体扱いで光レベルが 0 になるため、
+        // ハーフブロック（orientation 101-106）は固体扱いで光レベルが 0 になるため、
         // 上のブロックの光レベルとの最大値を使って面が真っ黒になるのを防ぐ。
-        // orientation を先に確認し、0（大多数の通常ブロック）は getBlockDef をスキップ
         const orientation = loc.chunk.getOrientation(loc.localX, loc.localY, loc.localZ);
-        if (orientation > 0 && ny + 1 < ChunkData.SIZE_Y) {
+        if (orientation >= 101 && orientation <= 106 && ny + 1 < ChunkData.SIZE_Y) {
             const block = loc.chunk.getBlock(loc.localX, loc.localY, loc.localZ);
             const blockDef = block ? this.textureLoader.getBlockDef(block) : null;
             if (blockDef && blockDef.half_placeable) {

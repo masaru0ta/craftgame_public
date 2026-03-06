@@ -782,17 +782,17 @@ class BlockInteraction {
     /**
      * ハーフブロックの orientation を決定する
      * @param {string} face - クリック面
-     * @returns {number} 1〜6（orientation）
+     * @returns {number} 101〜106（orientation）
      */
     _calculateHalfOrientation(face) {
         switch (face) {
-            case 'top':    return 1; // 下ハーフ
-            case 'bottom': return 2; // 上ハーフ
-            case 'north':  return 3; // 南付き（-Z）
-            case 'south':  return 4; // 北付き（+Z）
-            case 'east':   return 5; // 西付き（-X）
-            case 'west':   return 6; // 東付き（+X）
-            default:       return 1;
+            case 'top':    return 101; // 下ハーフ
+            case 'bottom': return 102; // 上ハーフ
+            case 'north':  return 103; // 南付き（-Z）
+            case 'south':  return 104; // 北付き（+Z）
+            case 'east':   return 105; // 西付き（-X）
+            case 'west':   return 106; // 東付き（+X）
+            default:       return 101;
         }
     }
 
