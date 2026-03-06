@@ -54,6 +54,16 @@ class RotationBodyMesh {
         this._group.position.set(ax, ay, az);
     }
 
+    // カスタムブロックのボクセル面設定（ChunkMeshBuilderと同じ）
+    static _VOXEL_FACE_CONFIGS = [
+        { faceName: 'right',  axis: 0, u: 2, v: 1, offset: 1, normal: [1, 0, 0] },
+        { faceName: 'left',   axis: 0, u: 2, v: 1, offset: 0, normal: [-1, 0, 0] },
+        { faceName: 'top',    axis: 1, u: 0, v: 2, offset: 1, normal: [0, 1, 0] },
+        { faceName: 'bottom', axis: 1, u: 0, v: 2, offset: 0, normal: [0, -1, 0] },
+        { faceName: 'back',   axis: 2, u: 0, v: 1, offset: 1, normal: [0, 0, 1] },
+        { faceName: 'front',  axis: 2, u: 0, v: 1, offset: 0, normal: [0, 0, -1] }
+    ];
+
     /**
      * メッシュを構築
      */
@@ -77,12 +87,22 @@ class RotationBodyMesh {
         let vertexOffset = 0;
 
         for (const b of blocks) {
+            const blockDef = this._textureLoader.getBlockDef(b.blockId);
+
+            if (blockDef && blockDef.shape_type === 'custom') {
+                // カスタムブロック: ボクセルメッシュ生成
+                vertexOffset = this._buildCustomBlockVoxels(
+                    blockDef, b.rx, b.ry, b.rz, b.orientation || 0,
+                    positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset
+                );
+                continue;
+            }
+
+            // 通常ブロック: 立方体メッシュ生成
             for (const faceName of RotationBodyMesh._FACE_NAMES) {
-                // 隣接ブロックが回転体内にあればカリング
                 const off = RotationBodyMesh._FACE_OFFSETS[faceName];
                 if (blockSet.has(`${b.rx + off.dx},${b.ry + off.dy},${b.rz + off.dz}`)) continue;
 
-                // 頂点（軸ブロック中心を原点とした相対座標）
                 const cornerOffsets = RotationBodyMesh._FACE_CORNER_OFFSETS[faceName];
                 const normal = RotationBodyMesh._FACE_NORMALS[faceName];
                 const atlasUV = this._textureLoader.getAtlasUV(b.blockId, faceName);
@@ -120,6 +140,143 @@ class RotationBodyMesh {
         const material = this._textureLoader.getAtlasMaterial();
         const mesh = new THREE.Mesh(geometry, material);
         this._group.add(mesh);
+    }
+
+    /**
+     * カスタムブロックのボクセルメッシュ生成（回転体用・簡易版）
+     * ChunkMeshBuilder._buildCustomBlockVoxels と同等だがライト固定1.0
+     */
+    _buildCustomBlockVoxels(blockDef, rx, ry, rz, orientation, positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset) {
+        const voxelDataBase64 = blockDef.voxel_look;
+        if (!voxelDataBase64) return vertexOffset;
+
+        const voxelData = VoxelData.decode(voxelDataBase64);
+        const matAtlasUVs = this._prepareCustomBlockMaterials(blockDef);
+
+        const gs = 8;
+        const vs = 1 / gs;
+        // ブロック基点（軸中心原点からの相対座標）
+        const blockBase = [rx - 0.5, ry - 0.5, rz - 0.5];
+        const startVertexCount = positions.length / 3;
+
+        for (const config of RotationBodyMesh._VOXEL_FACE_CONFIGS) {
+            const { faceName, axis, u, v, offset, normal } = config;
+
+            for (let d = 0; d < gs; d++) {
+                // 面マスク構築
+                const mask = new Uint8Array(gs * gs);
+                for (let vPos = 0; vPos < gs; vPos++) {
+                    for (let uPos = 0; uPos < gs; uPos++) {
+                        const coord = [0, 0, 0];
+                        coord[axis] = d;
+                        coord[u] = uPos;
+                        coord[v] = vPos;
+                        const value = VoxelData.getVoxel(voxelData, coord[0], coord[1], coord[2]);
+                        if (value === 0) continue;
+                        const neighborD = offset === 1 ? d + 1 : d - 1;
+                        let hasNeighbor = false;
+                        if (neighborD >= 0 && neighborD < gs) {
+                            const nc = [coord[0], coord[1], coord[2]];
+                            nc[axis] = neighborD;
+                            hasNeighbor = VoxelData.getVoxel(voxelData, nc[0], nc[1], nc[2]) !== 0;
+                        }
+                        if (!hasNeighbor) mask[vPos * gs + uPos] = value;
+                    }
+                }
+
+                // グリーディマージ＆クアッド出力
+                for (let vPos = 0; vPos < gs; vPos++) {
+                    for (let uPos = 0; uPos < gs; uPos++) {
+                        const matValue = mask[vPos * gs + uPos];
+                        if (matValue === 0) continue;
+                        const atlasUV = matAtlasUVs[matValue - 1];
+
+                        let width = 1;
+                        while (uPos + width < gs && mask[vPos * gs + uPos + width] === matValue) width++;
+                        let height = 1;
+                        let canExpand = true;
+                        while (vPos + height < gs && canExpand) {
+                            for (let i = 0; i < width; i++) {
+                                if (mask[(vPos + height) * gs + uPos + i] !== matValue) { canExpand = false; break; }
+                            }
+                            if (canExpand) height++;
+                        }
+                        for (let dv = 0; dv < height; dv++) {
+                            for (let du = 0; du < width; du++) {
+                                mask[(vPos + dv) * gs + uPos + du] = 0;
+                            }
+                        }
+
+                        const facePos = d + offset;
+                        const u0 = uPos, u1 = uPos + width;
+                        const v0 = vPos, v1 = vPos + height;
+                        const corners = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
+
+                        for (const [cu, cv] of corners) {
+                            const pos = [0, 0, 0];
+                            pos[axis] = blockBase[axis] + facePos * vs;
+                            pos[u] = blockBase[u] + cu * vs;
+                            pos[v] = blockBase[v] + cv * vs;
+                            positions.push(pos[0], pos[1], pos[2]);
+                            normals.push(normal[0], normal[1], normal[2]);
+                            atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                            lightLevels.push(1.0);
+                            aoLevels.push(1.0);
+                        }
+
+                        const cellSize = 1 / gs;
+                        uvs.push(0, 0, width * cellSize, 0, 0, height * cellSize, width * cellSize, height * cellSize);
+
+                        const vb = vertexOffset;
+                        if (faceName === 'right' || faceName === 'top') {
+                            indices.push(vb, vb + 2, vb + 1, vb + 2, vb + 3, vb + 1);
+                        } else {
+                            indices.push(vb, vb + 1, vb + 2, vb + 2, vb + 1, vb + 3);
+                        }
+                        vertexOffset += 4;
+                    }
+                }
+            }
+        }
+
+        // orientation回転適用（0以外の場合のみ）
+        if (orientation !== 0 && typeof ChunkMeshBuilder !== 'undefined' && ChunkMeshBuilder.ORIENTATION_MATRICES) {
+            const m = ChunkMeshBuilder.ORIENTATION_MATRICES[orientation];
+            if (m) {
+                const cx = rx, cy = ry, cz = rz;
+                const endVertexCount = positions.length / 3;
+                for (let i = startVertexCount; i < endVertexCount; i++) {
+                    const pi = i * 3;
+                    const dx = positions[pi] - cx, dy = positions[pi + 1] - cy, dz = positions[pi + 2] - cz;
+                    positions[pi]     = cx + m[0] * dx + m[1] * dy + m[2] * dz;
+                    positions[pi + 1] = cy + m[3] * dx + m[4] * dy + m[5] * dz;
+                    positions[pi + 2] = cz + m[6] * dx + m[7] * dy + m[8] * dz;
+                    const nx = normals[pi], ny = normals[pi + 1], nz = normals[pi + 2];
+                    normals[pi]     = m[0] * nx + m[1] * ny + m[2] * nz;
+                    normals[pi + 1] = m[3] * nx + m[4] * ny + m[5] * nz;
+                    normals[pi + 2] = m[6] * nx + m[7] * ny + m[8] * nz;
+                }
+            }
+        }
+
+        return vertexOffset;
+    }
+
+    /**
+     * カスタムブロックのマテリアルアトラスUV準備
+     */
+    _prepareCustomBlockMaterials(blockDef) {
+        const matAtlasUVs = [null, null, null];
+        for (let i = 0; i < 3; i++) {
+            const texName = blockDef[`material_${i + 1}`];
+            if (texName) matAtlasUVs[i] = this._textureLoader.getAtlasUVByTexName(texName);
+        }
+        const defaultUV = (blockDef.tex_default && this._textureLoader.getAtlasUVByTexName(blockDef.tex_default))
+            || { offsetX: 0, offsetY: 0, scaleX: 1 / (this._textureLoader._atlasSize || 1), scaleY: 1 / (this._textureLoader._atlasSize || 1) };
+        for (let i = 0; i < 3; i++) {
+            if (!matAtlasUVs[i]) matAtlasUVs[i] = defaultUV;
+        }
+        return matAtlasUVs;
     }
 
     /**

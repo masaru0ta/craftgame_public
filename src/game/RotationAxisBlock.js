@@ -191,7 +191,7 @@ class RotationAxisManager {
         for (const b of body._blocks) {
             const restored = this._rotate90(b.rx, b.ry, b.rz, front, steps);
             const bx = wx + restored.x, by = wy + restored.y, bz = wz + restored.z;
-            this._setBlockAt(bx, by, bz, b.blockId);
+            this._setBlockAt(bx, by, bz, b.blockId, b.orientation || 0);
             this._updateLight(bx, by, bz, false);
             restoredBlocks.push({ rx: restored.x, ry: restored.y, rz: restored.z });
         }
@@ -260,11 +260,13 @@ class RotationAxisManager {
             const blockId = this._getBlockAt(cx, cy, cz);
             if (!blockId || blockId === 'air') continue;
 
+            const orientation = this._getOrientation(cx, cy, cz) || 0;
             blocks.push({
                 rx: cx - axisX,
                 ry: cy - axisY,
                 rz: cz - axisZ,
-                blockId
+                blockId,
+                orientation
             });
 
             for (const [dx, dy, dz] of RotationAxisManager._DIRS_6) {
@@ -342,9 +344,9 @@ class RotationAxisManager {
         return r ? r.cd.getOrientation(r.lx, r.ly, r.lz) : null;
     }
 
-    _setBlockAt(wx, wy, wz, blockId) {
+    _setBlockAt(wx, wy, wz, blockId, orientation = 0) {
         const r = this._resolve(wx, wy, wz);
-        if (r) r.cd.setBlock(r.lx, r.ly, r.lz, blockId);
+        if (r) r.cd.setBlock(r.lx, r.ly, r.lz, blockId, orientation);
     }
 
     /**
