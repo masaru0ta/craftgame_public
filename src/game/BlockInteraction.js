@@ -94,16 +94,14 @@ class BlockInteraction {
 
         // orientation 事前計算
         let orientation = 0;
-        if (selectedBlock.orientable) {
+        const isHalfMode = selectedBlock.half_placeable &&
+            (this._halfPlacementModes.get(this.hotbar ? this.hotbar.selectedSlot : 0) || false);
+        if (isHalfMode) {
+            orientation = this._calculateHalfOrientation(this.currentTarget.face);
+        } else if (selectedBlock.orientable) {
             orientation = this._calculateOrientableOrientation(this.currentTarget.face);
         } else if (selectedBlock.shape_type === 'custom') {
             orientation = this._calculateOrientation(this.currentTarget, this.player.getYaw());
-        } else if (selectedBlock.half_placeable) {
-            const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
-            const isHalfMode = this._halfPlacementModes.get(slotIndex) || false;
-            if (isHalfMode) {
-                orientation = this._calculateHalfOrientation(this.currentTarget.face);
-            }
         }
 
         // 設置可否判定
@@ -207,17 +205,14 @@ class BlockInteraction {
 
         // orientation 計算
         let orientation = 0;
-        if (selectedBlock.orientable) {
-            // 設置方向可変ブロック: 設置面の反対方向に向く（0-5）
+        const isHalfMode = selectedBlock.half_placeable &&
+            (this._halfPlacementModes.get(this.hotbar ? this.hotbar.selectedSlot : 0) || false);
+        if (isHalfMode) {
+            orientation = this._calculateHalfOrientation(target.face);
+        } else if (selectedBlock.orientable) {
             orientation = this._calculateOrientableOrientation(target.face);
         } else if (selectedBlock.shape_type === 'custom') {
             orientation = this._calculateOrientation(target, this.player.getYaw());
-        } else if (selectedBlock.half_placeable) {
-            const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
-            const isHalfMode = this._halfPlacementModes.get(slotIndex) || false;
-            if (isHalfMode) {
-                orientation = this._calculateHalfOrientation(target.face);
-            }
         }
 
         const placed = this.placeBlock(target.adjacentX, target.adjacentY, target.adjacentZ, selectedBlock.block_str_id, orientation);
