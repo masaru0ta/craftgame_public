@@ -57,11 +57,12 @@ class RotationAxisManager {
     static _DIRS_6 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
 
     // orientation(0-5) → front面方向のマッピング
+    // ゲーム座標系: north=Z+(back), south=Z-(front)
     static _FRONT_DIRS = [
         { dx: 0, dy: 1, dz: 0 },   // 0: top (Y+)
         { dx: 0, dy: -1, dz: 0 },  // 1: bottom (Y-)
-        { dx: 0, dy: 0, dz: -1 },  // 2: north (Z-)
-        { dx: 0, dy: 0, dz: 1 },   // 3: south (Z+)
+        { dx: 0, dy: 0, dz: 1 },   // 2: north (Z+)
+        { dx: 0, dy: 0, dz: -1 },  // 3: south (Z-)
         { dx: 1, dy: 0, dz: 0 },   // 4: east (X+)
         { dx: -1, dy: 0, dz: 0 },  // 5: west (X-)
     ];
