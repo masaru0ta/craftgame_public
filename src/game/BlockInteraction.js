@@ -178,6 +178,12 @@ class BlockInteraction {
             return true;
         }
 
+        // 回転軸ブロックチェック
+        if (targetBlockId === 'rotor' && this.rotationAxisManager) {
+            this.rotationAxisManager.ToggleBody(target.blockX, target.blockY, target.blockZ);
+            return true;
+        }
+
         const selectedBlock = this.hotbar.getSelectedBlock();
         if (!selectedBlock) return false;
 
@@ -327,6 +333,11 @@ class BlockInteraction {
         // ローカルY範囲外チェック
         if (localY < 0) {
             return false;
+        }
+
+        // 回転軸ブロック破壊時は回転体を解除
+        if (currentBlock === 'rotor' && this.rotationAxisManager) {
+            this.rotationAxisManager.OnAxisDestroyed(x, y, z);
         }
 
         // ブロックをairに置換

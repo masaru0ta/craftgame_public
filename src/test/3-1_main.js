@@ -227,6 +227,14 @@ class GameTestApp {
         this.blockInteraction._blocks = placeableBlocks;
         this.hotbar = this.blockInteraction.hotbar;
 
+        // 回転軸ブロック管理初期化
+        if (typeof RotationAxisManager !== 'undefined') {
+            this.rotationAxisManager = new RotationAxisManager(
+                this.chunkManager, this.scene, this.textureLoader
+            );
+            this.blockInteraction.rotationAxisManager = this.rotationAxisManager;
+        }
+
         // ホットバーに最初の9ブロックを自動設定
         placeableBlocks.slice(0, Hotbar.SLOT_COUNT).forEach((block, i) => {
             this.hotbar.setSlotBlock(i, block);
@@ -1201,6 +1209,11 @@ class GameTestApp {
         // 雨粒パーティクル
         if (this.rainParticleSystem) {
             this.rainParticleSystem.Update(this.deltaTime, this.camera.position);
+        }
+
+        // 回転軸ブロック更新
+        if (this.rotationAxisManager) {
+            this.rotationAxisManager.Update(this.deltaTime);
         }
 
         // 描画

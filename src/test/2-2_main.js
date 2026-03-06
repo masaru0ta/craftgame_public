@@ -468,12 +468,19 @@ class ChunkManagerTestApp {
     }
 
     _updateDebugInfo() {
-        // ポリゴン数
+        // ポリゴン数（メッシュがGroupの場合は子要素を走査）
         let totalTriangles = 0;
         for (const chunk of this.chunkManager.chunks.values()) {
-            if (chunk.mesh && chunk.mesh.geometry && chunk.mesh.geometry.index) {
-                totalTriangles += chunk.mesh.geometry.index.count / 3;
-            }
+            if (!chunk.mesh) continue;
+            const countTriangles = (obj) => {
+                if (obj.geometry && obj.geometry.index) {
+                    totalTriangles += obj.geometry.index.count / 3;
+                }
+                if (obj.children) {
+                    for (const child of obj.children) countTriangles(child);
+                }
+            };
+            countTriangles(chunk.mesh);
         }
         document.getElementById('debug-triangles').textContent = totalTriangles.toLocaleString();
 
