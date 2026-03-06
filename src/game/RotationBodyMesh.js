@@ -228,7 +228,7 @@ class RotationBodyMesh {
                         uvs.push(0, 0, width * cellSize, 0, 0, height * cellSize, width * cellSize, height * cellSize);
 
                         const vb = vertexOffset;
-                        if (faceName === 'right' || faceName === 'top') {
+                        if (faceName === 'right' || faceName === 'top' || faceName === 'front') {
                             indices.push(vb, vb + 2, vb + 1, vb + 2, vb + 3, vb + 1);
                         } else {
                             indices.push(vb, vb + 1, vb + 2, vb + 2, vb + 1, vb + 3);
