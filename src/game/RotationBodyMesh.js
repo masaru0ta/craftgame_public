@@ -65,10 +65,10 @@ class RotationBodyMesh {
         this._chunkManager = chunkManager;
         this._group = new THREE.Group();
 
-        // Three.js座標系での回転軸ブロック中心位置
+        // ゲーム座標系での回転軸ブロック中心位置（worldContainer内なのでZ反転不要）
         const ax = body._axisX + 0.5;
         const ay = body._axisY + 0.5;
-        const az = -(body._axisZ + 0.5);
+        const az = body._axisZ + 0.5;
         this._group.position.set(ax, ay, az);
     }
 
@@ -112,9 +112,9 @@ class RotationBodyMesh {
                 for (let vi = 0; vi < 4; vi++) {
                     const c = corners[vi];
                     // 軸ブロック中心(0.5, 0.5, 0.5)を原点にした相対座標
-                    // Three.js座標系: Z反転
-                    positions.push(c.x - 0.5, c.y - 0.5, -(c.z - 0.5));
-                    normals.push(normal[0], normal[1], -normal[2]);
+                    // worldContainer内なのでZ反転不要
+                    positions.push(c.x - 0.5, c.y - 0.5, c.z - 0.5);
+                    normals.push(normal[0], normal[1], normal[2]);
                     atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
                     lightLevels.push(1.0);
                     aoLevels.push(1.0);
@@ -156,15 +156,15 @@ class RotationBodyMesh {
      */
     UpdateRotation(angle) {
         const front = this._body.GetFrontDirection();
+        // worldContainer(scale.z=-1)内での回転:
+        // Y軸: scale.z反転で回転方向が反転されるため、そのまま適用
+        // X軸/Z軸: scale.z反転で符号が逆転するため、-1を掛ける
         if (front.dy !== 0) {
-            // Y軸回転（座標系変換: Three.jsは右手系なので符号反転）
-            this._group.rotation.set(0, -angle * front.dy, 0);
+            this._group.rotation.set(0, angle * front.dy, 0);
         } else if (front.dz !== 0) {
-            // Z軸回転（Three.jsのZ軸は反転しているので符号反転）
-            this._group.rotation.set(0, 0, angle * front.dz);
+            this._group.rotation.set(0, 0, -angle * front.dz);
         } else {
-            // X軸回転
-            this._group.rotation.set(angle * front.dx, 0, 0);
+            this._group.rotation.set(-angle * front.dx, 0, 0);
         }
     }
 

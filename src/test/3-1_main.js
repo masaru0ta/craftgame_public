@@ -230,7 +230,7 @@ class GameTestApp {
         // 回転軸ブロック管理初期化
         if (typeof RotationAxisManager !== 'undefined') {
             this.rotationAxisManager = new RotationAxisManager(
-                this.chunkManager, this.scene, this.textureLoader
+                this.chunkManager, this.worldContainer, this.textureLoader
             );
             this.blockInteraction.rotationAxisManager = this.rotationAxisManager;
         }
