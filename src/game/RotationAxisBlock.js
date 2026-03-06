@@ -181,13 +181,15 @@ class RotationAxisManager {
         const wy = body._axisY;
         const wz = body._axisZ;
         const front = body.GetFrontDirection();
-        // 角度を最寄りの90°にスナップ（個別roundによる相対位置ずれを防止）
-        const snappedAngle = Math.round(body._angle / (Math.PI / 2)) * (Math.PI / 2);
+        // 90°ステップ数を整数で求める（浮動小数点誤差を排除）
+        const steps = ((Math.round(body._angle / (Math.PI / 2)) % 4) + 4) % 4;
 
-        // 回転体の構成ブロックを90°スナップ角度で復元
+        // 回転体の構成ブロックを整数90°回転で復元
+        const restoredBlocks = [];
         for (const b of body._blocks) {
-            const restored = this._rotateAndSnap(b.rx, b.ry, b.rz, front, snappedAngle);
+            const restored = this._rotate90(b.rx, b.ry, b.rz, front, steps);
             this._setBlockAt(wx + restored.x, wy + restored.y, wz + restored.z, b.blockId);
+            restoredBlocks.push({ rx: restored.x, ry: restored.y, rz: restored.z });
         }
 
         // メッシュ削除
@@ -200,8 +202,11 @@ class RotationAxisManager {
 
         this._bodies.delete(key);
 
-        // チャンクメッシュ再構築
+        // チャンクメッシュ再構築（元の位置と復元位置の両方）
         this._rebuildAffectedChunks(wx, wy, wz, body._blocks);
+        if (steps !== 0) {
+            this._rebuildAffectedChunks(wx, wy, wz, restoredBlocks);
+        }
     }
 
     /**
@@ -285,30 +290,32 @@ class RotationAxisManager {
      * @param {number} angle - 回転角度（ラジアン）
      * @returns {{x:number, y:number, z:number}} スナップ後の相対座標
      */
-    _rotateAndSnap(rx, ry, rz, front, angle) {
-        // ブロック中心を軸ブロック中心(0.5,0.5,0.5)基準に変換
-        const dx = rx + 0.5 - 0.5, dy = ry + 0.5 - 0.5, dz = rz + 0.5 - 0.5;
-        const cos = Math.cos(angle), sin = Math.sin(angle);
-        let rotX, rotY, rotZ;
+    /**
+     * 90°整数ステップで相対座標を回転（浮動小数点誤差なし）
+     * @param {number} rx - 軸からの相対X
+     * @param {number} ry - 軸からの相対Y
+     * @param {number} rz - 軸からの相対Z
+     * @param {{dx:number, dy:number, dz:number}} front - 回転軸方向
+     * @param {number} steps - 90°ステップ数 (0-3)
+     * @returns {{x:number, y:number, z:number}}
+     */
+    _rotate90(rx, ry, rz, front, steps) {
+        if (steps === 0) return { x: rx, y: ry, z: rz };
 
-        if (front.dy !== 0) {
-            // Y軸回転
-            rotX = dx * cos - dz * sin + 0.5;
-            rotY = dy + 0.5;
-            rotZ = dx * sin + dz * cos + 0.5;
-        } else if (front.dz !== 0) {
-            // Z軸回転
-            rotX = dx * cos - dy * sin + 0.5;
-            rotY = dx * sin + dy * cos + 0.5;
-            rotZ = dz + 0.5;
-        } else {
-            // X軸回転
-            rotX = dx + 0.5;
-            rotY = dy * cos - dz * sin + 0.5;
-            rotZ = dy * sin + dz * cos + 0.5;
+        let a = rx, b = rz; // Y軸回転の場合
+        if (front.dz !== 0) { a = rx; b = ry; }
+        else if (front.dx !== 0) { a = ry; b = rz; }
+
+        // 90°×steps回転: (a,b) → (-b,a) → (-a,-b) → (b,-a)
+        for (let i = 0; i < steps; i++) {
+            const tmp = a;
+            a = -b;
+            b = tmp;
         }
 
-        return { x: Math.round(rotX - 0.5), y: Math.round(rotY - 0.5), z: Math.round(rotZ - 0.5) };
+        if (front.dy !== 0) return { x: a, y: ry, z: b };
+        if (front.dz !== 0) return { x: a, y: b, z: rz };
+        return { x: rx, y: a, z: b };
     }
 
     /**
