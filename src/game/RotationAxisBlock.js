@@ -56,25 +56,24 @@ class RotationBody {
 class RotationAxisManager {
     static _DIRS_6 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
 
-    // orientation → front面方向のマッピング
-    // orientation 0-3: top (Y+), 4-7: bottom (Y-), 8-11: north (Z-), 12-15: south (Z+), 16-19: east (X+), 20-23: west (X-)
+    // orientation(0-5) → front面方向のマッピング
     static _FRONT_DIRS = [
-        { dx: 0, dy: 1, dz: 0 },   // top (Y+)
-        { dx: 0, dy: -1, dz: 0 },  // bottom (Y-)
-        { dx: 0, dy: 0, dz: -1 },  // north (Z-)
-        { dx: 0, dy: 0, dz: 1 },   // south (Z+)
-        { dx: 1, dy: 0, dz: 0 },   // east (X+)
-        { dx: -1, dy: 0, dz: 0 },  // west (X-)
+        { dx: 0, dy: 1, dz: 0 },   // 0: top (Y+)
+        { dx: 0, dy: -1, dz: 0 },  // 1: bottom (Y-)
+        { dx: 0, dy: 0, dz: -1 },  // 2: north (Z-)
+        { dx: 0, dy: 0, dz: 1 },   // 3: south (Z+)
+        { dx: 1, dy: 0, dz: 0 },   // 4: east (X+)
+        { dx: -1, dy: 0, dz: 0 },  // 5: west (X-)
     ];
 
     /**
      * orientationからfront面の方向を返す
-     * @param {number} orientation
+     * orientation 0-5 がそのまま _FRONT_DIRS のインデックス
+     * @param {number} orientation - 0〜5
      * @returns {{dx:number, dy:number, dz:number}}
      */
     static OrientationToFrontDir(orientation) {
-        const faceIndex = Math.floor(orientation / 4);
-        return RotationAxisManager._FRONT_DIRS[faceIndex] || { dx: 0, dy: 1, dz: 0 };
+        return RotationAxisManager._FRONT_DIRS[orientation] || { dx: 0, dy: 1, dz: 0 };
     }
 
     /**

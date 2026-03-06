@@ -758,18 +758,18 @@ class BlockInteraction {
     /**
      * 回転軸ブロックの orientation を決定する
      * 設置方向可変ブロックの orientation を決定する
-     * 設置した面の反対方向にfront面が向く
+     * クリック面の方向 = orientation（top面/front面の方向）
      * @param {string} face - クリック面
-     * @returns {number} 0〜5（front面の方向）
+     * @returns {number} 0〜5
      */
     _calculateOrientableOrientation(face) {
         switch (face) {
-            case 'top':    return 0; // 上面をクリック → 穴は上
-            case 'bottom': return 1; // 下面をクリック → 穴は下
-            case 'north':  return 2; // 北面をクリック → 穴は北
-            case 'south':  return 3; // 南面をクリック → 穴は南
-            case 'east':   return 4; // 東面をクリック → 穴は東
-            case 'west':   return 5; // 西面をクリック → 穴は西
+            case 'top':    return 0; // top面は上
+            case 'bottom': return 1; // top面は下
+            case 'north':  return 2; // top面は北
+            case 'south':  return 3; // top面は南
+            case 'east':   return 4; // top面は東
+            case 'west':   return 5; // top面は西
             default:       return 0;
         }
     }
