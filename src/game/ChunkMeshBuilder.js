@@ -388,6 +388,13 @@ class ChunkMeshBuilder {
                 }
             }
 
+            // orientable ブロックのテクスチャリマップ取得
+            let texRemap = null;
+            if (blockDef && blockDef.orientable) {
+                const ori = chunkData.getOrientation(x, y, z);
+                texRemap = ChunkMeshBuilder._OrientableTexRemap[ori] || null;
+            }
+
             // 各面をチェック
             for (const [faceName, faceInfo] of Object.entries(ChunkMeshBuilder.FACES)) {
                 // チャンク最下(y=0)の底面は常にカリング
@@ -408,10 +415,11 @@ class ChunkMeshBuilder {
                     ? this._getVertexAO(chunkData, x, y, z, faceName, neighborChunks)
                     : [0, 0, 0, 0];
 
-                // 面を追加（ブロックID + 面名でグループ化）
-                const key = `${blockStrId}:${faceName}`;
+                // orientable: テクスチャ面をリマップ（物理面はそのまま）
+                const texFace = texRemap ? texRemap[faceName] : faceName;
+                const key = `${blockStrId}:${faceName}:${texFace}`;
                 if (!blockFacesMap.has(key)) {
-                    blockFacesMap.set(key, { blockStrId, faceName, faces: [] });
+                    blockFacesMap.set(key, { blockStrId, faceName, texFace, faces: [] });
                 }
                 blockFacesMap.get(key).faces.push({ x, y, z, faceName, light, ao });
             }
@@ -421,17 +429,18 @@ class ChunkMeshBuilder {
         let vertexOffset = 0;
 
         for (const [key, groupData] of blockFacesMap) {
-            const { blockStrId, faceName, faces } = groupData;
+            const { blockStrId, faceName, texFace, faces } = groupData;
+            const textureFace = texFace || faceName;
 
             if (greedy) {
                 // グリーディー・メッシング（アトラスUV対応、タイリングシェーダー使用）
                 vertexOffset = this._greedyMeshDirectionAtlas(
-                    faces, faceName, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevels
+                    faces, faceName, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevels, textureFace
                 );
             } else {
                 // 通常のメッシュ生成（アトラスUV対応）
                 vertexOffset = this._buildSimpleMeshAtlas(
-                    faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevels
+                    faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevels, textureFace
                 );
             }
         }
@@ -719,6 +728,22 @@ class ChunkMeshBuilder {
      * 側面ハーフのテクスチャ面リマップ（物理面→テクスチャ面）
      * ブロックの底面が設置面に向く回転に対応
      */
+    // orientable ブロック（orientation 0-5）のテクスチャ面リマップ
+    // 物理面 → テクスチャ面（topテクスチャがfront方向に向く）
+    static _OrientableTexRemap = {
+        // 0: top faces up (default) - リマップ不要
+        // 1: top faces down
+        1: { top: 'bottom', bottom: 'top', front: 'front', back: 'back', left: 'left', right: 'right' },
+        // 2: top faces north (Z-/front)
+        2: { top: 'back', bottom: 'front', front: 'top', back: 'bottom', left: 'left', right: 'right' },
+        // 3: top faces south (Z+/back)
+        3: { top: 'front', bottom: 'back', front: 'bottom', back: 'top', left: 'left', right: 'right' },
+        // 4: top faces east (X+/right)
+        4: { top: 'left', bottom: 'right', front: 'front', back: 'back', left: 'top', right: 'bottom' },
+        // 5: top faces west (X-/left)
+        5: { top: 'right', bottom: 'left', front: 'front', back: 'back', left: 'bottom', right: 'top' },
+    };
+
     static _SideHalfTexRemap = {
         // orientation 3: 南付き(-Z) Rx(+90°)
         3: { top: 'front', bottom: 'back', front: 'bottom', back: 'top', left: 'left', right: 'right' },
@@ -839,13 +864,13 @@ class ChunkMeshBuilder {
     /**
      * アトラスUV対応の通常メッシュ生成
      */
-    _buildSimpleMeshAtlas(faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevelsArr) {
+    _buildSimpleMeshAtlas(faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevelsArr, textureFace) {
         for (const face of faces) {
             const corners = this._getFaceCorners(face.x, face.y, face.z, face.faceName, 1, 1);
             const faceInfo = ChunkMeshBuilder.FACES[face.faceName];
 
-            // アトラスUV情報を取得
-            const atlasUV = this.textureLoader.getAtlasUV(blockStrId, face.faceName);
+            // アトラスUV情報を取得（textureFace でリマップ対応）
+            const atlasUV = this.textureLoader.getAtlasUV(blockStrId, textureFace || face.faceName);
 
             // ライトファクター
             const lf = ChunkMeshBuilder._lightFactor(face.light);
@@ -949,11 +974,11 @@ class ChunkMeshBuilder {
      * カスタムシェーダーでfract()を使ってタイリングを実現
      * マージした面を1つのクワッドとして描画（頂点数削減）
      */
-    _greedyMeshDirectionAtlas(faces, faceName, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevelsArr) {
+    _greedyMeshDirectionAtlas(faces, faceName, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevelsArr, textureFace) {
         const faceInfo = ChunkMeshBuilder.FACES[faceName];
 
-        // アトラスUV情報を取得
-        const atlasUV = this.textureLoader.getAtlasUV(blockStrId, faceName);
+        // アトラスUV情報を取得（textureFace でリマップ対応）
+        const atlasUV = this.textureLoader.getAtlasUV(blockStrId, textureFace || faceName);
 
         // 面の座標をスライスごとにグループ化
         const slices = new Map(); // depth -> Map of "u,v" -> cell
