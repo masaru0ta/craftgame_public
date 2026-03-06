@@ -191,7 +191,10 @@ class RotationAxisManager {
         for (const b of body._blocks) {
             const restored = this._rotate90(b.rx, b.ry, b.rz, front, steps);
             const bx = wx + restored.x, by = wy + restored.y, bz = wz + restored.z;
-            this._setBlockAt(bx, by, bz, b.blockId, b.orientation || 0);
+            const newOri = (steps !== 0 && b.orientation !== undefined)
+                ? this._rotateOrientation(b.orientation, front, steps)
+                : (b.orientation || 0);
+            this._setBlockAt(bx, by, bz, b.blockId, newOri);
             this._updateLight(bx, by, bz, false);
             restoredBlocks.push({ rx: restored.x, ry: restored.y, rz: restored.z });
         }
@@ -318,6 +321,93 @@ class RotationAxisManager {
         if (front.dy !== 0) return { x: a, y: ry, z: b };
         if (front.dz !== 0) return { x: a, y: b, z: rz };
         return { x: rx, y: a, z: b };
+    }
+
+    /**
+     * 回転体の回転に応じてカスタムブロックの orientation (0-23) を変換
+     * @param {number} orientation - 元の orientation (0-23)
+     * @param {{dx:number, dy:number, dz:number}} front - 回転軸方向
+     * @param {number} steps - 90°ステップ数 (1-3)
+     * @returns {number} 新しい orientation (0-23)
+     */
+    _rotateOrientation(orientation, front, steps) {
+        if (typeof ChunkMeshBuilder === 'undefined' || !ChunkMeshBuilder.ORIENTATION_MATRICES) {
+            return orientation;
+        }
+        const origM = ChunkMeshBuilder.ORIENTATION_MATRICES[orientation];
+        if (!origM) return orientation;
+
+        // 回転体の90°回転を3x3行列として構築
+        const bodyM = this._buildBodyRotationMatrix(front, steps);
+
+        // 合成: bodyM × origM
+        const composed = [
+            bodyM[0]*origM[0]+bodyM[1]*origM[3]+bodyM[2]*origM[6], bodyM[0]*origM[1]+bodyM[1]*origM[4]+bodyM[2]*origM[7], bodyM[0]*origM[2]+bodyM[1]*origM[5]+bodyM[2]*origM[8],
+            bodyM[3]*origM[0]+bodyM[4]*origM[3]+bodyM[5]*origM[6], bodyM[3]*origM[1]+bodyM[4]*origM[4]+bodyM[5]*origM[7], bodyM[3]*origM[2]+bodyM[4]*origM[5]+bodyM[5]*origM[8],
+            bodyM[6]*origM[0]+bodyM[7]*origM[3]+bodyM[8]*origM[6], bodyM[6]*origM[1]+bodyM[7]*origM[4]+bodyM[8]*origM[7], bodyM[6]*origM[2]+bodyM[7]*origM[5]+bodyM[8]*origM[8]
+        ];
+
+        // 誤差除去
+        for (let i = 0; i < 9; i++) {
+            const v = composed[i];
+            if (Math.abs(v) < 0.5) composed[i] = 0;
+            else composed[i] = v > 0 ? 1 : -1;
+        }
+
+        // ORIENTATION_MATRICES から一致する orientation を逆引き
+        const matrices = ChunkMeshBuilder.ORIENTATION_MATRICES;
+        for (let i = 0; i < 24; i++) {
+            const m = matrices[i];
+            let match = true;
+            for (let j = 0; j < 9; j++) {
+                if (m[j] !== composed[j]) { match = false; break; }
+            }
+            if (match) return i;
+        }
+        return orientation; // 一致しない場合は元のまま
+    }
+
+    /**
+     * 回転体の回転（front方向×steps）を3x3行列として構築
+     */
+    _buildBodyRotationMatrix(front, steps) {
+        // _rotate90 と同じロジックを行列化
+        // (a,b) → (b,-a) を1ステップとする
+        // Y軸回転(front.dy≠0): (x,z)平面で回転
+        // Z軸回転(front.dz≠0): (x,y)平面で回転
+        // X軸回転(front.dx≠0): (y,z)平面で回転
+        let m = [1,0,0, 0,1,0, 0,0,1]; // identity
+
+        for (let i = 0; i < steps; i++) {
+            let r;
+            if (front.dy > 0) {
+                // Y+軸: (x,z)→(z,-x)
+                r = [0,0,1, 0,1,0, -1,0,0];
+            } else if (front.dy < 0) {
+                // Y-軸: (x,z)→(-z,x)
+                r = [0,0,-1, 0,1,0, 1,0,0];
+            } else if (front.dz > 0) {
+                // Z+軸: (x,y)→(y,-x)
+                r = [0,1,0, -1,0,0, 0,0,1];
+            } else if (front.dz < 0) {
+                // Z-軸: (x,y)→(-y,x)
+                r = [0,-1,0, 1,0,0, 0,0,1];
+            } else if (front.dx > 0) {
+                // X+軸: (y,z)→(z,-y)
+                r = [1,0,0, 0,0,1, 0,-1,0];
+            } else {
+                // X-軸: (y,z)→(-z,y)
+                r = [1,0,0, 0,0,-1, 0,1,0];
+            }
+            // m = r × m
+            const n = [
+                r[0]*m[0]+r[1]*m[3]+r[2]*m[6], r[0]*m[1]+r[1]*m[4]+r[2]*m[7], r[0]*m[2]+r[1]*m[5]+r[2]*m[8],
+                r[3]*m[0]+r[4]*m[3]+r[5]*m[6], r[3]*m[1]+r[4]*m[4]+r[5]*m[7], r[3]*m[2]+r[4]*m[5]+r[5]*m[8],
+                r[6]*m[0]+r[7]*m[3]+r[8]*m[6], r[6]*m[1]+r[7]*m[4]+r[8]*m[7], r[6]*m[2]+r[7]*m[5]+r[8]*m[8]
+            ];
+            m = n;
+        }
+        return m;
     }
 
     /**
