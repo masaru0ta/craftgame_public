@@ -67,6 +67,16 @@ class RotationAxisManager {
         { dx: -1, dy: 0, dz: 0 },  // 5: west (X-)
     ];
 
+    // front方向ごとの1ステップ回転行列（左手座標系 (a,b)→(b,-a)）
+    static _STEP_MATRICES = {
+        'dy+':  [0,0,1, 0,1,0, -1,0,0],  // Y+軸: (x,z)→(z,-x)
+        'dy-':  [0,0,-1, 0,1,0, 1,0,0],   // Y-軸: (x,z)→(-z,x)
+        'dz+':  [0,1,0, -1,0,0, 0,0,1],   // Z+軸: (x,y)→(y,-x)
+        'dz-':  [0,-1,0, 1,0,0, 0,0,1],   // Z-軸: (x,y)→(-y,x)
+        'dx+':  [1,0,0, 0,0,1, 0,-1,0],   // X+軸: (y,z)→(z,-y)
+        'dx-':  [1,0,0, 0,0,-1, 0,1,0],   // X-軸: (y,z)→(-z,y)
+    };
+
     /**
      * orientationからfront面の方向を返す
      * orientation 0-5 がそのまま _FRONT_DIRS のインデックス
@@ -324,11 +334,27 @@ class RotationAxisManager {
     }
 
     /**
+     * 3x3行列の乗算 a × b → 新しい9要素配列
+     */
+    static _mulMatrix3(a, b) {
+        return [
+            a[0]*b[0]+a[1]*b[3]+a[2]*b[6], a[0]*b[1]+a[1]*b[4]+a[2]*b[7], a[0]*b[2]+a[1]*b[5]+a[2]*b[8],
+            a[3]*b[0]+a[4]*b[3]+a[5]*b[6], a[3]*b[1]+a[4]*b[4]+a[5]*b[7], a[3]*b[2]+a[4]*b[5]+a[5]*b[8],
+            a[6]*b[0]+a[7]*b[3]+a[8]*b[6], a[6]*b[1]+a[7]*b[4]+a[8]*b[7], a[6]*b[2]+a[7]*b[5]+a[8]*b[8]
+        ];
+    }
+
+    /**
+     * front方向のステップ行列キーを返す
+     */
+    static _stepMatrixKey(front) {
+        if (front.dy !== 0) return front.dy > 0 ? 'dy+' : 'dy-';
+        if (front.dz !== 0) return front.dz > 0 ? 'dz+' : 'dz-';
+        return front.dx > 0 ? 'dx+' : 'dx-';
+    }
+
+    /**
      * 回転体の回転に応じてカスタムブロックの orientation (0-23) を変換
-     * @param {number} orientation - 元の orientation (0-23)
-     * @param {{dx:number, dy:number, dz:number}} front - 回転軸方向
-     * @param {number} steps - 90°ステップ数 (1-3)
-     * @returns {number} 新しい orientation (0-23)
      */
     _rotateOrientation(orientation, front, steps) {
         if (typeof ChunkMeshBuilder === 'undefined' || !ChunkMeshBuilder.ORIENTATION_MATRICES) {
@@ -337,21 +363,13 @@ class RotationAxisManager {
         const origM = ChunkMeshBuilder.ORIENTATION_MATRICES[orientation];
         if (!origM) return orientation;
 
-        // 回転体の90°回転を3x3行列として構築
         const bodyM = this._buildBodyRotationMatrix(front, steps);
+        const composed = RotationAxisManager._mulMatrix3(bodyM, origM);
 
-        // 合成: bodyM × origM
-        const composed = [
-            bodyM[0]*origM[0]+bodyM[1]*origM[3]+bodyM[2]*origM[6], bodyM[0]*origM[1]+bodyM[1]*origM[4]+bodyM[2]*origM[7], bodyM[0]*origM[2]+bodyM[1]*origM[5]+bodyM[2]*origM[8],
-            bodyM[3]*origM[0]+bodyM[4]*origM[3]+bodyM[5]*origM[6], bodyM[3]*origM[1]+bodyM[4]*origM[4]+bodyM[5]*origM[7], bodyM[3]*origM[2]+bodyM[4]*origM[5]+bodyM[5]*origM[8],
-            bodyM[6]*origM[0]+bodyM[7]*origM[3]+bodyM[8]*origM[6], bodyM[6]*origM[1]+bodyM[7]*origM[4]+bodyM[8]*origM[7], bodyM[6]*origM[2]+bodyM[7]*origM[5]+bodyM[8]*origM[8]
-        ];
-
-        // 誤差除去
+        // 誤差除去（整数回転なので各要素は0,1,-1のいずれか）
         for (let i = 0; i < 9; i++) {
             const v = composed[i];
-            if (Math.abs(v) < 0.5) composed[i] = 0;
-            else composed[i] = v > 0 ? 1 : -1;
+            composed[i] = Math.abs(v) < 0.5 ? 0 : (v > 0 ? 1 : -1);
         }
 
         // ORIENTATION_MATRICES から一致する orientation を逆引き
@@ -364,48 +382,17 @@ class RotationAxisManager {
             }
             if (match) return i;
         }
-        return orientation; // 一致しない場合は元のまま
+        return orientation;
     }
 
     /**
      * 回転体の回転（front方向×steps）を3x3行列として構築
      */
     _buildBodyRotationMatrix(front, steps) {
-        // _rotate90 と同じロジックを行列化
-        // (a,b) → (b,-a) を1ステップとする
-        // Y軸回転(front.dy≠0): (x,z)平面で回転
-        // Z軸回転(front.dz≠0): (x,y)平面で回転
-        // X軸回転(front.dx≠0): (y,z)平面で回転
-        let m = [1,0,0, 0,1,0, 0,0,1]; // identity
-
+        const r = RotationAxisManager._STEP_MATRICES[RotationAxisManager._stepMatrixKey(front)];
+        let m = [1,0,0, 0,1,0, 0,0,1];
         for (let i = 0; i < steps; i++) {
-            let r;
-            if (front.dy > 0) {
-                // Y+軸: (x,z)→(z,-x)
-                r = [0,0,1, 0,1,0, -1,0,0];
-            } else if (front.dy < 0) {
-                // Y-軸: (x,z)→(-z,x)
-                r = [0,0,-1, 0,1,0, 1,0,0];
-            } else if (front.dz > 0) {
-                // Z+軸: (x,y)→(y,-x)
-                r = [0,1,0, -1,0,0, 0,0,1];
-            } else if (front.dz < 0) {
-                // Z-軸: (x,y)→(-y,x)
-                r = [0,-1,0, 1,0,0, 0,0,1];
-            } else if (front.dx > 0) {
-                // X+軸: (y,z)→(z,-y)
-                r = [1,0,0, 0,0,1, 0,-1,0];
-            } else {
-                // X-軸: (y,z)→(-z,y)
-                r = [1,0,0, 0,0,-1, 0,1,0];
-            }
-            // m = r × m
-            const n = [
-                r[0]*m[0]+r[1]*m[3]+r[2]*m[6], r[0]*m[1]+r[1]*m[4]+r[2]*m[7], r[0]*m[2]+r[1]*m[5]+r[2]*m[8],
-                r[3]*m[0]+r[4]*m[3]+r[5]*m[6], r[3]*m[1]+r[4]*m[4]+r[5]*m[7], r[3]*m[2]+r[4]*m[5]+r[5]*m[8],
-                r[6]*m[0]+r[7]*m[3]+r[8]*m[6], r[6]*m[1]+r[7]*m[4]+r[8]*m[7], r[6]*m[2]+r[7]*m[5]+r[8]*m[8]
-            ];
-            m = n;
+            m = RotationAxisManager._mulMatrix3(r, m);
         }
         return m;
     }

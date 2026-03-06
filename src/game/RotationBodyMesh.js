@@ -162,29 +162,39 @@ class RotationBodyMesh {
         for (const config of RotationBodyMesh._VOXEL_FACE_CONFIGS) {
             const { faceName, axis, u, v, offset, normal } = config;
 
+            // ワインディング方向（静的に決まる）
+            const cwWinding = (faceName === 'right' || faceName === 'top' || faceName === 'front');
+            const facePosBase = blockBase[axis];
+
             for (let d = 0; d < gs; d++) {
                 // 面マスク構築
                 const mask = new Uint8Array(gs * gs);
+                const neighborD = offset === 1 ? d + 1 : d - 1;
+                const checkNeighbor = (neighborD >= 0 && neighborD < gs);
+
                 for (let vPos = 0; vPos < gs; vPos++) {
                     for (let uPos = 0; uPos < gs; uPos++) {
-                        const coord = [0, 0, 0];
-                        coord[axis] = d;
-                        coord[u] = uPos;
-                        coord[v] = vPos;
-                        const value = VoxelData.getVoxel(voxelData, coord[0], coord[1], coord[2]);
+                        // 配列生成を回避し、直接座標を計算
+                        let cx = 0, cy = 0, cz = 0;
+                        if (axis === 0) cx = d; else if (axis === 1) cy = d; else cz = d;
+                        if (u === 0) cx = uPos; else if (u === 1) cy = uPos; else cz = uPos;
+                        if (v === 0) cx = vPos; else if (v === 1) cy = vPos; else cz = vPos;
+
+                        const value = VoxelData.getVoxel(voxelData, cx, cy, cz);
                         if (value === 0) continue;
-                        const neighborD = offset === 1 ? d + 1 : d - 1;
+
                         let hasNeighbor = false;
-                        if (neighborD >= 0 && neighborD < gs) {
-                            const nc = [coord[0], coord[1], coord[2]];
-                            nc[axis] = neighborD;
-                            hasNeighbor = VoxelData.getVoxel(voxelData, nc[0], nc[1], nc[2]) !== 0;
+                        if (checkNeighbor) {
+                            let nx = cx, ny = cy, nz = cz;
+                            if (axis === 0) nx = neighborD; else if (axis === 1) ny = neighborD; else nz = neighborD;
+                            hasNeighbor = VoxelData.getVoxel(voxelData, nx, ny, nz) !== 0;
                         }
                         if (!hasNeighbor) mask[vPos * gs + uPos] = value;
                     }
                 }
 
                 // グリーディマージ＆クアッド出力
+                const facePos = (d + offset) * vs;
                 for (let vPos = 0; vPos < gs; vPos++) {
                     for (let uPos = 0; uPos < gs; uPos++) {
                         const matValue = mask[vPos * gs + uPos];
@@ -207,28 +217,30 @@ class RotationBodyMesh {
                             }
                         }
 
-                        const facePos = d + offset;
-                        const u0 = uPos, u1 = uPos + width;
-                        const v0 = vPos, v1 = vPos + height;
-                        const corners = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
-
-                        for (const [cu, cv] of corners) {
-                            const pos = [0, 0, 0];
-                            pos[axis] = blockBase[axis] + facePos * vs;
-                            pos[u] = blockBase[u] + cu * vs;
-                            pos[v] = blockBase[v] + cv * vs;
-                            positions.push(pos[0], pos[1], pos[2]);
+                        // 4頂点を配列生成なしで直接push
+                        const axisVal = facePosBase + facePos;
+                        const uBase = blockBase[u], vBase = blockBase[v];
+                        const u0v = uPos * vs, u1v = (uPos + width) * vs;
+                        const v0v = vPos * vs, v1v = (vPos + height) * vs;
+                        // corners: [u0,v0], [u1,v0], [u0,v1], [u1,v1]
+                        const cornerUVs = [u0v, v0v, u1v, v0v, u0v, v1v, u1v, v1v];
+                        for (let ci = 0; ci < 4; ci++) {
+                            let px = 0, py = 0, pz = 0;
+                            const cuv = cornerUVs[ci * 2], cvv = cornerUVs[ci * 2 + 1];
+                            if (axis === 0) { px = axisVal; } else if (axis === 1) { py = axisVal; } else { pz = axisVal; }
+                            if (u === 0) { px = uBase + cuv; } else if (u === 1) { py = uBase + cuv; } else { pz = uBase + cuv; }
+                            if (v === 0) { px = vBase + cvv; } else if (v === 1) { py = vBase + cvv; } else { pz = vBase + cvv; }
+                            positions.push(px, py, pz);
                             normals.push(normal[0], normal[1], normal[2]);
                             atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
                             lightLevels.push(1.0);
                             aoLevels.push(1.0);
                         }
 
-                        const cellSize = 1 / gs;
-                        uvs.push(0, 0, width * cellSize, 0, 0, height * cellSize, width * cellSize, height * cellSize);
+                        uvs.push(0, 0, width * vs, 0, 0, height * vs, width * vs, height * vs);
 
                         const vb = vertexOffset;
-                        if (faceName === 'right' || faceName === 'top' || faceName === 'front') {
+                        if (cwWinding) {
                             indices.push(vb, vb + 2, vb + 1, vb + 2, vb + 3, vb + 1);
                         } else {
                             indices.push(vb, vb + 1, vb + 2, vb + 2, vb + 1, vb + 3);
