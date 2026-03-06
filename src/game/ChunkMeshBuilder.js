@@ -741,9 +741,9 @@ class ChunkMeshBuilder {
         // 3: 南面(Z+)クリック → bottom南(back)、top北(front)
         3: { top: 'front', bottom: 'back', front: 'top', back: 'bottom', left: 'left', right: 'right' },
         // 4: 東面(X+)クリック → bottom東(right)、top西(left)
-        4: { top: 'left', bottom: 'right', front: 'front', back: 'back', left: 'top', right: 'bottom' },
+        4: { top: 'right', bottom: 'left', front: 'front', back: 'back', left: 'bottom', right: 'top' },
         // 5: 西面(X-)クリック → bottom西(left)、top東(right)
-        5: { top: 'right', bottom: 'left', front: 'front', back: 'back', left: 'bottom', right: 'top' },
+        5: { top: 'left', bottom: 'right', front: 'front', back: 'back', left: 'top', right: 'bottom' },
     };
 
     static _SideHalfTexRemap = {
