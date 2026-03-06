@@ -361,10 +361,13 @@ class ChunkMeshBuilder {
 
             // 回転体に含まれるブロックはチャンクメッシュから除外
             if (typeof RotationAxisManager !== 'undefined' && window.testApp && window.testApp.rotationAxisManager) {
-                const wx = chunkData.chunkX * 16 + x;
-                const wy = chunkData.baseY + y;
-                const wz = chunkData.chunkZ * 16 + z;
-                if (window.testApp.rotationAxisManager.IsBlockInAnyBody(wx, wy, wz)) return;
+                const mgr = window.testApp.rotationAxisManager;
+                if (typeof mgr.IsBlockInAnyBody === 'function') {
+                    const wx = chunkData.chunkX * 16 + x;
+                    const wy = chunkData.baseY + y;
+                    const wz = chunkData.chunkZ * 16 + z;
+                    if (mgr.IsBlockInAnyBody(wx, wy, wz)) return;
+                }
             }
 
             const blockDef = this.textureLoader.getBlockDef(blockStrId);
