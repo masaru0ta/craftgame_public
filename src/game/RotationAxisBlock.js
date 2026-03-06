@@ -181,11 +181,12 @@ class RotationAxisManager {
         const wy = body._axisY;
         const wz = body._axisZ;
         const front = body.GetFrontDirection();
-        const angle = body._angle;
+        // 角度を最寄りの90°にスナップ（個別roundによる相対位置ずれを防止）
+        const snappedAngle = Math.round(body._angle / (Math.PI / 2)) * (Math.PI / 2);
 
-        // 回転体の構成ブロックを現在の回転角度でグリッドにスナップして復元
+        // 回転体の構成ブロックを90°スナップ角度で復元
         for (const b of body._blocks) {
-            const restored = this._rotateAndSnap(b.rx, b.ry, b.rz, front, angle);
+            const restored = this._rotateAndSnap(b.rx, b.ry, b.rz, front, snappedAngle);
             this._setBlockAt(wx + restored.x, wy + restored.y, wz + restored.z, b.blockId);
         }
 
