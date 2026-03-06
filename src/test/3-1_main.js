@@ -233,6 +233,7 @@ class GameTestApp {
                 name: '回転軸',
                 shape_type: 'standard',
                 is_transparent: false,
+                orientable: true,
                 tex_default: stoneBlock ? stoneBlock.tex_default : 'stone',
             };
             placeableBlocks.push(rotAxisDef);

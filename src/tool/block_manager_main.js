@@ -102,6 +102,8 @@ function cacheElements() {
   elements.isTransparent = document.getElementById('isTransparent');
   elements.halfPlaceable = document.getElementById('halfPlaceable');
   elements.halfPlaceableGroup = document.getElementById('halfPlaceableGroup');
+  elements.orientable = document.getElementById('orientable');
+  elements.orientableGroup = document.getElementById('orientableGroup');
   elements.saveBlockBtn = document.getElementById('saveBlockBtn');
   elements.deleteBlockBtn = document.getElementById('deleteBlockBtn');
   elements.createBlockModal = document.getElementById('createBlockModal');
@@ -160,6 +162,7 @@ function setupEventListeners() {
   });
   elements.isTransparent.addEventListener('change', () => { state.isModified = true; });
   elements.halfPlaceable.addEventListener('change', () => { state.isModified = true; });
+  elements.orientable.addEventListener('change', () => { state.isModified = true; });
 
   // 新規作成モーダル
   elements.createBlockModal.querySelector('.modal-close').addEventListener('click', closeCreateModal);
@@ -445,10 +448,12 @@ function selectBlock(blockId) {
     elements.lightLevel.value = block.light_level || 0;
     elements.isTransparent.checked = block.is_transparent || false;
     elements.halfPlaceable.checked = block.half_placeable || false;
+    elements.orientable.checked = block.orientable || false;
 
     // ハーフ設置はnormalブロックのみ表示
     const isNormal = (block.shape_type || 'normal') === 'normal';
     elements.halfPlaceableGroup.style.display = isNormal ? '' : 'none';
+    elements.orientableGroup.style.display = isNormal ? '' : 'none';
 
     // BlockEditorUI にブロックをロード
     if (state.editorUI) {
@@ -475,6 +480,7 @@ function handleBlockTypeChange(e) {
 
     // ハーフ設置チェックボックスの表示切り替え
     elements.halfPlaceableGroup.style.display = newType === 'normal' ? '' : 'none';
+    elements.orientableGroup.style.display = newType === 'normal' ? '' : 'none';
 
     // BlockEditorUI を再ロード
     if (state.editorUI) {
@@ -501,6 +507,7 @@ async function saveBlock() {
     light_level: parseInt(elements.lightLevel.value) || 0,
     is_transparent: elements.isTransparent.checked,
     ...(elements.blockTypeSelect.value === 'normal' && { half_placeable: elements.halfPlaceable.checked }),
+    orientable: elements.orientable.checked,
   };
 
   // BlockEditorUIから形状データを取得してマージ

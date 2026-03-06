@@ -94,7 +94,9 @@ class BlockInteraction {
 
         // orientation 事前計算
         let orientation = 0;
-        if (selectedBlock.shape_type === 'custom') {
+        if (selectedBlock.orientable) {
+            orientation = this._calculateOrientableOrientation(this.currentTarget.face);
+        } else if (selectedBlock.shape_type === 'custom') {
             orientation = this._calculateOrientation(this.currentTarget, this.player.getYaw());
         } else if (selectedBlock.half_placeable) {
             const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
@@ -205,9 +207,9 @@ class BlockInteraction {
 
         // orientation 計算
         let orientation = 0;
-        if (selectedBlock.block_str_id === 'rotation_axis') {
-            // 回転軸ブロック: 設置面に応じて穴の方向を決定（0-5）
-            orientation = this._calculateRotationAxisOrientation(target.face);
+        if (selectedBlock.orientable) {
+            // 設置方向可変ブロック: 設置面の反対方向に向く（0-5）
+            orientation = this._calculateOrientableOrientation(target.face);
         } else if (selectedBlock.shape_type === 'custom') {
             orientation = this._calculateOrientation(target, this.player.getYaw());
         } else if (selectedBlock.half_placeable) {
@@ -760,12 +762,12 @@ class BlockInteraction {
 
     /**
      * 回転軸ブロックの orientation を決定する
-     * 設置した面の反対方向に穴が向く
+     * 設置方向可変ブロックの orientation を決定する
+     * 設置した面の反対方向にfront面が向く
      * @param {string} face - クリック面
-     * @returns {number} 0〜5（穴の面方向）
+     * @returns {number} 0〜5（front面の方向）
      */
-    _calculateRotationAxisOrientation(face) {
-        // 設置面の反対側に穴が向く
+    _calculateOrientableOrientation(face) {
         switch (face) {
             case 'top':    return 0; // 上面をクリック → 穴は上
             case 'bottom': return 1; // 下面をクリック → 穴は下
