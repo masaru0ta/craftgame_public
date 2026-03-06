@@ -73,7 +73,7 @@ class PhysicsWorld {
             this._resolveCollisionZ(player, dz);
         }
 
-        // 接地判定を更新
+        // 接地判定を更新（回転体上も考慮）
         player.setOnGround(this.isOnGround(player));
     }
 

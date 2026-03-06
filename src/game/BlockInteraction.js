@@ -173,7 +173,6 @@ class BlockInteraction {
 
         // 作業台チェック
         const targetBlockId = this.physicsWorld.getBlockAt(target.blockX, target.blockY, target.blockZ);
-        console.log('[placeBlockAt] targetBlockId:', targetBlockId, 'at', target.blockX, target.blockY, target.blockZ, 'hasRAM:', !!this.rotationAxisManager);
         if (targetBlockId === 'workbench') {
             if (this._onWorkbenchInteract) this._onWorkbenchInteract();
             return true;
@@ -206,7 +205,10 @@ class BlockInteraction {
 
         // orientation 計算
         let orientation = 0;
-        if (selectedBlock.shape_type === 'custom') {
+        if (selectedBlock.block_str_id === 'rotation_axis') {
+            // 回転軸ブロック: 設置面に応じて穴の方向を決定（0-5）
+            orientation = this._calculateRotationAxisOrientation(target.face);
+        } else if (selectedBlock.shape_type === 'custom') {
             orientation = this._calculateOrientation(target, this.player.getYaw());
         } else if (selectedBlock.half_placeable) {
             const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
@@ -239,11 +241,9 @@ class BlockInteraction {
      */
     handleMouseDown(event) {
         event.preventDefault();
-        console.log('[handleMouseDown] button:', event.button, 'currentTarget:', this.currentTarget ? `hit=${this.currentTarget.hit} block=${this.currentTarget.blockX},${this.currentTarget.blockY},${this.currentTarget.blockZ}` : 'null');
 
         if (event.button === 2) {
             const selectedBlock = this.hotbar ? this.hotbar.getSelectedBlock() : null;
-            console.log('[handleMouseDown] selectedBlock:', selectedBlock?.block_str_id, 'half_placeable:', selectedBlock?.half_placeable);
 
             if (selectedBlock && selectedBlock.half_placeable) {
                 // half_placeable=true: 長押しタイマー開始（設置は mouseup 時に行う）
@@ -756,6 +756,25 @@ class BlockInteraction {
             return dy > 0 ? rots[0] : rots[1];
         }
         return dh > 0 ? rots[2] : rots[3];
+    }
+
+    /**
+     * 回転軸ブロックの orientation を決定する
+     * 設置した面の反対方向に穴が向く
+     * @param {string} face - クリック面
+     * @returns {number} 0〜5（穴の面方向）
+     */
+    _calculateRotationAxisOrientation(face) {
+        // 設置面の反対側に穴が向く
+        switch (face) {
+            case 'top':    return 0; // 上面をクリック → 穴は上
+            case 'bottom': return 1; // 下面をクリック → 穴は下
+            case 'north':  return 2; // 北面をクリック → 穴は北
+            case 'south':  return 3; // 南面をクリック → 穴は南
+            case 'east':   return 4; // 東面をクリック → 穴は東
+            case 'west':   return 5; // 西面をクリック → 穴は西
+            default:       return 0;
+        }
     }
 
     /**

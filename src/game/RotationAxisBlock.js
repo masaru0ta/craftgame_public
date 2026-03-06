@@ -271,6 +271,15 @@ class RotationAxisManager {
                 // 回転軸ブロック自体はスキップ
                 if (nx === axisX && ny === axisY && nz === axisZ) continue;
 
+                // front面の反対側（軸ブロック側）には広げない
+                // front方向の軸座標を境界として、反対側に入るブロックを除外
+                if (front.dy > 0 && ny <= axisY) continue;
+                if (front.dy < 0 && ny >= axisY) continue;
+                if (front.dx > 0 && nx <= axisX) continue;
+                if (front.dx < 0 && nx >= axisX) continue;
+                if (front.dz > 0 && nz <= axisZ) continue;
+                if (front.dz < 0 && nz >= axisZ) continue;
+
                 const nKey = `${nx},${ny},${nz}`;
                 if (visited.has(nKey)) continue;
                 visited.add(nKey);

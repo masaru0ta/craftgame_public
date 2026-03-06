@@ -359,6 +359,14 @@ class ChunkMeshBuilder {
         chunkData.forEachBlock((x, y, z, blockStrId) => {
             if (blockStrId === 'air' || blockStrId === 'water') return;
 
+            // 回転体に含まれるブロックはチャンクメッシュから除外
+            if (typeof RotationAxisManager !== 'undefined' && window.testApp && window.testApp.rotationAxisManager) {
+                const wx = chunkData.chunkX * 16 + x;
+                const wy = chunkData.baseY + y;
+                const wz = chunkData.chunkZ * 16 + z;
+                if (window.testApp.rotationAxisManager.IsBlockInAnyBody(wx, wy, wz)) return;
+            }
+
             const blockDef = this.textureLoader.getBlockDef(blockStrId);
 
             // カスタムブロック: ボクセルメッシュ用に収集（orientation付き）

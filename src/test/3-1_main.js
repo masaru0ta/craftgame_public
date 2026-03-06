@@ -58,6 +58,9 @@ class GameTestApp {
         this.rainParticleSystem = null;
         this._baseTickSpeed = 3;
 
+        // 回転軸ブロック
+        this.rotationAxisManager = null;
+
         // エフェクト
         this.particleSystem = null;
 
@@ -221,6 +224,22 @@ class GameTestApp {
         // ハーフブロック設置を許可するブロックに half_placeable フラグを付与（テスト用）
         const stoneBlock = placeableBlocks.find(b => b.block_str_id === 'stone');
         if (stoneBlock) stoneBlock.half_placeable = true;
+
+        // 回転軸ブロック定義を追加（GASに未登録の場合）
+        if (!placeableBlocks.find(b => b.block_str_id === 'rotation_axis')) {
+            const rotAxisDef = {
+                block_str_id: 'rotation_axis',
+                block_id: 999,
+                name: '回転軸',
+                shape_type: 'standard',
+                is_transparent: false,
+                tex_default: stoneBlock ? stoneBlock.tex_default : 'stone',
+            };
+            placeableBlocks.push(rotAxisDef);
+            if (this.textureLoader.blocks) {
+                this.textureLoader.blocks.push(rotAxisDef);
+            }
+        }
 
         const hotbarContainer = document.getElementById('hotbar-container');
         this.blockInteraction.init([], hotbarContainer, this.textureLoader);
@@ -425,6 +444,8 @@ class GameTestApp {
                 this.weatherSystem.SetWeather(next);
             });
         }
+
+        // 33. （旧回転軸初期化コードは削除済み。初期化は上部 247行付近で実施）
 
         // 初期化完了
         this.isReady = true;
@@ -1206,14 +1227,14 @@ class GameTestApp {
             this.weatherSystem.Update(this.scheduleTickEngine.currentTick);
         }
 
-        // 雨粒パーティクル
-        if (this.rainParticleSystem) {
-            this.rainParticleSystem.Update(this.deltaTime, this.camera.position);
-        }
-
         // 回転軸ブロック更新
         if (this.rotationAxisManager) {
             this.rotationAxisManager.Update(this.deltaTime);
+        }
+
+        // 雨粒パーティクル
+        if (this.rainParticleSystem) {
+            this.rainParticleSystem.Update(this.deltaTime, this.camera.position);
         }
 
         // 描画
