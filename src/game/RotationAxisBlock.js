@@ -306,11 +306,11 @@ class RotationAxisManager {
         if (front.dz !== 0) { a = rx; b = ry; }
         else if (front.dx !== 0) { a = ry; b = rz; }
 
-        // 90°×steps回転: (a,b) → (-b,a) → (-a,-b) → (b,-a)
+        // 左手座標系での90°×steps回転: (a,b) → (b,-a) → (-a,-b) → (-b,a)
         for (let i = 0; i < steps; i++) {
             const tmp = a;
-            a = -b;
-            b = tmp;
+            a = b;
+            b = -tmp;
         }
 
         if (front.dy !== 0) return { x: a, y: ry, z: b };
@@ -355,7 +355,16 @@ class RotationAxisManager {
         for (const b of blocks) {
             const wx = axisX + b.rx;
             const wz = axisZ + b.rz;
-            affectedChunks.add(`${Math.floor(wx / 16)},${Math.floor(wz / 16)}`);
+            const cx = Math.floor(wx / 16);
+            const cz = Math.floor(wz / 16);
+            affectedChunks.add(`${cx},${cz}`);
+            // チャンク境界のブロックは隣接チャンクにも影響
+            const lx = ((wx % 16) + 16) % 16;
+            const lz = ((wz % 16) + 16) % 16;
+            if (lx === 0)  affectedChunks.add(`${cx - 1},${cz}`);
+            if (lx === 15) affectedChunks.add(`${cx + 1},${cz}`);
+            if (lz === 0)  affectedChunks.add(`${cx},${cz - 1}`);
+            if (lz === 15) affectedChunks.add(`${cx},${cz + 1}`);
         }
         // 軸ブロック自体のチャンクも
         affectedChunks.add(`${Math.floor(axisX / 16)},${Math.floor(axisZ / 16)}`);
