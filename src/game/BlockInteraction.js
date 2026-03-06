@@ -173,6 +173,7 @@ class BlockInteraction {
 
         // 作業台チェック
         const targetBlockId = this.physicsWorld.getBlockAt(target.blockX, target.blockY, target.blockZ);
+        console.log('[placeBlockAt] targetBlockId:', targetBlockId, 'at', target.blockX, target.blockY, target.blockZ, 'hasRAM:', !!this.rotationAxisManager);
         if (targetBlockId === 'workbench') {
             if (this._onWorkbenchInteract) this._onWorkbenchInteract();
             return true;
@@ -238,9 +239,11 @@ class BlockInteraction {
      */
     handleMouseDown(event) {
         event.preventDefault();
+        console.log('[handleMouseDown] button:', event.button, 'currentTarget:', this.currentTarget ? `hit=${this.currentTarget.hit} block=${this.currentTarget.blockX},${this.currentTarget.blockY},${this.currentTarget.blockZ}` : 'null');
 
         if (event.button === 2) {
             const selectedBlock = this.hotbar ? this.hotbar.getSelectedBlock() : null;
+            console.log('[handleMouseDown] selectedBlock:', selectedBlock?.block_str_id, 'half_placeable:', selectedBlock?.half_placeable);
 
             if (selectedBlock && selectedBlock.half_placeable) {
                 // half_placeable=true: 長押しタイマー開始（設置は mouseup 時に行う）
