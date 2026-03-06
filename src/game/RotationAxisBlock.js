@@ -153,9 +153,11 @@ class RotationAxisManager {
         const key = `${wx},${wy},${wz}`;
         this._bodies.set(key, body);
 
-        // ブロックをチャンクデータからairに置換
+        // ブロックをチャンクデータからairに置換 + ライトマップ更新
         for (const b of blocks) {
-            this._setBlockAt(wx + b.rx, wy + b.ry, wz + b.rz, 'air');
+            const bx = wx + b.rx, by = wy + b.ry, bz = wz + b.rz;
+            this._setBlockAt(bx, by, bz, 'air');
+            this._updateLight(bx, by, bz, true);
         }
 
         // 影響チャンクのメッシュ再構築
@@ -184,11 +186,13 @@ class RotationAxisManager {
         // 90°ステップ数を整数で求める（浮動小数点誤差を排除）
         const steps = ((Math.round(body._angle / (Math.PI / 2)) % 4) + 4) % 4;
 
-        // 回転体の構成ブロックを整数90°回転で復元
+        // 回転体の構成ブロックを整数90°回転で復元 + ライトマップ更新
         const restoredBlocks = [];
         for (const b of body._blocks) {
             const restored = this._rotate90(b.rx, b.ry, b.rz, front, steps);
-            this._setBlockAt(wx + restored.x, wy + restored.y, wz + restored.z, b.blockId);
+            const bx = wx + restored.x, by = wy + restored.y, bz = wz + restored.z;
+            this._setBlockAt(bx, by, bz, b.blockId);
+            this._updateLight(bx, by, bz, false);
             restoredBlocks.push({ rx: restored.x, ry: restored.y, rz: restored.z });
         }
 
@@ -345,6 +349,28 @@ class RotationAxisManager {
     _setBlockAt(wx, wy, wz, blockId) {
         const r = this._resolve(wx, wy, wz);
         if (r) r.cd.setBlock(r.lx, r.ly, r.lz, blockId);
+    }
+
+    /**
+     * ブロック変更後のライトマップ更新
+     * @param {number} wx - ワールドX
+     * @param {number} wy - ワールドY
+     * @param {number} wz - ワールドZ
+     * @param {boolean} removed - ブロックが除去されたか（true=air化, false=設置）
+     */
+    _updateLight(wx, wy, wz, removed) {
+        const lc = this._chunkManager.lightCalculator;
+        if (!lc) return;
+        const r = this._resolve(wx, wy, wz);
+        if (!r) return;
+        const cx = Math.floor(wx / 16);
+        const cz = Math.floor(wz / 16);
+        const neighbors = this._chunkManager._getNeighborChunks(cx, cz);
+        if (removed) {
+            lc.onBlockRemoved(r.cd, r.lx, r.ly, r.lz, neighbors);
+        } else {
+            lc.onBlockPlaced(r.cd, r.lx, r.ly, r.lz, neighbors);
+        }
     }
 
     /**
