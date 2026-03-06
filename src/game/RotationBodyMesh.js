@@ -111,8 +111,9 @@ class RotationBodyMesh {
 
                 for (let vi = 0; vi < 4; vi++) {
                     const c = corners[vi];
-                    // Three.js座標系: Z反転（グループ内はscale.z=-1不要、座標自体を変換）
-                    positions.push(c.x, c.y, -c.z);
+                    // 軸ブロック中心(0.5, 0.5, 0.5)を原点にした相対座標
+                    // Three.js座標系: Z反転
+                    positions.push(c.x - 0.5, c.y - 0.5, -(c.z - 0.5));
                     normals.push(normal[0], normal[1], -normal[2]);
                     atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
                     lightLevels.push(1.0);

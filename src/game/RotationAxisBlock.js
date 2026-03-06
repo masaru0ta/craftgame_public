@@ -285,16 +285,26 @@ class RotationAxisManager {
      * @returns {{x:number, y:number, z:number}} スナップ後の相対座標
      */
     _rotateAndSnap(rx, ry, rz, front, angle) {
-        const cx = rx + 0.5, cy = ry + 0.5, cz = rz + 0.5;
+        // ブロック中心を軸ブロック中心(0.5,0.5,0.5)基準に変換
+        const dx = rx + 0.5 - 0.5, dy = ry + 0.5 - 0.5, dz = rz + 0.5 - 0.5;
         const cos = Math.cos(angle), sin = Math.sin(angle);
         let rotX, rotY, rotZ;
 
         if (front.dy !== 0) {
-            rotX = cx * cos - cz * sin; rotY = cy; rotZ = cx * sin + cz * cos;
+            // Y軸回転
+            rotX = dx * cos - dz * sin + 0.5;
+            rotY = dy + 0.5;
+            rotZ = dx * sin + dz * cos + 0.5;
         } else if (front.dz !== 0) {
-            rotX = cx * cos - cy * sin; rotY = cx * sin + cy * cos; rotZ = cz;
+            // Z軸回転
+            rotX = dx * cos - dy * sin + 0.5;
+            rotY = dx * sin + dy * cos + 0.5;
+            rotZ = dz + 0.5;
         } else {
-            rotX = cx; rotY = cy * cos - cz * sin; rotZ = cy * sin + cz * cos;
+            // X軸回転
+            rotX = dx + 0.5;
+            rotY = dy * cos - dz * sin + 0.5;
+            rotZ = dy * sin + dz * cos + 0.5;
         }
 
         return { x: Math.round(rotX - 0.5), y: Math.round(rotY - 0.5), z: Math.round(rotZ - 0.5) };
