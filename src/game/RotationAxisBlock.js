@@ -248,10 +248,14 @@ class RotationAxisManager {
         const blocks = [];
         const visited = new Set();
         const queue = [[startX, startY, startZ]];
+        let head = 0;
         visited.add(`${startX},${startY},${startZ}`);
 
-        while (queue.length > 0 && blocks.length < 4096) {
-            const [cx, cy, cz] = queue.shift();
+        // front方向の境界座標（ドット積で比較）
+        const boundary = front.dx * axisX + front.dy * axisY + front.dz * axisZ;
+
+        while (head < queue.length && blocks.length < 4096) {
+            const [cx, cy, cz] = queue[head++];
 
             const blockId = this._getBlockAt(cx, cy, cz);
             if (!blockId || blockId === 'air') continue;
@@ -268,17 +272,9 @@ class RotationAxisManager {
                 const ny = cy + dy;
                 const nz = cz + dz;
 
-                // 回転軸ブロック自体はスキップ
-                if (nx === axisX && ny === axisY && nz === axisZ) continue;
-
                 // front面の反対側（軸ブロック側）には広げない
-                // front方向の軸座標を境界として、反対側に入るブロックを除外
-                if (front.dy > 0 && ny <= axisY) continue;
-                if (front.dy < 0 && ny >= axisY) continue;
-                if (front.dx > 0 && nx <= axisX) continue;
-                if (front.dx < 0 && nx >= axisX) continue;
-                if (front.dz > 0 && nz <= axisZ) continue;
-                if (front.dz < 0 && nz >= axisZ) continue;
+                // ドット積が境界以下ならfront方向で軸より手前 → 除外
+                if (front.dx * nx + front.dy * ny + front.dz * nz <= boundary) continue;
 
                 const nKey = `${nx},${ny},${nz}`;
                 if (visited.has(nKey)) continue;
@@ -294,15 +290,6 @@ class RotationAxisManager {
         return blocks;
     }
 
-    /**
-     * 相対座標を回転角度でグリッドにスナップ
-     * @param {number} rx - 軸からの相対X
-     * @param {number} ry - 軸からの相対Y
-     * @param {number} rz - 軸からの相対Z
-     * @param {{dx:number, dy:number, dz:number}} front - front面方向
-     * @param {number} angle - 回転角度（ラジアン）
-     * @returns {{x:number, y:number, z:number}} スナップ後の相対座標
-     */
     /**
      * 90°整数ステップで相対座標を回転（浮動小数点誤差なし）
      * @param {number} rx - 軸からの相対X

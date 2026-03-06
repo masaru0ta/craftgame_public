@@ -3,32 +3,14 @@
  * 回転体のメッシュ生成・回転描画
  */
 class RotationBodyMesh {
-    // 面の頂点定義（ChunkMeshBuilderと同じ座標系）
-    static _FACE_CORNERS = {
-        top:    (x, y, z) => [
-            { x: x, y: y + 1, z: z + 1 }, { x: x + 1, y: y + 1, z: z + 1 },
-            { x: x + 1, y: y + 1, z: z }, { x: x, y: y + 1, z: z }
-        ],
-        bottom: (x, y, z) => [
-            { x: x, y: y, z: z }, { x: x + 1, y: y, z: z },
-            { x: x + 1, y: y, z: z + 1 }, { x: x, y: y, z: z + 1 }
-        ],
-        front:  (x, y, z) => [
-            { x: x + 1, y: y, z: z }, { x: x, y: y, z: z },
-            { x: x, y: y + 1, z: z }, { x: x + 1, y: y + 1, z: z }
-        ],
-        back:   (x, y, z) => [
-            { x: x, y: y, z: z + 1 }, { x: x + 1, y: y, z: z + 1 },
-            { x: x + 1, y: y + 1, z: z + 1 }, { x: x, y: y + 1, z: z + 1 }
-        ],
-        right:  (x, y, z) => [
-            { x: x + 1, y: y, z: z + 1 }, { x: x + 1, y: y, z: z },
-            { x: x + 1, y: y + 1, z: z }, { x: x + 1, y: y + 1, z: z + 1 }
-        ],
-        left:   (x, y, z) => [
-            { x: x, y: y, z: z }, { x: x, y: y, z: z + 1 },
-            { x: x, y: y + 1, z: z + 1 }, { x: x, y: y + 1, z: z }
-        ]
+    // 面の頂点オフセット [dx,dy,dz] × 4頂点（ChunkMeshBuilderと同じ座標系）
+    static _FACE_CORNER_OFFSETS = {
+        top:    [[0,1,1],[1,1,1],[1,1,0],[0,1,0]],
+        bottom: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]],
+        front:  [[1,0,0],[0,0,0],[0,1,0],[1,1,0]],
+        back:   [[0,0,1],[1,0,1],[1,1,1],[0,1,1]],
+        right:  [[1,0,1],[1,0,0],[1,1,0],[1,1,1]],
+        left:   [[0,0,0],[0,0,1],[0,1,1],[0,1,0]]
     };
 
     static _FACE_NORMALS = {
@@ -50,9 +32,9 @@ class RotationBodyMesh {
         left:   { dx: -1, dy: 0, dz: 0 }
     };
 
-    static _UV = [
-        [1, 0], [0, 0], [0, 1], [1, 1]
-    ];
+    static _UV = [1, 0, 0, 0, 0, 1, 1, 1]; // u,v ペアをフラット配列で保持
+
+    static _FACE_NAMES = ['top', 'bottom', 'front', 'back', 'right', 'left'];
 
     /**
      * @param {RotationBody} body
@@ -95,37 +77,27 @@ class RotationBodyMesh {
         let vertexOffset = 0;
 
         for (const b of blocks) {
-            const faceNames = ['top', 'bottom', 'front', 'back', 'right', 'left'];
-            for (const faceName of faceNames) {
+            for (const faceName of RotationBodyMesh._FACE_NAMES) {
                 // 隣接ブロックが回転体内にあればカリング
                 const off = RotationBodyMesh._FACE_OFFSETS[faceName];
-                const nKey = `${b.rx + off.dx},${b.ry + off.dy},${b.rz + off.dz}`;
-                if (blockSet.has(nKey)) continue;
+                if (blockSet.has(`${b.rx + off.dx},${b.ry + off.dy},${b.rz + off.dz}`)) continue;
 
-                // 頂点（回転軸中心を原点とした相対座標）
-                const corners = RotationBodyMesh._FACE_CORNERS[faceName](b.rx, b.ry, b.rz);
+                // 頂点（軸ブロック中心を原点とした相対座標）
+                const cornerOffsets = RotationBodyMesh._FACE_CORNER_OFFSETS[faceName];
                 const normal = RotationBodyMesh._FACE_NORMALS[faceName];
-
-                // アトラスUV
                 const atlasUV = this._textureLoader.getAtlasUV(b.blockId, faceName);
+                const bx = b.rx - 0.5, by = b.ry - 0.5, bz = b.rz - 0.5;
 
                 for (let vi = 0; vi < 4; vi++) {
-                    const c = corners[vi];
-                    // 軸ブロック中心(0.5, 0.5, 0.5)を原点にした相対座標
-                    // worldContainer内なのでZ反転不要
-                    positions.push(c.x - 0.5, c.y - 0.5, c.z - 0.5);
+                    const co = cornerOffsets[vi];
+                    positions.push(bx + co[0], by + co[1], bz + co[2]);
                     normals.push(normal[0], normal[1], normal[2]);
                     atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
                     lightLevels.push(1.0);
                     aoLevels.push(1.0);
+                    uvs.push(RotationBodyMesh._UV[vi * 2], RotationBodyMesh._UV[vi * 2 + 1]);
                 }
 
-                // UV
-                for (const [u, v] of RotationBodyMesh._UV) {
-                    uvs.push(u, v);
-                }
-
-                // インデックス
                 indices.push(
                     vertexOffset, vertexOffset + 1, vertexOffset + 2,
                     vertexOffset, vertexOffset + 2, vertexOffset + 3
