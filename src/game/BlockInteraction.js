@@ -624,24 +624,43 @@ class BlockInteraction {
         // マンハッタン距離5以内のrotorを検索して操作
         const ram = this.rotationAxisManager;
         const range = 5;
+        // チャンクデータ上のrotorを検索
+        const rotorPositions = [];
         for (let dx = -range; dx <= range; dx++) {
             for (let dy = -range; dy <= range; dy++) {
                 for (let dz = -range; dz <= range; dz++) {
                     if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > range) continue;
                     const rx = wx + dx, ry = wy + dy, rz = wz + dz;
                     const blockId = this.physicsWorld.getBlockAt(rx, ry, rz);
-                    if (blockId !== 'rotor') continue;
-
-                    if (turningOn) {
-                        // ON: ToggleBody（未生成なら生成）
-                        ram.ToggleBody(rx, ry, rz);
-                    } else {
-                        // OFF: 回転体が存在する場合のみToggleBodyで解除
-                        const body = ram.GetBodyAt(rx, ry, rz);
-                        if (body) {
-                            ram.ToggleBody(rx, ry, rz);
-                        }
+                    if (blockId === 'rotor') {
+                        rotorPositions.push({ x: rx, y: ry, z: rz });
                     }
+                }
+            }
+        }
+        // 回転体内のrotorも検索（回転体生成時にairに置換されるため）
+        for (const [, body] of ram._bodies) {
+            for (const b of body._blocks) {
+                if (b.blockId !== 'rotor') continue;
+                const rx = body._axisX + b.rx;
+                const ry = body._axisY + b.ry;
+                const rz = body._axisZ + b.rz;
+                const dist = Math.abs(rx - wx) + Math.abs(ry - wy) + Math.abs(rz - wz);
+                if (dist > range) continue;
+                // 既にリストにあるか確認
+                if (!rotorPositions.some(p => p.x === rx && p.y === ry && p.z === rz)) {
+                    rotorPositions.push({ x: rx, y: ry, z: rz });
+                }
+            }
+        }
+        // 各rotorを操作
+        for (const pos of rotorPositions) {
+            if (turningOn) {
+                ram.ToggleBody(pos.x, pos.y, pos.z);
+            } else {
+                const body = ram.GetBodyAt(pos.x, pos.y, pos.z);
+                if (body) {
+                    ram.ToggleBody(pos.x, pos.y, pos.z);
                 }
             }
         }
