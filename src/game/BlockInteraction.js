@@ -105,6 +105,24 @@ class BlockInteraction {
             return;
         }
 
+        // 右クリックで設置ではなく特殊操作になるブロックはゴースト非表示
+        const targetBlockId = this.physicsWorld.getBlockAt(
+            this.currentTarget.blockX, this.currentTarget.blockY, this.currentTarget.blockZ);
+        if (targetBlockId === 'workbench' ||
+            targetBlockId === 'switch_off' || targetBlockId === 'switch') {
+            this.placementPreview.hide();
+            return;
+        }
+        // rotorは穴面以外（操作面）ならゴースト非表示
+        if (targetBlockId === 'rotor' && this.rotationAxisManager) {
+            const rotorOri = this.physicsWorld.getOrientationAt(
+                this.currentTarget.blockX, this.currentTarget.blockY, this.currentTarget.blockZ);
+            if (!BlockInteraction._isRotorAxisFace(rotorOri, this.currentTarget.face)) {
+                this.placementPreview.hide();
+                return;
+            }
+        }
+
         // orientation 事前計算
         let orientation = 0;
         const isHalfMode = selectedBlock.half_placeable &&
