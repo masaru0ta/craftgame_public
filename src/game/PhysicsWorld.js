@@ -81,6 +81,9 @@ class PhysicsWorld {
 
         // 接地判定を更新（回転体上も考慮）
         player.setOnGround(this.isOnGround(player));
+
+        // 回転体上のプレイヤー追従（Y軸回転のみ）
+        this._applyRotationBodyRide(player, deltaTime);
     }
 
     /**
@@ -440,6 +443,63 @@ class PhysicsWorld {
             if (colBlocks.length > 0) return true;
         }
         return false;
+    }
+
+    /**
+     * 回転体上のプレイヤー追従（Y軸回転のみ）
+     * @param {Player} player
+     * @param {number} deltaTime - 経過時間（秒）
+     */
+    _applyRotationBodyRide(player, deltaTime) {
+        if (!player.isOnGround() || player.isFlying()) return;
+
+        const ram = this.rotationAxisManager;
+        if (!ram) return;
+
+        const pos = player.getPosition();
+        const halfWidth = Player.WIDTH / 2;
+
+        // 足元チェック用AABB
+        const checkAABB = {
+            minX: pos.x - halfWidth,
+            minY: pos.y - this.groundCheckDistance,
+            minZ: pos.z - halfWidth,
+            maxX: pos.x + halfWidth,
+            maxY: pos.y,
+            maxZ: pos.z + halfWidth
+        };
+
+        // 足元にあるY軸回転体を探す
+        const bodies = ram.GetAllBodies();
+        for (const body of bodies) {
+            const front = body.GetFrontDirection();
+            if (front.dy === 0) continue; // Y軸回転のみ
+
+            const colBlocks = ram.GetLocalCollidingBlocks(body, checkAABB);
+            if (colBlocks.length === 0) continue;
+
+            // 角度差分を計算
+            const angleDelta = body._rotationSpeed * deltaTime;
+
+            // 軸中心まわりにプレイヤー位置を回転
+            const axisCenterX = body._axisX + 0.5;
+            const axisCenterZ = body._axisZ + 0.5;
+            const dx = pos.x - axisCenterX;
+            const dz = pos.z - axisCenterZ;
+
+            const theta = front.dy * angleDelta;
+            const cos = Math.cos(theta);
+            const sin = Math.sin(theta);
+            const newDx = dx * cos + dz * sin;
+            const newDz = -dx * sin + dz * cos;
+
+            player.setPosition(axisCenterX + newDx, pos.y, axisCenterZ + newDz);
+
+            // yawの追従
+            player.setYaw(player.getYaw() - front.dy * angleDelta);
+
+            return; // 最初に見つかった回転体のみ
+        }
     }
 
     /**
