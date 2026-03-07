@@ -394,7 +394,14 @@ class RotationAxisManager {
                 if (b.orientation >= 101 && b.orientation <= 106) {
                     newOri = this._rotateHalfOrientation(b.orientation, front, steps);
                 } else {
-                    newOri = this._rotateOrientation(b.orientation, front, steps);
+                    // カスタムブロックのみorientationを回転変換
+                    // 標準ブロックはorientation 0-23の回転描画に非対応
+                    const blockDef = this._textureLoader ? this._textureLoader.getBlockDef(b.blockId) : null;
+                    if (blockDef && blockDef.shape_type === 'custom') {
+                        newOri = this._rotateOrientation(b.orientation, front, steps);
+                    } else {
+                        newOri = 0;
+                    }
                 }
             }
             this._setBlockAt(bx, by, bz, b.blockId, newOri);
