@@ -79,6 +79,9 @@ class RotationBody {
 class RotationAxisManager {
     static _DIRS_6 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
 
+    // 回転体に含めないブロック（自然ブロック）
+    static _NON_ROTATABLE = new Set(['stone', 'dirt', 'grass', 'sand', 'water']);
+
     // orientation(0-5) → front面方向のマッピング
     // ゲーム座標系: north=Z+(back), south=Z-(front)
     static _FRONT_DIRS = [
@@ -204,7 +207,7 @@ class RotationAxisManager {
         const startZ = wz + front.dz;
 
         const startBlock = this._getBlockAt(startX, startY, startZ);
-        if (!startBlock || startBlock === 'air') return;
+        if (!startBlock || startBlock === 'air' || RotationAxisManager._NON_ROTATABLE.has(startBlock)) return;
 
         // BFS連結検出
         const blocks = this._bfsDetect(startX, startY, startZ, wx, wy, wz, front);
@@ -543,7 +546,7 @@ class RotationAxisManager {
             head += 3;
 
             const blockId = this._getBlockAt(cx, cy, cz);
-            if (!blockId || blockId === 'air') continue;
+            if (!blockId || blockId === 'air' || RotationAxisManager._NON_ROTATABLE.has(blockId)) continue;
 
             const orientation = this._getOrientation(cx, cy, cz) || 0;
             blocks.push({
@@ -565,7 +568,7 @@ class RotationAxisManager {
                 visited.add(nKey);
 
                 const nBlock = this._getBlockAt(nx, ny, nz);
-                if (!nBlock || nBlock === 'air') continue;
+                if (!nBlock || nBlock === 'air' || RotationAxisManager._NON_ROTATABLE.has(nBlock)) continue;
 
                 queue.push(nx, ny, nz);
             }
