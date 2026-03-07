@@ -11,6 +11,19 @@ class BlockInteraction {
     /** カスタムブロック orientation 計算用 face 文字列 → 数値マップ */
     static _FACE_TO_INT = { top: 0, bottom: 1, north: 2, south: 3, east: 4, west: 5 };
 
+    // orientation → 軸側の面名（front面の反対面）
+    static _ROTOR_AXIS_FACE = ['bottom', 'top', 'south', 'north', 'west', 'east'];
+
+    /**
+     * クリックした面がrotorの軸側（front面の反対面）かを判定
+     * @param {number} orientation - rotorのorientation (0-5)
+     * @param {string} face - クリックした面名
+     * @returns {boolean}
+     */
+    static _isRotorAxisFace(orientation, face) {
+        return BlockInteraction._ROTOR_AXIS_FACE[orientation] === face;
+    }
+
     /**
      * コンストラクタ
      * @param {Player} player - プレイヤー
@@ -178,10 +191,13 @@ class BlockInteraction {
             return true;
         }
 
-        // 回転軸ブロックチェック
+        // 回転軸ブロックチェック（軸側の面クリックは通常設置扱い）
         if (targetBlockId === 'rotor' && this.rotationAxisManager) {
-            this.rotationAxisManager.ToggleBody(target.blockX, target.blockY, target.blockZ);
-            return true;
+            const rotorOri = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
+            if (!BlockInteraction._isRotorAxisFace(rotorOri, target.face)) {
+                this.rotationAxisManager.ToggleBody(target.blockX, target.blockY, target.blockZ);
+                return true;
+            }
         }
 
         const selectedBlock = this.hotbar.getSelectedBlock();

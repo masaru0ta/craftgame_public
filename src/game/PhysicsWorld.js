@@ -693,6 +693,28 @@ class PhysicsWorld {
     }
 
     /**
+     * 指定座標のブロックのorientationを取得
+     * @param {number} x
+     * @param {number} y
+     * @param {number} z
+     * @returns {number} orientation (0-23)
+     */
+    getOrientationAt(x, y, z) {
+        if (!this.chunkManager) return 0;
+        const blockX = Math.floor(x);
+        const blockY = Math.floor(y);
+        const blockZ = Math.floor(z);
+        const chunkX = Math.floor(blockX / 16);
+        const chunkZ = Math.floor(blockZ / 16);
+        const chunk = this.chunkManager.chunks.get(`${chunkX},${chunkZ}`);
+        if (!chunk || !chunk.chunkData) return 0;
+        const localX = ((blockX % 16) + 16) % 16;
+        const localY = blockY - chunk.chunkData.baseY;
+        const localZ = ((blockZ % 16) + 16) % 16;
+        return chunk.chunkData.getOrientation(localX, localY, localZ);
+    }
+
+    /**
      * ブロック位置のAABBリストを取得
      * @param {number} blockX
      * @param {number} blockY
