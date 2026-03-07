@@ -20,6 +20,7 @@ class RotationBody {
         this._angle = 0;
         this._isRotating = true;
         this._rotationSpeed = Math.PI / 2; // 1.57 rad/s
+        this._parentBody = null; // 親回転体（入れ子の場合）
     }
 
     get angle() { return this._angle; }
@@ -164,6 +165,20 @@ class RotationAxisManager {
         const key = `${wx},${wy},${wz}`;
         this._bodies.set(key, body);
 
+        // 親回転体の検出: 軸座標が既存回転体のブロック位置に一致するか
+        for (const [, existingBody] of this._bodies) {
+            if (existingBody === body) continue;
+            const checkX = wx + 0.5, checkY = wy + 0.5, checkZ = wz + 0.5;
+            const local = this.WorldToLocal(existingBody, checkX, checkY, checkZ);
+            const rx = Math.round(local.x - 0.5) - existingBody._axisX;
+            const ry = Math.round(local.y - 0.5) - existingBody._axisY;
+            const rz = Math.round(local.z - 0.5) - existingBody._axisZ;
+            if (existingBody._blockSet.has(`${rx},${ry},${rz}`)) {
+                body._parentBody = existingBody;
+                break;
+            }
+        }
+
         // ブロックをチャンクデータからairに置換 + ライトマップ更新
         for (const b of blocks) {
             const bx = wx + b.rx, by = wy + b.ry, bz = wz + b.rz;
@@ -189,6 +204,17 @@ class RotationAxisManager {
     _dissolveBody(key) {
         const body = this._bodies.get(key);
         if (!body) return;
+
+        // 子回転体を先に解除
+        const childKeys = [];
+        for (const [childKey, childBody] of this._bodies) {
+            if (childBody._parentBody === body) {
+                childKeys.push(childKey);
+            }
+        }
+        for (const childKey of childKeys) {
+            this._dissolveBody(childKey);
+        }
 
         const wx = body._axisX;
         const wy = body._axisY;
@@ -263,6 +289,11 @@ class RotationAxisManager {
      * @returns {{x:number, y:number, z:number}} ローカル座標
      */
     WorldToLocal(body, wx, wy, wz) {
+        // 親がいる場合、まず親のローカル空間に変換
+        if (body._parentBody) {
+            const mid = this.WorldToLocal(body._parentBody, wx, wy, wz);
+            wx = mid.x; wy = mid.y; wz = mid.z;
+        }
         const front = body.GetFrontDirection();
         const dx = wx - (body._axisX + 0.5);
         const dy = wy - (body._axisY + 0.5);
@@ -289,11 +320,16 @@ class RotationAxisManager {
         const dy = ly - (body._axisY + 0.5);
         const dz = lz - (body._axisZ + 0.5);
         const rotated = this._rotatePoint(dx, dy, dz, front, body._angle);
-        return {
+        const result = {
             x: rotated.x + body._axisX + 0.5,
             y: rotated.y + body._axisY + 0.5,
             z: rotated.z + body._axisZ + 0.5
         };
+        // 親がいる場合、親のワールド空間に変換
+        if (body._parentBody) {
+            return this.LocalToWorld(body._parentBody, result.x, result.y, result.z);
+        }
+        return result;
     }
 
     /**
