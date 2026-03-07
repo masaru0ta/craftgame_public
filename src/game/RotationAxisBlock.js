@@ -288,6 +288,14 @@ class RotationAxisManager {
             const mesh = this._meshes.get(key);
             if (mesh) {
                 mesh.UpdateRotation(body._angle);
+                // 親がいる場合、メッシュ位置を親の回転に合わせて更新
+                if (body._parentBody) {
+                    const ax = body._axisX + 0.5;
+                    const ay = body._axisY + 0.5;
+                    const az = body._axisZ + 0.5;
+                    const world = this.LocalToWorld(body._parentBody, ax, ay, az);
+                    mesh.GetGroup().position.set(world.x, world.y, world.z);
+                }
             }
         }
     }
