@@ -165,9 +165,10 @@ class RotationAxisManager {
         const key = `${wx},${wy},${wz}`;
         this._bodies.set(key, body);
 
-        // 親回転体の検出: 軸座標が既存回転体のブロック位置に一致するか
+        // 親子関係の検出
         for (const [, existingBody] of this._bodies) {
             if (existingBody === body) continue;
+            // ケース1: 新しい回転体の軸が既存回転体のブロック上 → 新しい回転体が子
             const checkX = wx + 0.5, checkY = wy + 0.5, checkZ = wz + 0.5;
             const local = this.WorldToLocal(existingBody, checkX, checkY, checkZ);
             const rx = Math.round(local.x - 0.5) - existingBody._axisX;
@@ -176,6 +177,17 @@ class RotationAxisManager {
             if (existingBody._blockSet.has(`${rx},${ry},${rz}`)) {
                 body._parentBody = existingBody;
                 break;
+            }
+            // ケース2: 既存回転体の軸が新しい回転体のブロック上 → 既存回転体が子
+            if (existingBody._parentBody === null) {
+                const ex = existingBody._axisX + 0.5, ey = existingBody._axisY + 0.5, ez = existingBody._axisZ + 0.5;
+                const local2 = this.WorldToLocal(body, ex, ey, ez);
+                const rx2 = Math.round(local2.x - 0.5) - body._axisX;
+                const ry2 = Math.round(local2.y - 0.5) - body._axisY;
+                const rz2 = Math.round(local2.z - 0.5) - body._axisZ;
+                if (body._blockSet.has(`${rx2},${ry2},${rz2}`)) {
+                    existingBody._parentBody = body;
+                }
             }
         }
 
