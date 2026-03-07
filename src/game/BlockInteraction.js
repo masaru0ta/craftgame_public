@@ -191,6 +191,12 @@ class BlockInteraction {
             return true;
         }
 
+        // スイッチブロックチェック
+        if ((targetBlockId === 'switch_off' || targetBlockId === 'switch') && this.rotationAxisManager) {
+            this.OnSwitchRightClick(target.blockX, target.blockY, target.blockZ);
+            return true;
+        }
+
         // 回転軸ブロックチェック（軸側の面クリックは通常設置扱い）
         if (targetBlockId === 'rotor' && this.rotationAxisManager) {
             const rotorOri = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
@@ -550,6 +556,62 @@ class BlockInteraction {
      */
     onWorkbenchInteract(callback) {
         this._onWorkbenchInteract = callback;
+    }
+
+    /**
+     * スイッチブロックの右クリック処理
+     * @param {number} wx - ワールドX座標
+     * @param {number} wy - ワールドY座標
+     * @param {number} wz - ワールドZ座標
+     */
+    OnSwitchRightClick(wx, wy, wz) {
+        const currentBlock = this.physicsWorld.getBlockAt(wx, wy, wz);
+        const turningOn = (currentBlock === 'switch_off');
+        const newBlockId = turningOn ? 'switch' : 'switch_off';
+
+        // ブロックIDを切り替え
+        const chunkX = Math.floor(wx / 16);
+        const chunkZ = Math.floor(wz / 16);
+        const chunk = this.chunkManager.chunks.get(`${chunkX},${chunkZ}`);
+        if (!chunk || !chunk.chunkData) return;
+        const localX = ((wx % 16) + 16) % 16;
+        const localZ = ((wz % 16) + 16) % 16;
+        const localY = wy - chunk.chunkData.baseY;
+        chunk.chunkData.setBlock(localX, localY, localZ, newBlockId);
+
+        // マンハッタン距離5以内のrotorを検索して操作
+        const ram = this.rotationAxisManager;
+        const range = 5;
+        for (let dx = -range; dx <= range; dx++) {
+            for (let dy = -range; dy <= range; dy++) {
+                for (let dz = -range; dz <= range; dz++) {
+                    if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > range) continue;
+                    const rx = wx + dx, ry = wy + dy, rz = wz + dz;
+                    const blockId = this.physicsWorld.getBlockAt(rx, ry, rz);
+                    if (blockId !== 'rotor') continue;
+
+                    if (turningOn) {
+                        // ON: ToggleBody（未生成なら生成）
+                        ram.ToggleBody(rx, ry, rz);
+                    } else {
+                        // OFF: 回転体が存在する場合のみToggleBodyで解除
+                        const body = ram.GetBodyAt(rx, ry, rz);
+                        if (body) {
+                            ram.ToggleBody(rx, ry, rz);
+                        }
+                    }
+                }
+            }
+        }
+
+        // メッシュ再構築
+        this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
+
+        // チャンク境界の場合、隣接チャンクも再構築
+        if (localX === 0) this.chunkManager.rebuildChunkMesh(chunkX - 1, chunkZ);
+        if (localX === 15) this.chunkManager.rebuildChunkMesh(chunkX + 1, chunkZ);
+        if (localZ === 0) this.chunkManager.rebuildChunkMesh(chunkX, chunkZ - 1);
+        if (localZ === 15) this.chunkManager.rebuildChunkMesh(chunkX, chunkZ + 1);
     }
 
     /**
