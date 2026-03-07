@@ -207,7 +207,45 @@ class RotationAxisManager {
             mesh.Build();
             this._scene.add(mesh.GetGroup());
             this._meshes.set(key, mesh);
+
+            // メッシュ親子化
+            if (body._parentBody) {
+                // ケース1: 新bodyが子 → 親メッシュの子にする
+                this._reparentMesh(body);
+            }
+            // ケース2: 既存bodyが子になった → 既存メッシュを新bodyの子にする
+            for (const [, existingBody] of this._bodies) {
+                if (existingBody !== body && existingBody._parentBody === body) {
+                    this._reparentMesh(existingBody);
+                }
+            }
         }
+    }
+
+    /**
+     * 子回転体のメッシュを親メッシュグループの子に移動
+     * @param {RotationBody} childBody - 子回転体（_parentBodyが設定済み）
+     */
+    _reparentMesh(childBody) {
+        const childKey = `${childBody._axisX},${childBody._axisY},${childBody._axisZ}`;
+        const childMesh = this._meshes.get(childKey);
+        const parentKey = `${childBody._parentBody._axisX},${childBody._parentBody._axisY},${childBody._parentBody._axisZ}`;
+        const parentMesh = this._meshes.get(parentKey);
+        if (!childMesh || !parentMesh) return;
+
+        const group = childMesh.GetGroup();
+        // シーンから外して親メッシュの子に追加
+        this._scene.remove(group);
+        parentMesh.GetGroup().add(group);
+        // 位置を親の軸中心からの相対座標に変更
+        const px = childBody._parentBody._axisX + 0.5;
+        const py = childBody._parentBody._axisY + 0.5;
+        const pz = childBody._parentBody._axisZ + 0.5;
+        group.position.set(
+            childBody._axisX + 0.5 - px,
+            childBody._axisY + 0.5 - py,
+            childBody._axisZ + 0.5 - pz
+        );
     }
 
     /**
@@ -288,14 +326,6 @@ class RotationAxisManager {
             const mesh = this._meshes.get(key);
             if (mesh) {
                 mesh.UpdateRotation(body._angle);
-                // 親がいる場合、メッシュ位置を親の回転に合わせて更新
-                if (body._parentBody) {
-                    const ax = body._axisX + 0.5;
-                    const ay = body._axisY + 0.5;
-                    const az = body._axisZ + 0.5;
-                    const world = this.LocalToWorld(body._parentBody, ax, ay, az);
-                    mesh.GetGroup().position.set(world.x, world.y, world.z);
-                }
             }
         }
     }
