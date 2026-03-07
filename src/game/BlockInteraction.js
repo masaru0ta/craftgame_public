@@ -82,8 +82,14 @@ class BlockInteraction {
         const direction = this.player.getLookDirection();
         this.currentTarget = this.physicsWorld.raycast(origin, direction, BlockInteraction.MAX_REACH);
 
-        // ハイライト更新
-        this.highlight.update(this.currentTarget);
+        // 特殊操作ブロックの判定
+        const actionLabel = this._getActionLabel(this.currentTarget);
+        if (actionLabel) {
+            this.highlight.update(this.currentTarget);
+            this.highlight.showActionLabel(actionLabel);
+        } else {
+            this.highlight.update(this.currentTarget);
+        }
 
         // 設置予測更新
         this._updatePlacementPreview();
@@ -574,6 +580,23 @@ class BlockInteraction {
      */
     onWorkbenchInteract(callback) {
         this._onWorkbenchInteract = callback;
+    }
+
+    /**
+     * 特殊操作ブロックのアクションラベルを返す（該当しなければnull）
+     * @param {Object|null} target - レイキャスト結果
+     * @returns {string|null}
+     */
+    _getActionLabel(target) {
+        if (!target || !target.hit) return null;
+        const blockId = this.physicsWorld.getBlockAt(target.blockX, target.blockY, target.blockZ);
+        if (blockId === 'workbench') return '作業台';
+        if (blockId === 'switch_off' || blockId === 'switch') return 'スイッチ';
+        if (blockId === 'rotor' && this.rotationAxisManager) {
+            const ori = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
+            if (!BlockInteraction._isRotorAxisFace(ori, target.face)) return '回転';
+        }
+        return null;
     }
 
     /**

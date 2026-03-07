@@ -18,8 +18,10 @@ class BlockHighlight {
         this.wireframe = null;
         this.faceHighlight = null;
         this.currentTarget = null;
+        this._actionLabel = null;
 
         this._createMeshes();
+        this._createActionLabel();
     }
 
     /**
@@ -129,11 +131,46 @@ class BlockHighlight {
     }
 
     /**
+     * アクションラベル用HTML要素を作成
+     */
+    _createActionLabel() {
+        const el = document.createElement('div');
+        el.style.cssText = 'position:absolute;top:45%;left:50%;transform:translate(-50%,-50%);' +
+            'background:rgba(0,0,0,0.7);color:#fff;padding:4px 12px;border-radius:4px;' +
+            'font-size:14px;pointer-events:none;z-index:100;display:none;white-space:nowrap;';
+        document.body.appendChild(el);
+        this._actionLabel = el;
+    }
+
+    /**
+     * アクションラベルを表示（ハイライト・ワイヤーフレームは非表示）
+     * @param {string} text - 表示テキスト
+     */
+    showActionLabel(text) {
+        this.wireframe.visible = false;
+        this.faceHighlight.visible = false;
+        if (this._actionLabel) {
+            this._actionLabel.textContent = text;
+            this._actionLabel.style.display = 'block';
+        }
+    }
+
+    /**
+     * アクションラベルを非表示
+     */
+    hideActionLabel() {
+        if (this._actionLabel) {
+            this._actionLabel.style.display = 'none';
+        }
+    }
+
+    /**
      * ハイライトを表示
      */
     show() {
         this.wireframe.visible = true;
         this.faceHighlight.visible = true;
+        this.hideActionLabel();
     }
 
     /**
@@ -142,6 +179,7 @@ class BlockHighlight {
     hide() {
         this.wireframe.visible = false;
         this.faceHighlight.visible = false;
+        this.hideActionLabel();
     }
 
     /**
@@ -157,6 +195,9 @@ class BlockHighlight {
             this.scene.remove(this.faceHighlight);
             this.faceHighlight.geometry.dispose();
             this.faceHighlight.material.dispose();
+        }
+        if (this._actionLabel && this._actionLabel.parentNode) {
+            this._actionLabel.parentNode.removeChild(this._actionLabel);
         }
     }
 }
