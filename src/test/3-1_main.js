@@ -261,17 +261,17 @@ class GameTestApp {
         // ホットバーに最初の9ブロックを自動設定
         placeableBlocks.slice(0, Hotbar.SLOT_COUNT).forEach((block, i) => {
             this.hotbar.setSlotBlock(i, block);
-            this.hotbar.setSlotCount(i, 99);
+            this.hotbar.setSlotCount(i, 999);
         });
 
-        // 17. Inventory初期化（全ブロック99個ずつ）
+        // 17. Inventory初期化（全ブロック999個ずつ）
         this.inventory = new Inventory({
             container: document.getElementById('inventory-container'),
             hotbar: this.hotbar,
             allBlocks: placeableBlocks
         });
         for (const block of placeableBlocks) {
-            this.inventory.addItem(block.block_str_id, 99);
+            this.inventory.addItem(block.block_str_id, 999);
         }
 
         // 18. VoxelParticleSystem初期化（衝突判定付き）
