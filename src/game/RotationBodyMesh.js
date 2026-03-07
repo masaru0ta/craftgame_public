@@ -73,8 +73,14 @@ class RotationBodyMesh {
 
         // ブロック座標をセットで管理（面カリング用・整数キー）
         const blockSet = new Set();
+        // カスタムブロック座標セット（隣接面カリング除外用）
+        const customBlockSet = new Set();
         for (const b of blocks) {
             blockSet.add(packBlockKey(b.rx, b.ry, b.rz));
+            const def = this._textureLoader.getBlockDef(b.blockId);
+            if (def && def.shape_type === 'custom') {
+                customBlockSet.add(packBlockKey(b.rx, b.ry, b.rz));
+            }
         }
 
         const positions = [];
@@ -110,7 +116,9 @@ class RotationBodyMesh {
             // 通常ブロック: 立方体メッシュ生成
             for (const faceName of RotationBodyMesh._FACE_NAMES) {
                 const off = RotationBodyMesh._FACE_OFFSETS[faceName];
-                if (blockSet.has(packBlockKey(b.rx + off.dx, b.ry + off.dy, b.rz + off.dz))) continue;
+                const neighborKey = packBlockKey(b.rx + off.dx, b.ry + off.dy, b.rz + off.dz);
+                // 隣接がカスタムブロックの場合はカリングしない（面を完全に覆わないため）
+                if (blockSet.has(neighborKey) && !customBlockSet.has(neighborKey)) continue;
 
                 const cornerOffsets = RotationBodyMesh._FACE_CORNER_OFFSETS[faceName];
                 const normal = RotationBodyMesh._FACE_NORMALS[faceName];
