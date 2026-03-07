@@ -469,8 +469,13 @@ class PhysicsWorld {
             maxZ: pos.z + halfWidth
         };
 
-        // 足元にあるY軸回転体を探す
+        // 足元にあるY軸回転体を探す（子を親より優先）
         const bodies = ram.GetAllBodies();
+        bodies.sort((a, b) => {
+            const aDepth = a._parentBody ? 1 : 0;
+            const bDepth = b._parentBody ? 1 : 0;
+            return bDepth - aDepth;
+        });
         for (const body of bodies) {
             const front = body.GetFrontDirection();
             if (front.dy === 0) continue; // Y軸回転のみ
@@ -478,25 +483,38 @@ class PhysicsWorld {
             const colBlocks = ram.GetLocalCollidingBlocks(body, checkAABB);
             if (colBlocks.length === 0) continue;
 
-            // 角度差分を計算
-            const angleDelta = body._rotationSpeed * deltaTime;
+            // 角度差分を計算（自身の回転 + 親チェーンの回転）
+            let totalTheta = front.dy * body._rotationSpeed * deltaTime;
+            let parent = body._parentBody;
+            while (parent) {
+                const pFront = parent.GetFrontDirection();
+                if (pFront.dy !== 0) {
+                    totalTheta += pFront.dy * parent._rotationSpeed * deltaTime;
+                }
+                parent = parent._parentBody;
+            }
 
-            // 軸中心まわりにプレイヤー位置を回転
-            const axisCenterX = body._axisX + 0.5;
-            const axisCenterZ = body._axisZ + 0.5;
+            // ワールド空間での軸中心を計算（親の回転を考慮）
+            let axisCenterX = body._axisX + 0.5;
+            let axisCenterZ = body._axisZ + 0.5;
+            if (body._parentBody) {
+                const worldAxis = ram.LocalToWorld(body._parentBody, axisCenterX, body._axisY + 0.5, axisCenterZ);
+                axisCenterX = worldAxis.x;
+                axisCenterZ = worldAxis.z;
+            }
+
             const dx = pos.x - axisCenterX;
             const dz = pos.z - axisCenterZ;
 
-            const theta = front.dy * angleDelta;
-            const cos = Math.cos(theta);
-            const sin = Math.sin(theta);
+            const cos = Math.cos(totalTheta);
+            const sin = Math.sin(totalTheta);
             const newDx = dx * cos + dz * sin;
             const newDz = -dx * sin + dz * cos;
 
             player.setPosition(axisCenterX + newDx, pos.y, axisCenterZ + newDz);
 
             // yawの追従
-            player.setYaw(player.getYaw() - front.dy * angleDelta);
+            player.setYaw(player.getYaw() - totalTheta);
 
             return; // 最初に見つかった回転体のみ
         }
