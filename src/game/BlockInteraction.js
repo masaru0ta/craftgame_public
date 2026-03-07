@@ -577,7 +577,8 @@ class BlockInteraction {
         const localX = ((wx % 16) + 16) % 16;
         const localZ = ((wz % 16) + 16) % 16;
         const localY = wy - chunk.chunkData.baseY;
-        chunk.chunkData.setBlock(localX, localY, localZ, newBlockId);
+        const orientation = chunk.chunkData.getOrientation(localX, localY, localZ);
+        chunk.chunkData.setBlock(localX, localY, localZ, newBlockId, orientation);
 
         // マンハッタン距離5以内のrotorを検索して操作
         const ram = this.rotationAxisManager;
