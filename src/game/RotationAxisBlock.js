@@ -16,6 +16,7 @@ class RotationBody {
         this._axisZ = axisZ;
         this._orientation = orientation;
         this._blocks = blocks;
+        this._blockSet = new Set(blocks.map(b => `${b.rx},${b.ry},${b.rz}`));
         this._angle = 0;
         this._isRotating = true;
         this._rotationSpeed = Math.PI / 2; // 1.57 rad/s
@@ -251,6 +252,138 @@ class RotationAxisManager {
                 mesh.UpdateRotation(body._angle);
             }
         }
+    }
+
+    /**
+     * ワールド座標をローカル座標に変換（逆回転）
+     * @param {RotationBody} body - 回転体
+     * @param {number} wx - ワールドX
+     * @param {number} wy - ワールドY
+     * @param {number} wz - ワールドZ
+     * @returns {{x:number, y:number, z:number}} ローカル座標
+     */
+    WorldToLocal(body, wx, wy, wz) {
+        const front = body.GetFrontDirection();
+        const dx = wx - (body._axisX + 0.5);
+        const dy = wy - (body._axisY + 0.5);
+        const dz = wz - (body._axisZ + 0.5);
+        const rotated = this._rotatePoint(dx, dy, dz, front, -body._angle);
+        return {
+            x: rotated.x + body._axisX + 0.5,
+            y: rotated.y + body._axisY + 0.5,
+            z: rotated.z + body._axisZ + 0.5
+        };
+    }
+
+    /**
+     * ローカル座標をワールド座標に変換（正回転）
+     * @param {RotationBody} body - 回転体
+     * @param {number} lx - ローカルX
+     * @param {number} ly - ローカルY
+     * @param {number} lz - ローカルZ
+     * @returns {{x:number, y:number, z:number}} ワールド座標
+     */
+    LocalToWorld(body, lx, ly, lz) {
+        const front = body.GetFrontDirection();
+        const dx = lx - (body._axisX + 0.5);
+        const dy = ly - (body._axisY + 0.5);
+        const dz = lz - (body._axisZ + 0.5);
+        const rotated = this._rotatePoint(dx, dy, dz, front, body._angle);
+        return {
+            x: rotated.x + body._axisX + 0.5,
+            y: rotated.y + body._axisY + 0.5,
+            z: rotated.z + body._axisZ + 0.5
+        };
+    }
+
+    /**
+     * 回転軸に応じて点を回転する
+     * RotationBodyMesh.UpdateRotation と同じ符号規則
+     * @param {number} dx - 軸中心からのX
+     * @param {number} dy - 軸中心からのY
+     * @param {number} dz - 軸中心からのZ
+     * @param {{dx:number, dy:number, dz:number}} front - 回転軸方向
+     * @param {number} angle - 回転角度（正=正回転、負=逆回転）
+     * @returns {{x:number, y:number, z:number}}
+     */
+    _rotatePoint(dx, dy, dz, front, angle) {
+        // CW回転（_rotate90と同じ回転方向）
+        // θ = front.d? * angle。逆回転は angle = -body._angle で呼ばれる。
+        let theta, cos, sin;
+        if (front.dy !== 0) {
+            theta = front.dy * angle;
+            cos = Math.cos(theta);
+            sin = Math.sin(theta);
+            return { x: dx * cos + dz * sin, y: dy, z: -dx * sin + dz * cos };
+        } else if (front.dz !== 0) {
+            theta = front.dz * angle;
+            cos = Math.cos(theta);
+            sin = Math.sin(theta);
+            return { x: dx * cos + dy * sin, y: -dx * sin + dy * cos, z: dz };
+        } else {
+            theta = front.dx * angle;
+            cos = Math.cos(theta);
+            sin = Math.sin(theta);
+            return { x: dx, y: dy * cos + dz * sin, z: -dy * sin + dz * cos };
+        }
+    }
+
+    /**
+     * プレイヤーAABBを逆回転し、ローカル空間で衝突する回転体ブロックのAABBリストを返す
+     * @param {RotationBody} body - 回転体
+     * @param {{minX:number,minY:number,minZ:number,maxX:number,maxY:number,maxZ:number}} worldAABB - ワールド空間のAABB
+     * @returns {Array<{minX:number,minY:number,minZ:number,maxX:number,maxY:number,maxZ:number}>}
+     */
+    GetLocalCollidingBlocks(body, worldAABB) {
+        // 幾何中心を逆回転
+        const halfW = (worldAABB.maxX - worldAABB.minX) / 2;
+        const halfH = (worldAABB.maxY - worldAABB.minY) / 2;
+        const centerX = (worldAABB.minX + worldAABB.maxX) / 2;
+        const centerY = (worldAABB.minY + worldAABB.maxY) / 2;
+        const centerZ = (worldAABB.minZ + worldAABB.maxZ) / 2;
+
+        const local = this.WorldToLocal(body, centerX, centerY, centerZ);
+
+        // ローカル空間でAABBを再構築
+        const localAABB = {
+            minX: local.x - halfW,
+            minY: local.y - halfH,
+            minZ: local.z - halfW,
+            maxX: local.x + halfW,
+            maxY: local.y + halfH,
+            maxZ: local.z + halfW
+        };
+
+        // ローカルAABB範囲の整数座標をチェック
+        const result = [];
+        const ax = body._axisX, ay = body._axisY, az = body._axisZ;
+        const xMin = Math.floor(localAABB.minX);
+        const xMax = Math.floor(localAABB.maxX);
+        const yMin = Math.floor(localAABB.minY);
+        const yMax = Math.floor(localAABB.maxY);
+        const zMin = Math.floor(localAABB.minZ);
+        const zMax = Math.floor(localAABB.maxZ);
+
+        for (let x = xMin; x <= xMax; x++) {
+            for (let y = yMin; y <= yMax; y++) {
+                for (let z = zMin; z <= zMax; z++) {
+                    const rx = x - ax, ry = y - ay, rz = z - az;
+                    if (body._blockSet.has(`${rx},${ry},${rz}`)) {
+                        const blockAABB = {
+                            minX: x, minY: y, minZ: z,
+                            maxX: x + 1, maxY: y + 1, maxZ: z + 1
+                        };
+                        // ローカルAABBとの交差判定
+                        if (localAABB.minX < blockAABB.maxX && localAABB.maxX > blockAABB.minX &&
+                            localAABB.minY < blockAABB.maxY && localAABB.maxY > blockAABB.minY &&
+                            localAABB.minZ < blockAABB.maxZ && localAABB.maxZ > blockAABB.minZ) {
+                            result.push(blockAABB);
+                        }
+                    }
+                }
+            }
+        }
+        return result;
     }
 
     /**

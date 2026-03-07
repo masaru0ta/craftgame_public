@@ -253,6 +253,9 @@ class GameTestApp {
                 this.chunkManager, this.worldContainer, this.textureLoader
             );
             this.blockInteraction.rotationAxisManager = this.rotationAxisManager;
+            if (this.physicsWorld) {
+                this.physicsWorld.rotationAxisManager = this.rotationAxisManager;
+            }
         }
 
         // ホットバーに最初の9ブロックを自動設定

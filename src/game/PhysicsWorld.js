@@ -19,6 +19,9 @@ class PhysicsWorld {
         // 接地判定の閾値
         this.groundCheckDistance = 0.01;
 
+        // 回転軸マネージャーへの参照（セッターで設定）
+        this.rotationAxisManager = null;
+
         // ステップアップの最大高さ（0.5ブロック以下の段差を瞬時に乗り越える）
         this.stepUpMaxHeight = 0.5;
 
@@ -72,6 +75,9 @@ class PhysicsWorld {
             player.setPosition(pos.x, pos.y, pos.z);
             this._resolveCollisionZ(player, dz);
         }
+
+        // 回転体との衝突判定・押し出し
+        this._resolveRotationBodyCollision(player);
 
         // 接地判定を更新（回転体上も考慮）
         player.setOnGround(this.isOnGround(player));
@@ -411,7 +417,171 @@ class PhysicsWorld {
             }
         }
 
+        // 回転体ブロック上の接地判定
+        if (this._isOnRotationBody(checkAABB)) {
+            return true;
+        }
+
         return false;
+    }
+
+    /**
+     * 回転体ブロック上の接地判定
+     * @param {{minX:number,minY:number,minZ:number,maxX:number,maxY:number,maxZ:number}} checkAABB - 足元チェック用AABB
+     * @returns {boolean}
+     */
+    _isOnRotationBody(checkAABB) {
+        const ram = this.rotationAxisManager;
+        if (!ram) return false;
+
+        const bodies = ram.GetAllBodies();
+        for (const body of bodies) {
+            const colBlocks = ram.GetLocalCollidingBlocks(body, checkAABB);
+            if (colBlocks.length > 0) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 回転体との衝突判定・押し出し処理
+     * @param {Player} player
+     */
+    _resolveRotationBodyCollision(player) {
+        const ram = this.rotationAxisManager;
+        if (!ram) return;
+
+        const bodies = ram.GetAllBodies();
+        if (bodies.length === 0) return;
+
+        const halfWidth = Player.WIDTH / 2;
+        const height = player.getHeight();
+        const halfHeight = height / 2;
+
+        for (const body of bodies) {
+            const playerAABB = player.getAABB();
+            const collidingBlocks = ram.GetLocalCollidingBlocks(body, playerAABB);
+            if (collidingBlocks.length === 0) continue;
+
+            // ローカル空間でプレイヤーの幾何中心を逆回転
+            const pos = player.getPosition();
+            const centerX = pos.x;
+            const centerY = pos.y + halfHeight;
+            const centerZ = pos.z;
+            const local = ram.WorldToLocal(body, centerX, centerY, centerZ);
+
+            // ローカル空間でAABBを構築
+            let localMinX = local.x - halfWidth;
+            let localMinY = local.y - halfHeight;
+            let localMinZ = local.z - halfWidth;
+            let localMaxX = local.x + halfWidth;
+            let localMaxY = local.y + halfHeight;
+            let localMaxZ = local.z + halfWidth;
+
+            // 各衝突ブロックに対して最小めり込み軸で押し出し
+            for (const blockAABB of collidingBlocks) {
+                // 再チェック（前のブロック押し出しで離れた可能性）
+                if (!(localMinX < blockAABB.maxX && localMaxX > blockAABB.minX &&
+                      localMinY < blockAABB.maxY && localMaxY > blockAABB.minY &&
+                      localMinZ < blockAABB.maxZ && localMaxZ > blockAABB.minZ)) continue;
+
+                // 6方向のめり込み量を計算
+                const overlapXp = blockAABB.maxX - localMinX;
+                const overlapXn = localMaxX - blockAABB.minX;
+                const overlapYp = blockAABB.maxY - localMinY;
+                const overlapYn = localMaxY - blockAABB.minY;
+                const overlapZp = blockAABB.maxZ - localMinZ;
+                const overlapZn = localMaxZ - blockAABB.minZ;
+
+                // 最小めり込み方向を選択
+                let minOverlap = overlapXp;
+                let axis = 0; // 0=X+, 1=X-, 2=Y+, 3=Y-, 4=Z+, 5=Z-
+                if (overlapXn < minOverlap) { minOverlap = overlapXn; axis = 1; }
+                if (overlapYp < minOverlap) { minOverlap = overlapYp; axis = 2; }
+                if (overlapYn < minOverlap) { minOverlap = overlapYn; axis = 3; }
+                if (overlapZp < minOverlap) { minOverlap = overlapZp; axis = 4; }
+                if (overlapZn < minOverlap) { minOverlap = overlapZn; axis = 5; }
+
+                // 押し出し適用（ローカル空間）
+                switch (axis) {
+                    case 0: localMinX += minOverlap; localMaxX += minOverlap; break; // X+
+                    case 1: localMinX -= minOverlap; localMaxX -= minOverlap; break; // X-
+                    case 2: localMinY += minOverlap; localMaxY += minOverlap; break; // Y+
+                    case 3: localMinY -= minOverlap; localMaxY -= minOverlap; break; // Y-
+                    case 4: localMinZ += minOverlap; localMaxZ += minOverlap; break; // Z+
+                    case 5: localMinZ -= minOverlap; localMaxZ -= minOverlap; break; // Z-
+                }
+            }
+
+            // ローカル空間の幾何中心を求める
+            const newLocalCenterX = (localMinX + localMaxX) / 2;
+            const newLocalCenterY = (localMinY + localMaxY) / 2;
+            const newLocalCenterZ = (localMinZ + localMaxZ) / 2;
+
+            // ワールド座標に戻す（正回転）
+            const world = ram.LocalToWorld(body, newLocalCenterX, newLocalCenterY, newLocalCenterZ);
+
+            // 幾何中心→足元座標
+            const newX = world.x;
+            const newY = world.y - halfHeight;
+            const newZ = world.z;
+
+            player.setPosition(newX, newY, newZ);
+
+            // 挟まれ防止: 地形との衝突チェック
+            this._resolveSqueezeEscape(player, ram, bodies);
+        }
+    }
+
+    /**
+     * 挟まれ防止: 押し出し後に地形にめり込んでいたら上方向に脱出
+     * @param {Player} player
+     * @param {RotationAxisManager} ram
+     * @param {Array<RotationBody>} bodies
+     */
+    _resolveSqueezeEscape(player, ram, bodies) {
+        const playerAABB = player.getAABB();
+        const terrainBlocks = this._getCollidingBlocks(playerAABB);
+        let squeezed = false;
+        for (const blockAABB of terrainBlocks) {
+            if (this._aabbIntersects(playerAABB, blockAABB)) {
+                squeezed = true;
+                break;
+            }
+        }
+        if (!squeezed) return;
+
+        // 上方向に0.5ずつ、最大5ブロックまで脱出を試みる
+        const pos = player.getPosition();
+        for (let step = 1; step <= 10; step++) {
+            const tryY = pos.y + step * 0.5;
+            player.setPosition(pos.x, tryY, pos.z);
+
+            // 地形チェック
+            const tryAABB = player.getAABB();
+            const tryTerrain = this._getCollidingBlocks(tryAABB);
+            let terrainClear = true;
+            for (const blockAABB of tryTerrain) {
+                if (this._aabbIntersects(tryAABB, blockAABB)) {
+                    terrainClear = false;
+                    break;
+                }
+            }
+            if (!terrainClear) continue;
+
+            // 回転体チェック
+            let rotationClear = true;
+            for (const body of bodies) {
+                const colBlocks = ram.GetLocalCollidingBlocks(body, tryAABB);
+                if (colBlocks.length > 0) {
+                    rotationClear = false;
+                    break;
+                }
+            }
+            if (rotationClear) return; // 脱出成功
+        }
+
+        // 脱出失敗: 元の位置に戻す（次フレームで再試行）
+        player.setPosition(pos.x, pos.y, pos.z);
     }
 
     /**
