@@ -196,7 +196,25 @@ class RotationAxisManager {
      */
     _createBody(wx, wy, wz) {
         // 回転軸ブロックのorientationを取得
-        const orientation = this._getOrientation(wx, wy, wz);
+        let orientation = this._getOrientation(wx, wy, wz);
+
+        // チャンクデータにない場合（親回転体内のrotor）、親のブロックリストから取得
+        let parentBody = null;
+        if (orientation === null || this._getBlockAt(wx, wy, wz) === 'air') {
+            for (const [, body] of this._bodies) {
+                for (const b of body._blocks) {
+                    if (b.blockId === 'rotor' &&
+                        body._axisX + b.rx === wx &&
+                        body._axisY + b.ry === wy &&
+                        body._axisZ + b.rz === wz) {
+                        orientation = b.orientation;
+                        parentBody = body;
+                        break;
+                    }
+                }
+                if (parentBody) break;
+            }
+        }
         if (orientation === null) return;
 
         const front = RotationAxisManager.OrientationToFrontDir(orientation);
@@ -206,11 +224,25 @@ class RotationAxisManager {
         const startY = wy + front.dy;
         const startZ = wz + front.dz;
 
-        const startBlock = this._getBlockAt(startX, startY, startZ);
+        let startBlock = this._getBlockAt(startX, startY, startZ);
+        // 親回転体内のブロックもチェック
+        if ((!startBlock || startBlock === 'air') && parentBody) {
+            const srx = startX - parentBody._axisX;
+            const sry = startY - parentBody._axisY;
+            const srz = startZ - parentBody._axisZ;
+            for (const b of parentBody._blocks) {
+                if (b.rx === srx && b.ry === sry && b.rz === srz) {
+                    startBlock = b.blockId;
+                    break;
+                }
+            }
+        }
         if (!startBlock || startBlock === 'air' || RotationAxisManager._NON_ROTATABLE.has(startBlock)) return;
 
-        // BFS連結検出
-        const blocks = this._bfsDetect(startX, startY, startZ, wx, wy, wz, front);
+        // BFS連結検出（親回転体内の場合は親のブロック情報を使用）
+        const blocks = parentBody
+            ? this._bfsDetectFromParent(startX, startY, startZ, wx, wy, wz, front, parentBody)
+            : this._bfsDetect(startX, startY, startZ, wx, wy, wz, front);
         if (blocks.length === 0) return;
 
         // 回転体生成
@@ -253,6 +285,28 @@ class RotationAxisManager {
             const bx = wx + b.rx, by = wy + b.ry, bz = wz + b.rz;
             this._setBlockAt(bx, by, bz, 'air');
             this._updateLight(bx, by, bz, true);
+        }
+
+        // 親回転体から子のブロックを除外してメッシュ再構築
+        if (body._parentBody) {
+            const childBlockKeys = new Set(blocks.map(b =>
+                packBlockKey(b.rx + wx - body._parentBody._axisX,
+                             b.ry + wy - body._parentBody._axisY,
+                             b.rz + wz - body._parentBody._axisZ)));
+            // 軸ブロック自身も除外（子rotorのブロック）
+            childBlockKeys.add(packBlockKey(wx - body._parentBody._axisX,
+                                            wy - body._parentBody._axisY,
+                                            wz - body._parentBody._axisZ));
+            body._parentBody._blocks = body._parentBody._blocks.filter(b =>
+                !childBlockKeys.has(packBlockKey(b.rx, b.ry, b.rz)));
+            body._parentBody._blockSet = new Set(
+                body._parentBody._blocks.map(b => packBlockKey(b.rx, b.ry, b.rz)));
+            // 親メッシュ再構築
+            const parentKey = `${body._parentBody._axisX},${body._parentBody._axisY},${body._parentBody._axisZ}`;
+            const parentMesh = this._meshes.get(parentKey);
+            if (parentMesh) {
+                parentMesh.Build();
+            }
         }
 
         // 影響チャンクのメッシュ再構築
@@ -575,6 +629,63 @@ class RotationAxisManager {
                 const nBlock = this._getBlockAt(nx, ny, nz);
                 if (!nBlock || nBlock === 'air' || RotationAxisManager._NON_ROTATABLE.has(nBlock)) continue;
 
+                queue.push(nx, ny, nz);
+            }
+        }
+
+        return blocks;
+    }
+
+    /**
+     * 親回転体のブロックリストからBFS連結検出（親回転体内の子rotor用）
+     * チャンクデータではなく親のブロックリストを参照する
+     */
+    _bfsDetectFromParent(startX, startY, startZ, axisX, axisY, axisZ, front, parentBody) {
+        // 親回転体のブロックをワールド座標→ブロック情報のMapに変換
+        const parentBlockMap = new Map();
+        for (const b of parentBody._blocks) {
+            const wx = parentBody._axisX + b.rx;
+            const wy = parentBody._axisY + b.ry;
+            const wz = parentBody._axisZ + b.rz;
+            parentBlockMap.set(packBlockKey(wx, wy, wz), b);
+        }
+
+        const blocks = [];
+        const visited = new Set();
+        const queue = [startX, startY, startZ];
+        let head = 0;
+        visited.add(packBlockKey(startX - axisX, startY - axisY, startZ - axisZ));
+
+        const fdx = front.dx, fdy = front.dy, fdz = front.dz;
+        const boundary = fdx * axisX + fdy * axisY + fdz * axisZ;
+
+        while (head < queue.length && blocks.length < 4096) {
+            const cx = queue[head], cy = queue[head + 1], cz = queue[head + 2];
+            head += 3;
+
+            // 親回転体のブロック情報から取得
+            const parentBlock = parentBlockMap.get(packBlockKey(cx, cy, cz));
+            if (!parentBlock) continue;
+            const blockId = parentBlock.blockId;
+            if (RotationAxisManager._NON_ROTATABLE.has(blockId)) continue;
+
+            blocks.push({
+                rx: cx - axisX,
+                ry: cy - axisY,
+                rz: cz - axisZ,
+                blockId,
+                orientation: parentBlock.orientation || 0
+            });
+
+            for (const [dx, dy, dz] of RotationAxisManager._DIRS_6) {
+                const nx = cx + dx, ny = cy + dy, nz = cz + dz;
+                if (fdx * nx + fdy * ny + fdz * nz <= boundary) continue;
+
+                const nKey = packBlockKey(nx - axisX, ny - axisY, nz - axisZ);
+                if (visited.has(nKey)) continue;
+                visited.add(nKey);
+
+                if (!parentBlockMap.has(packBlockKey(nx, ny, nz))) continue;
                 queue.push(nx, ny, nz);
             }
         }
