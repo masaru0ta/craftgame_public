@@ -515,8 +515,10 @@ class PhysicsWorld {
 
             player.setPosition(axisCenterX + newDx, pos.y, axisCenterZ + newDz);
 
-            // yawの追従
-            player.setYaw(player.getYaw() - totalTheta);
+            // yawの追従（しゃがみ時のみ）
+            if (player.isSneaking()) {
+                player.setYaw(player.getYaw() - totalTheta);
+            }
         }
     }
 
