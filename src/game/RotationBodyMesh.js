@@ -98,6 +98,15 @@ class RotationBodyMesh {
                 continue;
             }
 
+            // ハーフブロック: orientation 101-106
+            if (blockDef && blockDef.half_placeable && b.orientation >= 101 && b.orientation <= 106) {
+                vertexOffset = this._buildHalfBlock(
+                    b.blockId, b.rx, b.ry, b.rz, b.orientation - 100, blockSet,
+                    positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset
+                );
+                continue;
+            }
+
             // 通常ブロック: 立方体メッシュ生成
             for (const faceName of RotationBodyMesh._FACE_NAMES) {
                 const off = RotationBodyMesh._FACE_OFFSETS[faceName];
@@ -308,6 +317,92 @@ class RotationBodyMesh {
         } else {
             this._group.rotation.set(-angle * body._frontDx, 0, 0);
         }
+    }
+
+    // ハーフブロックのテクスチャ面リマップ（ChunkMeshBuilderと同じ）
+    static _HALF_TEX_REMAP = {
+        3: { top: 'front', bottom: 'back', front: 'bottom', back: 'top', left: 'left', right: 'right' },
+        4: { top: 'back', bottom: 'front', front: 'top', back: 'bottom', left: 'left', right: 'right' },
+        5: { top: 'left', bottom: 'right', front: 'front', back: 'back', left: 'bottom', right: 'top' },
+        6: { top: 'right', bottom: 'left', front: 'front', back: 'back', left: 'top', right: 'bottom' },
+    };
+
+    /**
+     * ハーフブロック（orientation 1-6）のメッシュ生成（回転体用・簡易版）
+     */
+    _buildHalfBlock(blockId, rx, ry, rz, orientation, blockSet, positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset) {
+        // orientationに応じたAABB範囲（軸中心原点からの相対座標）
+        const bx = rx - 0.5, by = ry - 0.5, bz = rz - 0.5;
+        let xMin = bx, xMax = bx + 1, yMin = by, yMax = by + 1, zMin = bz, zMax = bz + 1;
+        switch (orientation) {
+            case 1: yMax = by + 0.5; break;      // 下ハーフ
+            case 2: yMin = by + 0.5; break;      // 上ハーフ
+            case 3: zMax = bz + 0.5; break;      // 南付き(-Z)
+            case 4: zMin = bz + 0.5; break;      // 北付き(+Z)
+            case 5: xMax = bx + 0.5; break;      // 西付き(-X)
+            case 6: xMin = bx + 0.5; break;      // 東付き(+X)
+        }
+
+        const halfFaces = [
+            { name: 'top',    normal: [0,1,0],  corners: [[xMin,yMax,zMax],[xMax,yMax,zMax],[xMax,yMax,zMin],[xMin,yMax,zMin]] },
+            { name: 'bottom', normal: [0,-1,0], corners: [[xMin,yMin,zMin],[xMax,yMin,zMin],[xMax,yMin,zMax],[xMin,yMin,zMax]] },
+            { name: 'front',  normal: [0,0,-1], corners: [[xMax,yMin,zMin],[xMin,yMin,zMin],[xMin,yMax,zMin],[xMax,yMax,zMin]] },
+            { name: 'back',   normal: [0,0,1],  corners: [[xMin,yMin,zMax],[xMax,yMin,zMax],[xMax,yMax,zMax],[xMin,yMax,zMax]] },
+            { name: 'right',  normal: [1,0,0],  corners: [[xMax,yMin,zMax],[xMax,yMin,zMin],[xMax,yMax,zMin],[xMax,yMax,zMax]] },
+            { name: 'left',   normal: [-1,0,0], corners: [[xMin,yMin,zMin],[xMin,yMin,zMax],[xMin,yMax,zMax],[xMin,yMax,zMin]] },
+        ];
+
+        const texRemap = RotationBodyMesh._HALF_TEX_REMAP[orientation];
+
+        for (const face of halfFaces) {
+            // 面カリング: 隣接ブロックが同じ回転体内にある場合のみスキップ（ハーフは基本カリングしない）
+            const off = RotationBodyMesh._FACE_OFFSETS[face.name];
+            if (blockSet.has(packBlockKey(rx + off.dx, ry + off.dy, rz + off.dz))) {
+                // 隣接が通常ブロック（非ハーフ）の場合のみカリング
+                continue;
+            }
+
+            const texFace = texRemap ? texRemap[face.name] : face.name;
+            const atlasUV = this._textureLoader.getAtlasUV(blockId, texFace);
+
+            for (let vi = 0; vi < 4; vi++) {
+                const c = face.corners[vi];
+                positions.push(c[0], c[1], c[2]);
+                normals.push(face.normal[0], face.normal[1], face.normal[2]);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                lightLevels.push(1.0);
+                aoLevels.push(1.0);
+            }
+
+            // 薄い面のUV切り出し
+            let isThinFace = false;
+            if (orientation <= 2) {
+                isThinFace = face.name !== 'top' && face.name !== 'bottom';
+            } else if (orientation <= 4) {
+                isThinFace = face.name !== 'front' && face.name !== 'back';
+            } else {
+                isThinFace = face.name !== 'left' && face.name !== 'right';
+            }
+            if (isThinFace) {
+                const vLo = orientation === 2 ? 0.5 : 0.0;
+                const vHi = orientation === 2 ? 1.0 : 0.5;
+                if (face.name === 'top' || face.name === 'bottom') {
+                    uvs.push(0, vHi, 1, vHi, 1, vLo, 0, vLo);
+                } else {
+                    uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
+                }
+            } else {
+                uvs.push(1, 0, 0, 0, 0, 1, 1, 1);
+            }
+
+            indices.push(
+                vertexOffset, vertexOffset + 1, vertexOffset + 2,
+                vertexOffset, vertexOffset + 2, vertexOffset + 3
+            );
+            vertexOffset += 4;
+        }
+
+        return vertexOffset;
     }
 
     /**

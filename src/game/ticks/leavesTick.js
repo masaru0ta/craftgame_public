@@ -2,11 +2,11 @@
  * leaf_block のランダムティックハンドラ（仕様書 2-18）
  *
  * 動作:
- * - BFS で 6 ブロック以内に wood ブロックへの接続があるか確認する
- * - wood が見つかった → 何もしない（健全な葉）
- * - wood が見つからなかった → leaf_block を air に変換（腐敗）
+ * - BFS で 6 ブロック以内に log ブロックへの接続があるか確認する
+ * - log が見つかった → 何もしない（健全な葉）
+ * - log が見つからなかった → leaf_block を air に変換（腐敗）
  *
- * BFS の通過可能ブロック: leaf_block, wood, air
+ * BFS の通過可能ブロック: leaf_block, log, air
  * 依存: tickHelpers.js（TickHelpers）
  */
 
@@ -38,7 +38,7 @@ function leavesTickHandler(cm, wx, wy, wz, dirty, effects) {
         // 開始ブロック以外はブロック種別を確認
         if (dist > 0) {
             const b = TickHelpers.getBlock(cm, x, y, z);
-            if (b === 'wood') return;                              // 木材発見 → 腐敗しない
+            if (b === 'log') return;                              // 木材発見 → 腐敗しない
             if (b !== 'leaf_block' && b !== 'air') continue;      // 通過不可
         }
 
@@ -54,7 +54,7 @@ function leavesTickHandler(cm, wx, wy, wz, dirty, effects) {
         }
     }
 
-    // wood が見つからなかった → 腐敗して air に変換
+    // log が見つからなかった → 腐敗して air に変換
     TickHelpers.setBlock(cm, wx, wy, wz, 'air', dirty);
     if (effects && effects.onDecay) effects.onDecay(wx, wy, wz, 'leaf_block');
 }

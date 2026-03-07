@@ -335,9 +335,14 @@ class RotationAxisManager {
         for (const b of body._blocks) {
             const restored = this._rotate90(b.rx, b.ry, b.rz, front, steps);
             const bx = wx + restored.x, by = wy + restored.y, bz = wz + restored.z;
-            const newOri = (steps !== 0 && b.orientation !== undefined)
-                ? this._rotateOrientation(b.orientation, front, steps)
-                : (b.orientation || 0);
+            let newOri = b.orientation || 0;
+            if (steps !== 0 && b.orientation !== undefined) {
+                if (b.orientation >= 101 && b.orientation <= 106) {
+                    newOri = this._rotateHalfOrientation(b.orientation, front, steps);
+                } else {
+                    newOri = this._rotateOrientation(b.orientation, front, steps);
+                }
+            }
             this._setBlockAt(bx, by, bz, b.blockId, newOri);
             this._updateLight(bx, by, bz, false);
             restoredBlocks.push({ rx: restored.x, ry: restored.y, rz: restored.z });
@@ -653,6 +658,40 @@ class RotationAxisManager {
                 if (m[j] !== composed[j]) { match = false; break; }
             }
             if (match) return i;
+        }
+        return orientation;
+    }
+
+    // ハーフブロック orientation (1-6) の方向ベクトル
+    // 1:下(Y-), 2:上(Y+), 3:南(-Z), 4:北(+Z), 5:西(-X), 6:東(+X)
+    static _HALF_ORI_DIRS = [
+        null,
+        [0, -1, 0],  // 1: 下
+        [0, 1, 0],   // 2: 上
+        [0, 0, -1],  // 3: 南(-Z)
+        [0, 0, 1],   // 4: 北(+Z)
+        [-1, 0, 0],  // 5: 西(-X)
+        [1, 0, 0],   // 6: 東(+X)
+    ];
+
+    /**
+     * ハーフブロックの orientation (101-106) を回転に応じて変換
+     */
+    _rotateHalfOrientation(orientation, front, steps) {
+        const halfOri = orientation - 100; // 1-6
+        const dir = RotationAxisManager._HALF_ORI_DIRS[halfOri];
+        if (!dir) return orientation;
+
+        // 方向ベクトルを90°×stepsで回転
+        const bodyM = this._buildBodyRotationMatrix(front, steps);
+        const rx = Math.round(bodyM[0] * dir[0] + bodyM[1] * dir[1] + bodyM[2] * dir[2]);
+        const ry = Math.round(bodyM[3] * dir[0] + bodyM[4] * dir[1] + bodyM[5] * dir[2]);
+        const rz = Math.round(bodyM[6] * dir[0] + bodyM[7] * dir[1] + bodyM[8] * dir[2]);
+
+        // 回転後の方向ベクトルから orientation を逆引き
+        for (let i = 1; i <= 6; i++) {
+            const d = RotationAxisManager._HALF_ORI_DIRS[i];
+            if (d[0] === rx && d[1] === ry && d[2] === rz) return 100 + i;
         }
         return orientation;
     }
