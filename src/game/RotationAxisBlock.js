@@ -132,9 +132,34 @@ class RotationAxisManager {
     ToggleBody(wx, wy, wz) {
         const key = `${wx},${wy},${wz}`;
         if (this._bodies.has(key)) {
-            this._dissolveBody(key);
+            const body = this._bodies.get(key);
+            if (body._isRotating) {
+                // 回転中 → 停止
+                body._isRotating = false;
+            } else if (body._rotationSpeed > 0) {
+                // 停止(CW後) → 反時計回り
+                body._rotationSpeed = -Math.abs(body._rotationSpeed);
+                body._isRotating = true;
+            } else {
+                // 停止(CCW後) → 時計回り
+                body._rotationSpeed = Math.abs(body._rotationSpeed);
+                body._isRotating = true;
+            }
         } else {
             this._createBody(wx, wy, wz);
+        }
+    }
+
+    /**
+     * 回転体を解除（公開API）
+     * @param {number} wx
+     * @param {number} wy
+     * @param {number} wz
+     */
+    DissolveBody(wx, wy, wz) {
+        const key = `${wx},${wy},${wz}`;
+        if (this._bodies.has(key)) {
+            this._dissolveBody(key);
         }
     }
 

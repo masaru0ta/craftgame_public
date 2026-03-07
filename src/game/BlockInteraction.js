@@ -195,7 +195,13 @@ class BlockInteraction {
         if (targetBlockId === 'rotor' && this.rotationAxisManager) {
             const rotorOri = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
             if (!BlockInteraction._isRotorAxisFace(rotorOri, target.face)) {
-                this.rotationAxisManager.ToggleBody(target.blockX, target.blockY, target.blockZ);
+                if (this.player.isSneaking()) {
+                    // しゃがみ＋右クリック → 回転体を解除
+                    this.rotationAxisManager.DissolveBody(target.blockX, target.blockY, target.blockZ);
+                } else {
+                    // 通常右クリック → CW→停止→CCW→停止のサイクル
+                    this.rotationAxisManager.ToggleBody(target.blockX, target.blockY, target.blockZ);
+                }
                 return true;
             }
         }
