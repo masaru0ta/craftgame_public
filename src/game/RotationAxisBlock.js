@@ -102,6 +102,8 @@ class RotationAxisManager {
         this._bodies = new Map();
         /** @type {Map<string, RotationBodyMesh>} key: "x,y,z" */
         this._meshes = new Map();
+        /** @type {Map<string, number>} 次の回転方向(1=CW, -1=CCW) key: "x,y,z" */
+        this._nextDirection = new Map();
     }
 
     /**
@@ -132,19 +134,11 @@ class RotationAxisManager {
     ToggleBody(wx, wy, wz) {
         const key = `${wx},${wy},${wz}`;
         if (this._bodies.has(key)) {
+            // 回転中 → 解除して次の方向を反転
             const body = this._bodies.get(key);
-            if (body._isRotating) {
-                // 回転中 → 停止
-                body._isRotating = false;
-            } else if (body._rotationSpeed > 0) {
-                // 停止(CW後) → 反時計回り
-                body._rotationSpeed = -Math.abs(body._rotationSpeed);
-                body._isRotating = true;
-            } else {
-                // 停止(CCW後) → 時計回り
-                body._rotationSpeed = Math.abs(body._rotationSpeed);
-                body._isRotating = true;
-            }
+            const currentDir = body._rotationSpeed > 0 ? 1 : -1;
+            this._nextDirection.set(key, -currentDir);
+            this._dissolveBody(key);
         } else {
             this._createBody(wx, wy, wz);
         }
@@ -160,6 +154,7 @@ class RotationAxisManager {
         const key = `${wx},${wy},${wz}`;
         if (this._bodies.has(key)) {
             this._dissolveBody(key);
+            this._nextDirection.delete(key);
         }
     }
 
@@ -188,6 +183,11 @@ class RotationAxisManager {
         // 回転体生成
         const body = new RotationBody(wx, wy, wz, orientation, blocks);
         const key = `${wx},${wy},${wz}`;
+        // 前回の回転方向の記憶があれば反映
+        const dir = this._nextDirection.get(key);
+        if (dir === -1) {
+            body._rotationSpeed = -Math.abs(body._rotationSpeed);
+        }
         this._bodies.set(key, body);
 
         // 親子関係の検出
