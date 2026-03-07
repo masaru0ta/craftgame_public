@@ -394,11 +394,13 @@ class RotationAxisManager {
                 if (b.orientation >= 101 && b.orientation <= 106) {
                     newOri = this._rotateHalfOrientation(b.orientation, front, steps);
                 } else {
-                    // カスタムブロックのみorientationを回転変換
-                    // 標準ブロックはorientation 0-23の回転描画に非対応
                     const blockDef = this._textureLoader ? this._textureLoader.getBlockDef(b.blockId) : null;
                     if (blockDef && blockDef.shape_type === 'custom') {
+                        // カスタムブロック: 0-23回転行列で変換
                         newOri = this._rotateOrientation(b.orientation, front, steps);
+                    } else if (blockDef && blockDef.orientable && b.orientation >= 0 && b.orientation <= 5) {
+                        // orientable標準ブロック: 方向ベクトルを回転して0-5に変換
+                        newOri = this._rotateOrientableOrientation(b.orientation, front, steps);
                     } else {
                         newOri = 0;
                     }
@@ -810,6 +812,36 @@ class RotationAxisManager {
         for (let i = 1; i <= 6; i++) {
             const d = RotationAxisManager._HALF_ORI_DIRS[i];
             if (d[0] === rx && d[1] === ry && d[2] === rz) return 100 + i;
+        }
+        return orientation;
+    }
+
+    // orientable標準ブロックの方向ベクトル（orientation 0-5）
+    // 0:+Y, 1:-Y, 2:+Z, 3:-Z, 4:+X, 5:-X
+    static _ORIENTABLE_DIRS = [
+        [0, 1, 0],   // 0: +Y（上）
+        [0, -1, 0],  // 1: -Y（下）
+        [0, 0, 1],   // 2: +Z（北）
+        [0, 0, -1],  // 3: -Z（南）
+        [1, 0, 0],   // 4: +X（東）
+        [-1, 0, 0],  // 5: -X（西）
+    ];
+
+    /**
+     * orientable標準ブロックの orientation (0-5) を回転に応じて変換
+     */
+    _rotateOrientableOrientation(orientation, front, steps) {
+        const dir = RotationAxisManager._ORIENTABLE_DIRS[orientation];
+        if (!dir) return orientation;
+
+        const bodyM = this._buildBodyRotationMatrix(front, steps);
+        const rx = Math.round(bodyM[0] * dir[0] + bodyM[1] * dir[1] + bodyM[2] * dir[2]);
+        const ry = Math.round(bodyM[3] * dir[0] + bodyM[4] * dir[1] + bodyM[5] * dir[2]);
+        const rz = Math.round(bodyM[6] * dir[0] + bodyM[7] * dir[1] + bodyM[8] * dir[2]);
+
+        for (let i = 0; i <= 5; i++) {
+            const d = RotationAxisManager._ORIENTABLE_DIRS[i];
+            if (d[0] === rx && d[1] === ry && d[2] === rz) return i;
         }
         return orientation;
     }
