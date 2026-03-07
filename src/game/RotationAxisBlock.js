@@ -2,6 +2,17 @@
  * RotationAxisBlock.js
  * 回転軸ブロック管理 - 回転体の生成・解除・角度更新
  */
+/**
+ * 相対座標 (rx,ry,rz) を1つの整数キーにパックする（範囲 -128〜127）
+ * @param {number} rx
+ * @param {number} ry
+ * @param {number} rz
+ * @returns {number}
+ */
+function packBlockKey(rx, ry, rz) {
+    return ((rx + 128) << 16) | ((ry + 128) << 8) | (rz + 128);
+}
+
 class RotationBody {
     /**
      * @param {number} axisX - 回転軸ブロックのワールドX
@@ -16,11 +27,21 @@ class RotationBody {
         this._axisZ = axisZ;
         this._orientation = orientation;
         this._blocks = blocks;
-        this._blockSet = new Set(blocks.map(b => `${b.rx},${b.ry},${b.rz}`));
+        // 整数キーSetで文字列生成を回避
+        this._blockSet = new Set(blocks.map(b => packBlockKey(b.rx, b.ry, b.rz)));
         this._angle = 0;
         this._isRotating = true;
         this._rotationSpeed = Math.PI / 2; // 1.57 rad/s
         this._parentBody = null; // 親回転体（入れ子の場合）
+        // front方向をキャッシュ（毎フレームの再計算を回避）
+        const f = RotationAxisManager._FRONT_DIRS[orientation] || RotationAxisManager._FRONT_DIRS[0];
+        this._frontDx = f.dx;
+        this._frontDy = f.dy;
+        this._frontDz = f.dz;
+        // 軸中心座標をキャッシュ
+        this._centerX = axisX + 0.5;
+        this._centerY = axisY + 0.5;
+        this._centerZ = axisZ + 0.5;
     }
 
     get angle() { return this._angle; }
@@ -42,7 +63,7 @@ class RotationBody {
      * @returns {{dx:number, dy:number, dz:number}}
      */
     GetFrontDirection() {
-        return RotationAxisManager.OrientationToFrontDir(this._orientation);
+        return { dx: this._frontDx, dy: this._frontDy, dz: this._frontDz };
     }
 
     /**
@@ -104,6 +125,11 @@ class RotationAxisManager {
         this._meshes = new Map();
         /** @type {Map<string, number>} 次の回転方向(1=CW, -1=CCW) key: "x,y,z" */
         this._nextDirection = new Map();
+        // GetAllBodies用キャッシュ（_bodiesが変わったらdirty）
+        this._bodiesCache = [];
+        this._bodiesCacheDirty = true;
+        // 座標変換用の再利用オブジェクト
+        this._tmpVec = { x: 0, y: 0, z: 0 };
     }
 
     /**
@@ -111,7 +137,11 @@ class RotationAxisManager {
      * @returns {Array<RotationBody>}
      */
     GetAllBodies() {
-        return Array.from(this._bodies.values());
+        if (this._bodiesCacheDirty) {
+            this._bodiesCache = Array.from(this._bodies.values());
+            this._bodiesCacheDirty = false;
+        }
+        return this._bodiesCache;
     }
 
     /**
@@ -189,28 +219,27 @@ class RotationAxisManager {
             body._rotationSpeed = -Math.abs(body._rotationSpeed);
         }
         this._bodies.set(key, body);
+        this._bodiesCacheDirty = true;
 
         // 親子関係の検出
         for (const [, existingBody] of this._bodies) {
             if (existingBody === body) continue;
             // ケース1: 新しい回転体の軸が既存回転体のブロック上 → 新しい回転体が子
-            const checkX = wx + 0.5, checkY = wy + 0.5, checkZ = wz + 0.5;
-            const local = this.WorldToLocal(existingBody, checkX, checkY, checkZ);
+            const local = this.WorldToLocal(existingBody, body._centerX, body._centerY, body._centerZ);
             const rx = Math.round(local.x - 0.5) - existingBody._axisX;
             const ry = Math.round(local.y - 0.5) - existingBody._axisY;
             const rz = Math.round(local.z - 0.5) - existingBody._axisZ;
-            if (existingBody._blockSet.has(`${rx},${ry},${rz}`)) {
+            if (existingBody._blockSet.has(packBlockKey(rx, ry, rz))) {
                 body._parentBody = existingBody;
                 break;
             }
             // ケース2: 既存回転体の軸が新しい回転体のブロック上 → 既存回転体が子
             if (existingBody._parentBody === null) {
-                const ex = existingBody._axisX + 0.5, ey = existingBody._axisY + 0.5, ez = existingBody._axisZ + 0.5;
-                const local2 = this.WorldToLocal(body, ex, ey, ez);
+                const local2 = this.WorldToLocal(body, existingBody._centerX, existingBody._centerY, existingBody._centerZ);
                 const rx2 = Math.round(local2.x - 0.5) - body._axisX;
                 const ry2 = Math.round(local2.y - 0.5) - body._axisY;
                 const rz2 = Math.round(local2.z - 0.5) - body._axisZ;
-                if (body._blockSet.has(`${rx2},${ry2},${rz2}`)) {
+                if (body._blockSet.has(packBlockKey(rx2, ry2, rz2))) {
                     existingBody._parentBody = body;
                 }
             }
@@ -320,6 +349,7 @@ class RotationAxisManager {
         }
 
         this._bodies.delete(key);
+        this._bodiesCacheDirty = true;
 
         // チャンクメッシュ再構築（元の位置と復元位置の両方）
         this._rebuildAffectedChunks(wx, wy, wz, body._blocks);
@@ -346,6 +376,7 @@ class RotationAxisManager {
      * @param {number} deltaTime
      */
     Update(deltaTime) {
+        if (this._bodies.size === 0) return;
         for (const [key, body] of this._bodies) {
             body.Update(deltaTime);
             const mesh = this._meshes.get(key);
@@ -364,21 +395,28 @@ class RotationAxisManager {
      * @returns {{x:number, y:number, z:number}} ローカル座標
      */
     WorldToLocal(body, wx, wy, wz) {
-        // 親がいる場合、まず親のローカル空間に変換
-        if (body._parentBody) {
-            const mid = this.WorldToLocal(body._parentBody, wx, wy, wz);
-            wx = mid.x; wy = mid.y; wz = mid.z;
+        // 親がいる場合、まず親のローカル空間に変換（ループで再帰回避）
+        let b = body._parentBody;
+        if (b) {
+            // 親チェーンを配列に集める（通常1〜2段）
+            const chain = [b];
+            while (b._parentBody) { b = b._parentBody; chain.push(b); }
+            // 最上位の親から順に逆回転
+            for (let i = chain.length - 1; i >= 0; i--) {
+                const p = chain[i];
+                const dx = wx - p._centerX, dy = wy - p._centerY, dz = wz - p._centerZ;
+                this._rotatePointInPlace(dx, dy, dz, p._frontDx, p._frontDy, p._frontDz, -p._angle);
+                wx = this._tmpVec.x + p._centerX;
+                wy = this._tmpVec.y + p._centerY;
+                wz = this._tmpVec.z + p._centerZ;
+            }
         }
-        const front = body.GetFrontDirection();
-        const dx = wx - (body._axisX + 0.5);
-        const dy = wy - (body._axisY + 0.5);
-        const dz = wz - (body._axisZ + 0.5);
-        const rotated = this._rotatePoint(dx, dy, dz, front, -body._angle);
-        return {
-            x: rotated.x + body._axisX + 0.5,
-            y: rotated.y + body._axisY + 0.5,
-            z: rotated.z + body._axisZ + 0.5
-        };
+        const dx = wx - body._centerX, dy = wy - body._centerY, dz = wz - body._centerZ;
+        this._rotatePointInPlace(dx, dy, dz, body._frontDx, body._frontDy, body._frontDz, -body._angle);
+        this._tmpVec.x += body._centerX;
+        this._tmpVec.y += body._centerY;
+        this._tmpVec.z += body._centerZ;
+        return this._tmpVec;
     }
 
     /**
@@ -390,52 +428,50 @@ class RotationAxisManager {
      * @returns {{x:number, y:number, z:number}} ワールド座標
      */
     LocalToWorld(body, lx, ly, lz) {
-        const front = body.GetFrontDirection();
-        const dx = lx - (body._axisX + 0.5);
-        const dy = ly - (body._axisY + 0.5);
-        const dz = lz - (body._axisZ + 0.5);
-        const rotated = this._rotatePoint(dx, dy, dz, front, body._angle);
-        const result = {
-            x: rotated.x + body._axisX + 0.5,
-            y: rotated.y + body._axisY + 0.5,
-            z: rotated.z + body._axisZ + 0.5
-        };
-        // 親がいる場合、親のワールド空間に変換
-        if (body._parentBody) {
-            return this.LocalToWorld(body._parentBody, result.x, result.y, result.z);
+        // 自身の正回転
+        let dx = lx - body._centerX, dy = ly - body._centerY, dz = lz - body._centerZ;
+        this._rotatePointInPlace(dx, dy, dz, body._frontDx, body._frontDy, body._frontDz, body._angle);
+        let rx = this._tmpVec.x + body._centerX;
+        let ry = this._tmpVec.y + body._centerY;
+        let rz = this._tmpVec.z + body._centerZ;
+        // 親チェーンを辿って正回転（ループで再帰回避）
+        let p = body._parentBody;
+        while (p) {
+            dx = rx - p._centerX; dy = ry - p._centerY; dz = rz - p._centerZ;
+            this._rotatePointInPlace(dx, dy, dz, p._frontDx, p._frontDy, p._frontDz, p._angle);
+            rx = this._tmpVec.x + p._centerX;
+            ry = this._tmpVec.y + p._centerY;
+            rz = this._tmpVec.z + p._centerZ;
+            p = p._parentBody;
         }
-        return result;
+        this._tmpVec.x = rx; this._tmpVec.y = ry; this._tmpVec.z = rz;
+        return this._tmpVec;
     }
 
     /**
-     * 回転軸に応じて点を回転する
-     * RotationBodyMesh.UpdateRotation と同じ符号規則
+     * 回転軸に応じて点を回転し、結果を _tmpVec に書き込む（オブジェクト生成なし）
      * @param {number} dx - 軸中心からのX
      * @param {number} dy - 軸中心からのY
      * @param {number} dz - 軸中心からのZ
-     * @param {{dx:number, dy:number, dz:number}} front - 回転軸方向
-     * @param {number} angle - 回転角度（正=正回転、負=逆回転）
-     * @returns {{x:number, y:number, z:number}}
+     * @param {number} frontDx
+     * @param {number} frontDy
+     * @param {number} frontDz
+     * @param {number} angle - 回転角度
      */
-    _rotatePoint(dx, dy, dz, front, angle) {
-        // CW回転（_rotate90と同じ回転方向）
-        // θ = front.d? * angle。逆回転は angle = -body._angle で呼ばれる。
-        let theta, cos, sin;
-        if (front.dy !== 0) {
-            theta = front.dy * angle;
-            cos = Math.cos(theta);
-            sin = Math.sin(theta);
-            return { x: dx * cos + dz * sin, y: dy, z: -dx * sin + dz * cos };
-        } else if (front.dz !== 0) {
-            theta = front.dz * angle;
-            cos = Math.cos(theta);
-            sin = Math.sin(theta);
-            return { x: dx * cos + dy * sin, y: -dx * sin + dy * cos, z: dz };
+    _rotatePointInPlace(dx, dy, dz, frontDx, frontDy, frontDz, angle) {
+        const out = this._tmpVec;
+        if (frontDy !== 0) {
+            const theta = frontDy * angle;
+            const cos = Math.cos(theta), sin = Math.sin(theta);
+            out.x = dx * cos + dz * sin; out.y = dy; out.z = -dx * sin + dz * cos;
+        } else if (frontDz !== 0) {
+            const theta = frontDz * angle;
+            const cos = Math.cos(theta), sin = Math.sin(theta);
+            out.x = dx * cos + dy * sin; out.y = -dx * sin + dy * cos; out.z = dz;
         } else {
-            theta = front.dx * angle;
-            cos = Math.cos(theta);
-            sin = Math.sin(theta);
-            return { x: dx, y: dy * cos + dz * sin, z: -dy * sin + dz * cos };
+            const theta = frontDx * angle;
+            const cos = Math.cos(theta), sin = Math.sin(theta);
+            out.x = dx; out.y = dy * cos + dz * sin; out.z = -dy * sin + dz * cos;
         }
     }
 
@@ -454,41 +490,30 @@ class RotationAxisManager {
         const centerZ = (worldAABB.minZ + worldAABB.maxZ) / 2;
 
         const local = this.WorldToLocal(body, centerX, centerY, centerZ);
+        // WorldToLocalの結果は_tmpVecなのでローカル変数にコピー
+        const lx = local.x, ly = local.y, lz = local.z;
 
-        // ローカル空間でAABBを再構築
-        const localAABB = {
-            minX: local.x - halfW,
-            minY: local.y - halfH,
-            minZ: local.z - halfW,
-            maxX: local.x + halfW,
-            maxY: local.y + halfH,
-            maxZ: local.z + halfW
-        };
+        // ローカル空間でAABB範囲
+        const lMinX = lx - halfW, lMinY = ly - halfH, lMinZ = lz - halfW;
+        const lMaxX = lx + halfW, lMaxY = ly + halfH, lMaxZ = lz + halfW;
 
         // ローカルAABB範囲の整数座標をチェック
         const result = [];
         const ax = body._axisX, ay = body._axisY, az = body._axisZ;
-        const xMin = Math.floor(localAABB.minX);
-        const xMax = Math.floor(localAABB.maxX);
-        const yMin = Math.floor(localAABB.minY);
-        const yMax = Math.floor(localAABB.maxY);
-        const zMin = Math.floor(localAABB.minZ);
-        const zMax = Math.floor(localAABB.maxZ);
+        const blockSet = body._blockSet;
+        const xMin = Math.floor(lMinX), xMax = Math.floor(lMaxX);
+        const yMin = Math.floor(lMinY), yMax = Math.floor(lMaxY);
+        const zMin = Math.floor(lMinZ), zMax = Math.floor(lMaxZ);
 
         for (let x = xMin; x <= xMax; x++) {
             for (let y = yMin; y <= yMax; y++) {
                 for (let z = zMin; z <= zMax; z++) {
-                    const rx = x - ax, ry = y - ay, rz = z - az;
-                    if (body._blockSet.has(`${rx},${ry},${rz}`)) {
-                        const blockAABB = {
-                            minX: x, minY: y, minZ: z,
-                            maxX: x + 1, maxY: y + 1, maxZ: z + 1
-                        };
-                        // ローカルAABBとの交差判定
-                        if (localAABB.minX < blockAABB.maxX && localAABB.maxX > blockAABB.minX &&
-                            localAABB.minY < blockAABB.maxY && localAABB.maxY > blockAABB.minY &&
-                            localAABB.minZ < blockAABB.maxZ && localAABB.maxZ > blockAABB.minZ) {
-                            result.push(blockAABB);
+                    if (blockSet.has(packBlockKey(x - ax, y - ay, z - az))) {
+                        // ローカルAABBとの交差判定（ブロックAABBは x..x+1, y..y+1, z..z+1）
+                        if (lMinX < x + 1 && lMaxX > x &&
+                            lMinY < y + 1 && lMaxY > y &&
+                            lMinZ < z + 1 && lMaxZ > z) {
+                            result.push({ minX: x, minY: y, minZ: z, maxX: x + 1, maxY: y + 1, maxZ: z + 1 });
                         }
                     }
                 }
@@ -504,15 +529,18 @@ class RotationAxisManager {
     _bfsDetect(startX, startY, startZ, axisX, axisY, axisZ, front) {
         const blocks = [];
         const visited = new Set();
-        const queue = [[startX, startY, startZ]];
+        // フラット配列でキュー管理（配列生成を回避）
+        const queue = [startX, startY, startZ];
         let head = 0;
-        visited.add(`${startX},${startY},${startZ}`);
+        visited.add(packBlockKey(startX - axisX, startY - axisY, startZ - axisZ));
 
         // front方向の境界座標（ドット積で比較）
-        const boundary = front.dx * axisX + front.dy * axisY + front.dz * axisZ;
+        const fdx = front.dx, fdy = front.dy, fdz = front.dz;
+        const boundary = fdx * axisX + fdy * axisY + fdz * axisZ;
 
         while (head < queue.length && blocks.length < 4096) {
-            const [cx, cy, cz] = queue[head++];
+            const cx = queue[head], cy = queue[head + 1], cz = queue[head + 2];
+            head += 3;
 
             const blockId = this._getBlockAt(cx, cy, cz);
             if (!blockId || blockId === 'air') continue;
@@ -527,22 +555,19 @@ class RotationAxisManager {
             });
 
             for (const [dx, dy, dz] of RotationAxisManager._DIRS_6) {
-                const nx = cx + dx;
-                const ny = cy + dy;
-                const nz = cz + dz;
+                const nx = cx + dx, ny = cy + dy, nz = cz + dz;
 
                 // front面の反対側（軸ブロック側）には広げない
-                // ドット積が境界以下ならfront方向で軸より手前 → 除外
-                if (front.dx * nx + front.dy * ny + front.dz * nz <= boundary) continue;
+                if (fdx * nx + fdy * ny + fdz * nz <= boundary) continue;
 
-                const nKey = `${nx},${ny},${nz}`;
+                const nKey = packBlockKey(nx - axisX, ny - axisY, nz - axisZ);
                 if (visited.has(nKey)) continue;
                 visited.add(nKey);
 
                 const nBlock = this._getBlockAt(nx, ny, nz);
                 if (!nBlock || nBlock === 'air') continue;
 
-                queue.push([nx, ny, nz]);
+                queue.push(nx, ny, nz);
             }
         }
 

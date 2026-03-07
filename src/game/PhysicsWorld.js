@@ -471,34 +471,36 @@ class PhysicsWorld {
 
         // 足元にあるY軸回転体を探す（子を親より優先）
         const bodies = ram.GetAllBodies();
-        bodies.sort((a, b) => {
-            const aDepth = a._parentBody ? 1 : 0;
-            const bDepth = b._parentBody ? 1 : 0;
-            return bDepth - aDepth;
-        });
-        for (const body of bodies) {
-            const front = body.GetFrontDirection();
-            if (front.dy === 0) continue; // Y軸回転のみ
-
-            const colBlocks = ram.GetLocalCollidingBlocks(body, checkAABB);
-            if (colBlocks.length === 0) continue;
+        // 子→親の順で探索（子は _parentBody !== null）
+        // まず子を探し、見つからなければ親を探す（毎フレームのsortを回避）
+        let foundBody = null;
+        for (let pass = 0; pass < 2 && !foundBody; pass++) {
+            const wantChild = (pass === 0);
+            for (const body of bodies) {
+                if (body._frontDy === 0) continue; // Y軸回転のみ
+                if (wantChild !== (body._parentBody !== null)) continue;
+                const colBlocks = ram.GetLocalCollidingBlocks(body, checkAABB);
+                if (colBlocks.length > 0) { foundBody = body; break; }
+            }
+        }
+        if (foundBody) {
+            const body = foundBody;
 
             // 角度差分を計算（自身の回転 + 親チェーンの回転）
-            let totalTheta = front.dy * body._rotationSpeed * deltaTime;
+            let totalTheta = body._frontDy * body._rotationSpeed * deltaTime;
             let parent = body._parentBody;
             while (parent) {
-                const pFront = parent.GetFrontDirection();
-                if (pFront.dy !== 0) {
-                    totalTheta += pFront.dy * parent._rotationSpeed * deltaTime;
+                if (parent._frontDy !== 0) {
+                    totalTheta += parent._frontDy * parent._rotationSpeed * deltaTime;
                 }
                 parent = parent._parentBody;
             }
 
             // ワールド空間での軸中心を計算（親の回転を考慮）
-            let axisCenterX = body._axisX + 0.5;
-            let axisCenterZ = body._axisZ + 0.5;
+            let axisCenterX = body._centerX;
+            let axisCenterZ = body._centerZ;
             if (body._parentBody) {
-                const worldAxis = ram.LocalToWorld(body._parentBody, axisCenterX, body._axisY + 0.5, axisCenterZ);
+                const worldAxis = ram.LocalToWorld(body._parentBody, axisCenterX, body._centerY, axisCenterZ);
                 axisCenterX = worldAxis.x;
                 axisCenterZ = worldAxis.z;
             }
@@ -515,8 +517,6 @@ class PhysicsWorld {
 
             // yawの追従
             player.setYaw(player.getYaw() - totalTheta);
-
-            return; // 最初に見つかった回転体のみ
         }
     }
 

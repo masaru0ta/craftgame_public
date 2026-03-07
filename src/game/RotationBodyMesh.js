@@ -71,10 +71,10 @@ class RotationBodyMesh {
         const body = this._body;
         const blocks = body._blocks;
 
-        // ブロック座標をセットで管理（面カリング用）
+        // ブロック座標をセットで管理（面カリング用・整数キー）
         const blockSet = new Set();
         for (const b of blocks) {
-            blockSet.add(`${b.rx},${b.ry},${b.rz}`);
+            blockSet.add(packBlockKey(b.rx, b.ry, b.rz));
         }
 
         const positions = [];
@@ -101,7 +101,7 @@ class RotationBodyMesh {
             // 通常ブロック: 立方体メッシュ生成
             for (const faceName of RotationBodyMesh._FACE_NAMES) {
                 const off = RotationBodyMesh._FACE_OFFSETS[faceName];
-                if (blockSet.has(`${b.rx + off.dx},${b.ry + off.dy},${b.rz + off.dz}`)) continue;
+                if (blockSet.has(packBlockKey(b.rx + off.dx, b.ry + off.dy, b.rz + off.dz))) continue;
 
                 const cornerOffsets = RotationBodyMesh._FACE_CORNER_OFFSETS[faceName];
                 const normal = RotationBodyMesh._FACE_NORMALS[faceName];
@@ -296,16 +296,17 @@ class RotationBodyMesh {
      * @param {number} angle - ラジアン
      */
     UpdateRotation(angle) {
-        const front = this._body.GetFrontDirection();
+        // キャッシュ済みfront方向を直接参照（GetFrontDirection呼び出しとオブジェクト生成を回避）
+        const body = this._body;
         // worldContainer(scale.z=-1)内での回転:
         // Y軸: scale.z反転で回転方向が反転されるため、そのまま適用
         // X軸/Z軸: scale.z反転で符号が逆転するため、-1を掛ける
-        if (front.dy !== 0) {
-            this._group.rotation.set(0, angle * front.dy, 0);
-        } else if (front.dz !== 0) {
-            this._group.rotation.set(0, 0, -angle * front.dz);
+        if (body._frontDy !== 0) {
+            this._group.rotation.set(0, angle * body._frontDy, 0);
+        } else if (body._frontDz !== 0) {
+            this._group.rotation.set(0, 0, -angle * body._frontDz);
         } else {
-            this._group.rotation.set(-angle * front.dx, 0, 0);
+            this._group.rotation.set(-angle * body._frontDx, 0, 0);
         }
     }
 
