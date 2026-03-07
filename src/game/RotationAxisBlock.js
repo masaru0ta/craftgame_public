@@ -256,8 +256,13 @@ class RotationAxisManager {
         this._bodies.set(key, body);
         this._bodiesCacheDirty = true;
 
-        // 親子関係の検出
-        for (const [, existingBody] of this._bodies) {
+        // 親回転体内から生成された場合は明示的に親子関係を設定
+        if (parentBody) {
+            body._parentBody = parentBody;
+        }
+
+        // 親子関係の検出（parentBodyが未設定の場合のみ）
+        if (!body._parentBody) for (const [, existingBody] of this._bodies) {
             if (existingBody === body) continue;
             // ケース1: 新しい回転体の軸が既存回転体のブロック上 → 新しい回転体が子
             const local = this.WorldToLocal(existingBody, body._centerX, body._centerY, body._centerZ);
