@@ -11,8 +11,8 @@ class BlockInteraction {
     /** カスタムブロック orientation 計算用 face 文字列 → 数値マップ */
     static _FACE_TO_INT = { top: 0, bottom: 1, north: 2, south: 3, east: 4, west: 5 };
 
-    // orientation → 軸側の面名（front面の反対面）
-    static _ROTOR_AXIS_FACE = ['bottom', 'top', 'south', 'north', 'west', 'east'];
+    // orientation → 軸側の面名（front面＝軸が突き出る面）
+    static _ROTOR_AXIS_FACE = ['top', 'bottom', 'north', 'south', 'east', 'west'];
 
     /**
      * クリックした面がrotorの軸側（front面の反対面）かを判定
