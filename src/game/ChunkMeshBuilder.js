@@ -729,21 +729,20 @@ class ChunkMeshBuilder {
      * ブロックの底面が設置面に向く回転に対応
      */
     // orientable ブロック（orientation 0-5）のテクスチャ面リマップ
-    // 物理面 → テクスチャ面
-    // orientation方向 = クリック面方向 = ブロック底面が向く方向
-    // bottomテクスチャがorientation方向に、topテクスチャがその反対に来る
+    // 物理面 → テクスチャ面（正しい3D回転に基づく）
+    // 座標系: right=X+, left=X-, top=Y+, bottom=Y-, front=Z-, back=Z+
     static _OrientableTexRemap = {
-        // 0: 上面クリック → bottom上、top下（デフォルト配置なのでリマップ不要）
-        // 1: 下面クリック → bottom下、top上（上下反転）
-        1: { top: 'bottom', bottom: 'top', front: 'front', back: 'back', left: 'left', right: 'right' },
-        // 2: 北面クリック
-        2: { top: 'back', bottom: 'front', front: 'bottom', back: 'top', left: 'left', right: 'right' },
-        // 3: 南面(Z+)クリック → bottom南(back)、top北(front)
-        3: { top: 'front', bottom: 'back', front: 'top', back: 'bottom', left: 'left', right: 'right' },
-        // 4: 東面(X+)クリック → bottom東(right)、top西(left)
-        4: { top: 'right', bottom: 'left', front: 'front', back: 'back', left: 'bottom', right: 'top' },
-        // 5: 西面(X-)クリック → bottom西(left)、top東(right)
-        5: { top: 'left', bottom: 'right', front: 'front', back: 'back', left: 'top', right: 'bottom' },
+        // 0: デフォルト（top=Y+）リマップ不要
+        // 1: top=Y- Rz(180°): Y反転、X反転、Z不変
+        1: { top: 'bottom', bottom: 'top', front: 'front', back: 'back', left: 'right', right: 'left' },
+        // 2: top=Z+(北/back) Rx(90°): top→back, front→top, bottom→front, back→bottom
+        2: { top: 'front', bottom: 'back', front: 'bottom', back: 'top', left: 'left', right: 'right' },
+        // 3: top=Z-(南/front) Rx(-90°): top→front, back→top, bottom→back, front→bottom
+        3: { top: 'back', bottom: 'front', front: 'top', back: 'bottom', left: 'left', right: 'right' },
+        // 4: top=X+(東/right) Rz(-90°): top→right, left→top, bottom→left, right→bottom
+        4: { top: 'left', bottom: 'right', front: 'front', back: 'back', left: 'bottom', right: 'top' },
+        // 5: top=X-(西/left) Rz(+90°): top→left, right→top, bottom→right, left→bottom
+        5: { top: 'right', bottom: 'left', front: 'front', back: 'back', left: 'top', right: 'bottom' },
     };
 
     static _SideHalfTexRemap = {
