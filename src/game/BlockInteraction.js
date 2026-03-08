@@ -221,6 +221,12 @@ class BlockInteraction {
             return true;
         }
 
+        // 移動ブロックチェック
+        if (targetBlockId === 'direction' && this.directionBlockManager) {
+            this.OnDirectionRightClick(target.blockX, target.blockY, target.blockZ);
+            return true;
+        }
+
         // 回転軸ブロックチェック（軸側の面クリックは通常設置扱い）
         if (targetBlockId === 'rotor' && this.rotationAxisManager) {
             const rotorOri = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
@@ -596,7 +602,19 @@ class BlockInteraction {
             const ori = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
             if (!BlockInteraction._isRotorAxisFace(ori, target.face)) return '回転';
         }
+        if (blockId === 'direction' && this.directionBlockManager) return '移動';
         return null;
+    }
+
+    /**
+     * 移動ブロックの右クリック処理
+     * @param {number} wx - ワールドX座標
+     * @param {number} wy - ワールドY座標
+     * @param {number} wz - ワールドZ座標
+     */
+    OnDirectionRightClick(wx, wy, wz) {
+        if (!this.directionBlockManager) return;
+        this.directionBlockManager.ToggleBody(wx, wy, wz);
     }
 
     /**
@@ -661,6 +679,50 @@ class BlockInteraction {
                 const body = ram.GetBodyAt(pos.x, pos.y, pos.z);
                 if (body) {
                     ram.ToggleBody(pos.x, pos.y, pos.z);
+                }
+            }
+        }
+
+        // マンハッタン距離5以内のdirectionを検索して操作
+        const dbm = this.directionBlockManager;
+        if (dbm) {
+            const dirPositions = [];
+            // チャンクデータ上のdirectionを検索
+            for (let dx = -range; dx <= range; dx++) {
+                for (let dy = -range; dy <= range; dy++) {
+                    for (let dz = -range; dz <= range; dz++) {
+                        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > range) continue;
+                        const rx = wx + dx, ry = wy + dy, rz = wz + dz;
+                        const blockId = this.physicsWorld.getBlockAt(rx, ry, rz);
+                        if (blockId === 'direction') {
+                            dirPositions.push({ x: rx, y: ry, z: rz });
+                        }
+                    }
+                }
+            }
+            // 移動体内のdirectionも検索（移動体生成時にairに置換されるため）
+            for (const [, body] of dbm._bodies) {
+                for (const b of body._blocks) {
+                    if (b.blockId !== 'direction') continue;
+                    const rx = body._dirX + b.rx;
+                    const ry = body._dirY + b.ry;
+                    const rz = body._dirZ + b.rz;
+                    const dist = Math.abs(rx - wx) + Math.abs(ry - wy) + Math.abs(rz - wz);
+                    if (dist > range) continue;
+                    if (!dirPositions.some(p => p.x === rx && p.y === ry && p.z === rz)) {
+                        dirPositions.push({ x: rx, y: ry, z: rz });
+                    }
+                }
+            }
+            // 各directionを操作
+            for (const pos of dirPositions) {
+                if (turningOn) {
+                    dbm.ToggleBody(pos.x, pos.y, pos.z);
+                } else {
+                    const body = dbm.GetBodyAt(pos.x, pos.y, pos.z);
+                    if (body) {
+                        dbm.ToggleBody(pos.x, pos.y, pos.z);
+                    }
                 }
             }
         }

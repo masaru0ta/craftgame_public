@@ -61,6 +61,9 @@ class GameTestApp {
         // 回転軸ブロック
         this.rotationAxisManager = null;
 
+        // 移動ブロック
+        this.directionBlockManager = null;
+
         // エフェクト
         this.particleSystem = null;
 
@@ -256,6 +259,14 @@ class GameTestApp {
             if (this.physicsWorld) {
                 this.physicsWorld.rotationAxisManager = this.rotationAxisManager;
             }
+        }
+
+        // 移動ブロック管理初期化
+        if (typeof DirectionBlockManager !== 'undefined') {
+            this.directionBlockManager = new DirectionBlockManager(
+                this.chunkManager, this.worldContainer, this.textureLoader
+            );
+            this.blockInteraction.directionBlockManager = this.directionBlockManager;
         }
 
         // ホットバーに最初の9ブロックを自動設定
@@ -1234,6 +1245,11 @@ class GameTestApp {
         // 回転軸ブロック更新
         if (this.rotationAxisManager) {
             this.rotationAxisManager.Update(this.deltaTime);
+        }
+
+        // 移動ブロック更新
+        if (this.directionBlockManager) {
+            this.directionBlockManager.Update(this.deltaTime);
         }
 
         // 雨粒パーティクル
