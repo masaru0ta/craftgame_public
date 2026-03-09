@@ -21,7 +21,7 @@ class RotationBody {
      * @param {number} orientation - 回転軸ブロックのorientation
      * @param {Array<{rx:number, ry:number, rz:number, blockId:string}>} blocks - 構成ブロック（軸からの相対座標）
      */
-    constructor(axisX, axisY, axisZ, orientation, blocks) {
+    constructor(axisX, axisY, axisZ, orientation, blocks, stopAt90 = false) {
         this._axisX = axisX;
         this._axisY = axisY;
         this._axisZ = axisZ;
@@ -32,6 +32,7 @@ class RotationBody {
         this._angle = 0;
         this._isRotating = true;
         this._rotationSpeed = Math.PI / 2; // 1.57 rad/s
+        this._stopAt90 = stopAt90; // 90度で自動停止するか
         this._parentBody = null; // 親回転体（入れ子の場合）
         // front方向をキャッシュ（毎フレームの再計算を回避）
         const f = RotationAxisManager._FRONT_DIRS[orientation] || RotationAxisManager._FRONT_DIRS[0];
@@ -69,15 +70,26 @@ class RotationBody {
     /**
      * 角度を更新
      * @param {number} deltaTime - 経過秒数
+     * @returns {boolean} 90度停止に達したらtrue
      */
     Update(deltaTime) {
-        if (!this._isRotating) return;
+        if (!this._isRotating) return false;
         this._angle += this._rotationSpeed * deltaTime;
+        if (this._stopAt90 && Math.abs(this._angle) >= Math.PI / 2) {
+            // 90度ぴったりにスナップ
+            this._angle = (this._rotationSpeed > 0 ? 1 : -1) * Math.PI / 2;
+            this._isRotating = false;
+            return true;
+        }
+        return false;
     }
 }
 
 class RotationAxisManager {
     static _DIRS_6 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+
+    // 回転軸として扱うブロックIDの集合
+    static _ROTOR_IDS = new Set(['rotor', 'rotor_90']);
 
     // 回転体に含めないブロック（自然ブロック）
     static _NON_ROTATABLE = new Set(['stone', 'dirt', 'grass', 'sand', 'water']);
@@ -198,16 +210,20 @@ class RotationAxisManager {
         // 回転軸ブロックのorientationを取得
         let orientation = this._getOrientation(wx, wy, wz);
 
+        // 軸ブロックのIDを取得
+        let axisBlockId = this._getBlockAt(wx, wy, wz);
+
         // チャンクデータにない場合（親回転体内のrotor）、親のブロックリストから取得
         let parentBody = null;
-        if (orientation === null || this._getBlockAt(wx, wy, wz) === 'air') {
+        if (orientation === null || axisBlockId === 'air') {
             for (const [, body] of this._bodies) {
                 for (const b of body._blocks) {
-                    if (b.blockId === 'rotor' &&
+                    if (RotationAxisManager._ROTOR_IDS.has(b.blockId) &&
                         body._axisX + b.rx === wx &&
                         body._axisY + b.ry === wy &&
                         body._axisZ + b.rz === wz) {
                         orientation = b.orientation;
+                        axisBlockId = b.blockId;
                         parentBody = body;
                         break;
                     }
@@ -246,7 +262,8 @@ class RotationAxisManager {
         if (blocks.length === 0) return;
 
         // 回転体生成
-        const body = new RotationBody(wx, wy, wz, orientation, blocks);
+        const stopAt90 = (axisBlockId === 'rotor_90');
+        const body = new RotationBody(wx, wy, wz, orientation, blocks, stopAt90);
         const key = `${wx},${wy},${wz}`;
         // 前回の回転方向の記憶があれば反映
         const dir = this._nextDirection.get(key);
@@ -453,12 +470,24 @@ class RotationAxisManager {
      */
     Update(deltaTime) {
         if (this._bodies.size === 0) return;
+        const keysToDissolve = [];
         for (const [key, body] of this._bodies) {
-            body.Update(deltaTime);
+            const stopped = body.Update(deltaTime);
             const mesh = this._meshes.get(key);
             if (mesh) {
                 mesh.UpdateRotation(body._angle);
             }
+            if (stopped) {
+                keysToDissolve.push(key);
+            }
+        }
+        for (const key of keysToDissolve) {
+            const body = this._bodies.get(key);
+            if (body) {
+                const currentDir = body._rotationSpeed > 0 ? 1 : -1;
+                this._nextDirection.set(key, -currentDir);
+            }
+            this._dissolveBody(key);
         }
     }
 

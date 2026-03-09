@@ -120,7 +120,7 @@ class BlockInteraction {
             return;
         }
         // rotorは穴面以外（操作面）ならゴースト非表示
-        if (targetBlockId === 'rotor' && this.rotationAxisManager) {
+        if (RotationAxisManager._ROTOR_IDS.has(targetBlockId) && this.rotationAxisManager) {
             const rotorOri = this.physicsWorld.getOrientationAt(
                 this.currentTarget.blockX, this.currentTarget.blockY, this.currentTarget.blockZ);
             if (!BlockInteraction._isRotorAxisFace(rotorOri, this.currentTarget.face)) {
@@ -228,7 +228,7 @@ class BlockInteraction {
         }
 
         // 回転軸ブロックチェック（軸側の面クリックは通常設置扱い）
-        if (targetBlockId === 'rotor' && this.rotationAxisManager) {
+        if (RotationAxisManager._ROTOR_IDS.has(targetBlockId) && this.rotationAxisManager) {
             const rotorOri = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
             if (!BlockInteraction._isRotorAxisFace(rotorOri, target.face)) {
                 if (this.player.isSneaking()) {
@@ -394,7 +394,7 @@ class BlockInteraction {
         }
 
         // 回転軸ブロック破壊時は回転体を解除
-        if (currentBlock === 'rotor' && this.rotationAxisManager) {
+        if (RotationAxisManager._ROTOR_IDS.has(currentBlock) && this.rotationAxisManager) {
             this.rotationAxisManager.OnAxisDestroyed(x, y, z);
         }
 
@@ -598,7 +598,7 @@ class BlockInteraction {
         const blockId = this.physicsWorld.getBlockAt(target.blockX, target.blockY, target.blockZ);
         if (blockId === 'workbench') return '作業台';
         if (blockId === 'switch_off' || blockId === 'switch') return 'スイッチ';
-        if (blockId === 'rotor' && this.rotationAxisManager) {
+        if (RotationAxisManager._ROTOR_IDS.has(blockId) && this.rotationAxisManager) {
             const ori = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
             if (!BlockInteraction._isRotorAxisFace(ori, target.face)) return '回転';
         }
@@ -650,7 +650,7 @@ class BlockInteraction {
                     if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > range) continue;
                     const rx = wx + dx, ry = wy + dy, rz = wz + dz;
                     const blockId = this.physicsWorld.getBlockAt(rx, ry, rz);
-                    if (blockId === 'rotor') {
+                    if (RotationAxisManager._ROTOR_IDS.has(blockId)) {
                         rotorPositions.push({ x: rx, y: ry, z: rz });
                     }
                 }
@@ -659,7 +659,7 @@ class BlockInteraction {
         // 回転体内のrotorも検索（回転体生成時にairに置換されるため）
         for (const [, body] of ram._bodies) {
             for (const b of body._blocks) {
-                if (b.blockId !== 'rotor') continue;
+                if (!RotationAxisManager._ROTOR_IDS.has(b.blockId)) continue;
                 const rx = body._axisX + b.rx;
                 const ry = body._axisY + b.ry;
                 const rz = body._axisZ + b.rz;
