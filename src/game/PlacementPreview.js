@@ -417,8 +417,9 @@ class PlacementPreview {
         if (faceName === 'top' || faceName === 'bottom') {
             const baseUVs = [[0,1], [1,1], [1,0], [0,0]];
             // top: rotation分シフト、bottom: 逆方向シフト
-            // ベースライン補正(+2)は呼び出し側のuvRotation計算に含まれている
-            const shift = faceName === 'top' ? uvRotation : (4 - uvRotation) % 4;
+            // top面: デフォルトUVではv=1(T底辺)がZ+(back)側に来るため+2で補正
+            // bottom面: デフォルトUVではv=1(T底辺)がZ-(front)側に来るのでそのまま
+            const shift = faceName === 'top' ? (6 - uvRotation) % 4 : uvRotation;
             for (let i = 0; i < 4; i++) {
                 const uv = baseUVs[(i + shift) % 4];
                 uvs.push(uv[0], uv[1]);
