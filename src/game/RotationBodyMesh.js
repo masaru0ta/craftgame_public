@@ -120,7 +120,9 @@ class RotationBodyMesh {
             const texRemap = isOrientable && typeof ChunkMeshBuilder !== 'undefined'
                 ? (ChunkMeshBuilder._OrientableTexRemap[ori] || null)
                 : null;
-            const uvRot = ori % 4;
+            const uvRotLookup = isOrientable && typeof ChunkMeshBuilder !== 'undefined'
+                ? (ChunkMeshBuilder._OrientableUVRot[ori] || null)
+                : null;
 
             for (const faceName of RotationBodyMesh._FACE_NAMES) {
                 const off = RotationBodyMesh._FACE_OFFSETS[faceName];
@@ -143,9 +145,11 @@ class RotationBodyMesh {
                     lightLevels.push(1.0);
                     aoLevels.push(1.0);
                     // top/bottom面: orientationに応じたUV回転
-                    if (uvRot !== 0 && (faceName === 'top' || faceName === 'bottom')) {
+                    const cmbRot = (uvRotLookup && (faceName === 'top' || faceName === 'bottom'))
+                        ? (uvRotLookup[faceName] || 0) : 0;
+                    if (cmbRot !== 0) {
                         // RM baseUVはCMBと180°異なるため+2補正
-                        const shift = faceName === 'top' ? (6 - uvRot) % 4 : (uvRot + 2) % 4;
+                        const shift = (cmbRot + 2) % 4;
                         const si = ((vi + shift) % 4) * 2;
                         uvs.push(RotationBodyMesh._UV[si], RotationBodyMesh._UV[si + 1]);
                     } else {

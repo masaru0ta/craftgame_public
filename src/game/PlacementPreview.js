@@ -238,9 +238,11 @@ class PlacementPreview {
         const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
             ? (ChunkMeshBuilder._OrientableTexRemap[orientation] || null)
             : null;
-        // Y軸回転によるUV回転（orient内のrotation成分をそのまま使用）
-        const uvRotation = orientation % 4;
-        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), null, texRemap, uvRotation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        // 面ごとのUV回転テーブル（全24 orientationの3D回転を反映）
+        const uvRotLookup = (typeof ChunkMeshBuilder !== 'undefined')
+            ? (ChunkMeshBuilder._OrientableUVRot[orientation] || null)
+            : null;
+        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), null, texRemap, uvRotLookup, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
@@ -263,7 +265,7 @@ class PlacementPreview {
         const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
             ? (ChunkMeshBuilder._SideHalfTexRemap[orientation] || null)
             : null;
-        return this._buildBoxFaces(blockDef, faces, orientation, texRemap, 0, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        return this._buildBoxFaces(blockDef, faces, orientation, texRemap, null, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
@@ -272,9 +274,9 @@ class PlacementPreview {
     /**
      * @param {number|null} halfOrientation - ハーフブロックの向き(1-6)。フルブロック時はnull
      * @param {Object|null} texRemap - テクスチャリマップ。呼び出し元で決定済み
-     * @param {number} uvRotation - UV回転（0-3、Y軸回転に対応）
+     * @param {Object|null} uvRotLookup - 面ごとのUV回転テーブル {top:0-3, bottom:0-3, ...}
      */
-    _buildBoxFaces(blockDef, faces, halfOrientation, texRemap, uvRotation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+    _buildBoxFaces(blockDef, faces, halfOrientation, texRemap, uvRotLookup, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
         for (const face of faces) {
             const texFace = texRemap ? texRemap[face.name] : face.name;
             const atlasUV = this._textureLoader.getAtlasUV(blockDef.block_str_id, texFace);
@@ -301,7 +303,9 @@ class PlacementPreview {
                     uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
                 }
             } else {
-                this._addFaceUVs(uvs, face.name, uvRotation);
+                const faceUVRot = (uvRotLookup && (face.name === 'top' || face.name === 'bottom'))
+                    ? (uvRotLookup[face.name] || 0) : 0;
+                this._addFaceUVs(uvs, face.name, faceUVRot);
             }
             this._addQuadIndices(indices, vertexOffset);
             vertexOffset += 4;
@@ -416,10 +420,8 @@ class PlacementPreview {
     _addFaceUVs(uvs, faceName, uvRotation = 0) {
         if (faceName === 'top' || faceName === 'bottom') {
             const baseUVs = [[0,1], [1,1], [1,0], [0,0]];
-            // top: rotation分シフト、bottom: 逆方向シフト
-            // top面: 見下ろし視点では回転が逆転するため逆方向シフト
-            // bottom面: 見上げ視点ではそのままシフト
-            const shift = faceName === 'top' ? (4 - uvRotation) % 4 : uvRotation;
+            // uvRotationは_OrientableUVRotで算出済みの正しいシフト量
+            const shift = uvRotation;
             for (let i = 0; i < 4; i++) {
                 const uv = baseUVs[(i + shift) % 4];
                 uvs.push(uv[0], uv[1]);

@@ -425,10 +425,12 @@ class ChunkMeshBuilder {
 
                 // orientable: テクスチャ面をリマップ（物理面はそのまま）
                 const texFace = texRemap ? texRemap[faceName] : faceName;
-                // UV回転: rotatable/sidePlaceableブロックのみ適用
+                // UV回転: rotatable/sidePlaceableブロックのみ、面ごとに算出
                 const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
                 const ori = isOrientable ? chunkData.getOrientation(x, y, z) : 0;
-                const uvRot = ori % 4;
+                const uvRotLookup = isOrientable ? ChunkMeshBuilder._OrientableUVRot[ori] : null;
+                const uvRot = (uvRotLookup && (faceName === 'top' || faceName === 'bottom'))
+                    ? (uvRotLookup[faceName] || 0) : 0;
                 const key = `${blockStrId}:${faceName}:${texFace}:${uvRot}`;
                 if (!blockFacesMap.has(key)) {
                     blockFacesMap.set(key, { blockStrId, faceName, texFace, uvRot, faces: [] });
@@ -776,6 +778,49 @@ class ChunkMeshBuilder {
         return remap;
     })();
 
+    // orient(0-23) × 物理面 → UV回転量(0-3)
+    // ソース面のUV座標系が物理面のUV座標系にどう回転するかを算出
+    static _OrientableUVRot = (() => {
+        // 各面のUV座標系: tangent(u+方向), bitangent(v+方向)
+        const T = {
+            top: [1,0,0], bottom: [1,0,0],
+            front: [1,0,0], back: [-1,0,0],
+            right: [0,0,1], left: [0,0,-1]
+        };
+        const B = {
+            top: [0,0,1], bottom: [0,0,-1],
+            front: [0,1,0], back: [0,1,0],
+            right: [0,1,0], left: [0,1,0]
+        };
+        const faceNames = ['top', 'bottom', 'front', 'back', 'right', 'left'];
+        const result = {};
+        const matrices = ChunkMeshBuilder.ORIENTATION_MATRICES;
+        const texRemap = ChunkMeshBuilder._OrientableTexRemap;
+
+        for (let ori = 0; ori < 24; ori++) {
+            const m = matrices[ori];
+            if (!m) continue;
+            const remap = texRemap[ori] || null;
+            const rots = {};
+            for (const pf of faceNames) {
+                const sf = remap ? remap[pf] : pf;
+                const st = T[sf];
+                // M × src_tangent
+                const rx = Math.round(m[0]*st[0] + m[1]*st[1] + m[2]*st[2]);
+                const ry = Math.round(m[3]*st[0] + m[4]*st[1] + m[5]*st[2]);
+                const rz = Math.round(m[6]*st[0] + m[7]*st[1] + m[8]*st[2]);
+                // 物理面のtangent/bitangentに射影
+                const pt = T[pf], pb = B[pf];
+                const uu = rx*pt[0] + ry*pt[1] + rz*pt[2];
+                const uv = rx*pb[0] + ry*pb[1] + rz*pb[2];
+                // (uu,uv): (1,0)→0, (0,1)→1, (-1,0)→2, (0,-1)→3
+                rots[pf] = uu === 0 ? (uv > 0 ? 1 : 3) : (uu > 0 ? 0 : 2);
+            }
+            result[ori] = rots;
+        }
+        return result;
+    })();
+
     static _SideHalfTexRemap = {
         // orientation 3: 南付き(-Z) Rx(+90°)
         3: { top: 'front', bottom: 'back', front: 'bottom', back: 'top', left: 'left', right: 'right' },
@@ -1113,10 +1158,8 @@ class ChunkMeshBuilder {
             const u = swap ? vScale : uScale;
             const v = swap ? uScale : vScale;
             const baseUVs = [[0, v], [u, v], [u, 0], [0, 0]];
-            // top: rotation分シフト、bottom: 逆方向シフト
-            // top面: 見下ろし視点では回転が逆転するため逆方向シフト
-            // bottom面: 見上げ視点ではそのままシフト
-            const shift = faceName === 'top' ? (4 - uvRot) % 4 : uvRot;
+            // uvRotは_OrientableUVRotで算出済みの正しいシフト量
+            const shift = uvRot;
             for (let i = 0; i < 4; i++) {
                 const uv = baseUVs[(i + shift) % 4];
                 uvs.push(uv[0], uv[1]);
