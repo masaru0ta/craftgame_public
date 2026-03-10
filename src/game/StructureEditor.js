@@ -16,7 +16,7 @@ class StructureEditor extends VoxelEditorBase {
   // グリッド色
   static GRID_COLORS = { primary: 0x444444, secondary: 0x333333 };
   // カメラ設定
-  static CAMERA_DEFAULTS = { distance: 30, hAngle: 0, vAngle: 20, zoomMin: 5, zoomMax: 100, sensitivity: 0.5, zoomSpeed: 0.02 };
+  static CAMERA_DEFAULTS = { distance: 30, hAngle: 180, vAngle: 20, zoomMin: 5, zoomMax: 100, sensitivity: 0.5, zoomSpeed: 0.02 };
   // ハイライト
   static HIGHLIGHT_COLOR = 0x00ff00;
   static HIGHLIGHT_OPACITY = 0.5;
@@ -516,8 +516,8 @@ class StructureEditor extends VoxelEditorBase {
   _setupLabels() {
     const dist = StructureEditor.CANVAS_SIZE / 2 + 2;
     const labelPositions = [
-      { text: 'FRONT', pos: [0, -0.5, dist] },
-      { text: 'BACK', pos: [0, -0.5, -dist] },
+      { text: 'FRONT', pos: [0, -0.5, -dist] },
+      { text: 'BACK', pos: [0, -0.5, dist] },
       { text: 'LEFT', pos: [-dist, -0.5, 0] },
       { text: 'RIGHT', pos: [dist, -0.5, 0] }
     ];

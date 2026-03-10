@@ -41,7 +41,7 @@ class CustomBlockEditor extends VoxelEditorBase {
     this.editMode = 'look'; // 'look' or 'collision'
 
     // カメラ設定
-    this.horizontalAngle = 0;  // 水平角度（度）
+    this.horizontalAngle = 180;  // 水平角度（度）
     this.verticalAngle = 20;   // 垂直角度（度）
     this.cameraDistance = 3;   // カメラ距離
 
@@ -558,8 +558,8 @@ class CustomBlockEditor extends VoxelEditorBase {
   _setupLabels() {
     // 床面の高さ（Y=-0.5）で各方向に距離1の位置
     const labelPositions = [
-      { text: 'FRONT', pos: [0, -0.5, 1] },
-      { text: 'BACK', pos: [0, -0.5, -1] },
+      { text: 'FRONT', pos: [0, -0.5, -1] },
+      { text: 'BACK', pos: [0, -0.5, 1] },
       { text: 'LEFT', pos: [-1, -0.5, 0] },
       { text: 'RIGHT', pos: [1, -0.5, 0] }
     ];

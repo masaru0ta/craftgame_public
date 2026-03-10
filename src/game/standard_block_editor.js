@@ -24,7 +24,7 @@ class StandardBlockEditor {
 
     // カメラ制御
     this.cameraDistance = 3;
-    this.horizontalAngle = 0;
+    this.horizontalAngle = 180;
     this.verticalAngle = 20;
     this.isDragging = false;
     this.lastMouseX = 0;
@@ -298,8 +298,8 @@ class StandardBlockEditor {
   _createDirectionLabels() {
     const THREE = this.THREE;
     const labels = [
-      { text: 'FRONT', position: [0, 0, 1] },
-      { text: 'BACK', position: [0, 0, -1] },
+      { text: 'FRONT', position: [0, 0, -1] },
+      { text: 'BACK', position: [0, 0, 1] },
       { text: 'LEFT', position: [-1, 0, 0] },
       { text: 'RIGHT', position: [1, 0, 0] }
     ];

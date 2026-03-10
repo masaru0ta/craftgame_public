@@ -26,7 +26,7 @@ class BlockThumbnail {
 
     // カメラ設定（サムネイル用に近づけて表示）
     this.cameraDistance = 2.2;
-    this.horizontalAngle = 0;
+    this.horizontalAngle = 180;
     this.verticalAngle = 20;
 
     this._init();
