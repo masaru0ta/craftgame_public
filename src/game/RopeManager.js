@@ -125,16 +125,16 @@ class RopeManager {
      * ロープメッシュを生成
      */
     _createRopeMesh(x1, y1, z1, x2, y2, z2) {
-        // ブロック中央座標（Three.js座標系: Z反転）
-        const cx1 = x1 + 0.5, cy1 = y1 + 0.5, cz1 = -(z1 + 0.5);
-        const cx2 = x2 + 0.5, cy2 = y2 + 0.5, cz2 = -(z2 + 0.5);
+        // ブロック中央座標（worldContainer内なのでZ反転不要）
+        const cx1 = x1 + 0.5, cy1 = y1 + 0.5, cz1 = z1 + 0.5;
+        const cx2 = x2 + 0.5, cy2 = y2 + 0.5, cz2 = z2 + 0.5;
 
         const dx = cx2 - cx1, dy = cy2 - cy1, dz = cz2 - cz1;
         const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (length === 0) return;
 
         // 円柱ジオメトリ（半径0.03）
-        const geometry = new THREE.CylinderGeometry(0.03, 0.03, length, 4);
+        const geometry = new THREE.CylinderGeometry(0.05, 0.05, length, 6);
         const material = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
         const mesh = new THREE.Mesh(geometry, material);
 
