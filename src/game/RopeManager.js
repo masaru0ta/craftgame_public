@@ -179,6 +179,43 @@ class RopeManager {
     }
 
     /**
+     * 回転体解除後の接続座標更新 — ブロック移動に伴い_connectionsとメッシュを更新
+     * @param {Array<{oldX:number,oldY:number,oldZ:number,newX:number,newY:number,newZ:number}>} moves
+     */
+    OnEndpointsMoved(moves) {
+        for (const m of moves) {
+            const oldKey = `${m.oldX},${m.oldY},${m.oldZ}`;
+            const target = this._connections.get(oldKey);
+            if (!target) continue;
+
+            const newKey = `${m.newX},${m.newY},${m.newZ}`;
+            // 古い接続情報を削除して新座標で再登録
+            this._connections.delete(oldKey);
+            this._connections.set(newKey, { x: target.x, y: target.y, z: target.z });
+
+            // 相手側の接続先も更新
+            const targetKey = `${target.x},${target.y},${target.z}`;
+            const partnerConn = this._connections.get(targetKey);
+            if (partnerConn && partnerConn.x === m.oldX && partnerConn.y === m.oldY && partnerConn.z === m.oldZ) {
+                this._connections.set(targetKey, { x: m.newX, y: m.newY, z: m.newZ });
+            }
+
+            // ロープメッシュのキーを更新
+            const oldMeshKey = this._ropeKey(m.oldX, m.oldY, m.oldZ, target.x, target.y, target.z);
+            const newMeshKey = this._ropeKey(m.newX, m.newY, m.newZ, target.x, target.y, target.z);
+            const mesh = this._meshes.get(oldMeshKey);
+            if (mesh) {
+                this._meshes.delete(oldMeshKey);
+                this._meshes.set(newMeshKey, mesh);
+                // メッシュ位置を新座標に更新
+                const posA = { x: m.newX + 0.5, y: m.newY + 0.5, z: m.newZ + 0.5 };
+                const posB = { x: target.x + 0.5, y: target.y + 0.5, z: target.z + 0.5 };
+                this._updateRopeMesh(mesh, posA, posB);
+            }
+        }
+    }
+
+    /**
      * 毎フレーム更新 — 動的ロープのメッシュ端点を再計算
      * @param {number} deltaTime
      */

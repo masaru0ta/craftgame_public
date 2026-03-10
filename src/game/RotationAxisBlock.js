@@ -481,9 +481,27 @@ class RotationAxisManager {
             this._updateLight(wx, wy, wz, false);
         }
 
-        // ロープ動的追従解除通知
+        // ロープ動的追従解除 & 接続座標更新
         if (this.ropeManager) {
             this.ropeManager.NotifyBodyDissolved(body);
+            // 回転で位置が変わったpole_with_ropeの接続情報を更新
+            if (steps !== 0) {
+                const moves = [];
+                for (let i = 0; i < body._blocks.length; i++) {
+                    const b = body._blocks[i];
+                    if (b.blockId !== 'pole_with_rope') continue;
+                    const r = restoredBlocks[i];
+                    if (b.rx !== r.rx || b.ry !== r.ry || b.rz !== r.rz) {
+                        moves.push({
+                            oldX: wx + b.rx, oldY: wy + b.ry, oldZ: wz + b.rz,
+                            newX: wx + r.rx, newY: wy + r.ry, newZ: wz + r.rz
+                        });
+                    }
+                }
+                if (moves.length > 0) {
+                    this.ropeManager.OnEndpointsMoved(moves);
+                }
+            }
         }
 
         // メッシュ削除
