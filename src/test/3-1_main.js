@@ -228,23 +228,6 @@ class GameTestApp {
         const stoneBlock = placeableBlocks.find(b => b.block_str_id === 'stone');
         if (stoneBlock) stoneBlock.half_placeable = true;
 
-        // 回転軸ブロック定義を追加（GASに未登録の場合）
-        if (!placeableBlocks.find(b => b.block_str_id === 'rotation_axis')) {
-            const rotAxisDef = {
-                block_str_id: 'rotation_axis',
-                block_id: 999,
-                name: '回転軸',
-                shape_type: 'standard',
-                is_transparent: false,
-                orientable: true,
-                tex_default: stoneBlock ? stoneBlock.tex_default : 'stone',
-            };
-            placeableBlocks.push(rotAxisDef);
-            if (this.textureLoader.blocks) {
-                this.textureLoader.blocks.push(rotAxisDef);
-            }
-        }
-
         const hotbarContainer = document.getElementById('hotbar-container');
         this.blockInteraction.init([], hotbarContainer, this.textureLoader);
         this.blockInteraction._blocks = placeableBlocks;
@@ -259,6 +242,11 @@ class GameTestApp {
             if (this.physicsWorld) {
                 this.physicsWorld.rotationAxisManager = this.rotationAxisManager;
             }
+        }
+
+        // ロープ管理初期化
+        if (typeof RopeManager !== 'undefined') {
+            this.ropeManager = new RopeManager(this.chunkManager, this.worldContainer);
         }
 
         // 移動ブロック管理初期化
