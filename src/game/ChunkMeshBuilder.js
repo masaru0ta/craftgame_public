@@ -1114,9 +1114,9 @@ class ChunkMeshBuilder {
             const v = swap ? uScale : vScale;
             const baseUVs = [[0, v], [u, v], [u, 0], [0, 0]];
             // top: rotation分シフト、bottom: 逆方向シフト
-            // top面: デフォルトUVではv=1(T底辺)がZ+(back)側に来るため+2で補正
-            // bottom面: デフォルトUVではv=1(T底辺)がZ-(front)側に来るのでそのまま
-            const shift = faceName === 'top' ? (6 - uvRot) % 4 : uvRot;
+            // top面: 見下ろし視点では回転が逆転するため逆方向シフト
+            // bottom面: 見上げ視点ではそのままシフト
+            const shift = faceName === 'top' ? (4 - uvRot) % 4 : uvRot;
             for (let i = 0; i < 4; i++) {
                 const uv = baseUVs[(i + shift) % 4];
                 uvs.push(uv[0], uv[1]);
