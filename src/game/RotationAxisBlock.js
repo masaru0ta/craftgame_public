@@ -21,7 +21,7 @@ class RotationBody {
      * @param {number} orientation - 回転軸ブロックのorientation
      * @param {Array<{rx:number, ry:number, rz:number, blockId:string}>} blocks - 構成ブロック（軸からの相対座標）
      */
-    constructor(axisX, axisY, axisZ, orientation, blocks, stopAt90 = false) {
+    constructor(axisX, axisY, axisZ, orientation, blocks, stopAt90 = false, axisBlockId = 'rotor') {
         this._axisX = axisX;
         this._axisY = axisY;
         this._axisZ = axisZ;
@@ -33,6 +33,7 @@ class RotationBody {
         this._isRotating = true;
         this._rotationSpeed = Math.PI / 2; // 1.57 rad/s
         this._stopAt90 = stopAt90; // 90度で自動停止するか
+        this._axisBlockId = axisBlockId; // 軸ブロックのID
         this._parentBody = null; // 親回転体（入れ子の場合）
         // front方向をキャッシュ（毎フレームの再計算を回避）
         const topDir = Math.floor(orientation / 4);
@@ -264,7 +265,7 @@ class RotationAxisManager {
 
         // 回転体生成
         const stopAt90 = (axisBlockId === 'rotor_90');
-        const body = new RotationBody(wx, wy, wz, orientation, blocks, stopAt90);
+        const body = new RotationBody(wx, wy, wz, orientation, blocks, stopAt90, axisBlockId);
         const key = `${wx},${wy},${wz}`;
         // 前回の回転方向の記憶があれば反映
         const dir = this._nextDirection.get(key);
@@ -385,80 +386,92 @@ class RotationAxisManager {
     /**
      * 回転体を解除（ブロック群を地形に復元）
      */
+    /**
+     * 回転角度を90°ステップ数(0〜3)に変換
+     */
+    static _GetAngleSteps(angle) {
+        return ((Math.round(angle / (Math.PI / 2)) % 4) + 4) % 4;
+    }
+
+    /**
+     * 子回転体を親の回転で補正し、再帰的に解除する
+     */
+    _dissolveChildren(body) {
+        const childKeys = [];
+        for (const [childKey, childBody] of this._bodies) {
+            if (childBody._parentBody === body) childKeys.push(childKey);
+        }
+        if (childKeys.length === 0) return;
+
+        const front = body.GetFrontDirection();
+        const steps = RotationAxisManager._GetAngleSteps(body._angle);
+        // 孫以下の軸位置を補正
+        this._rotateDescendantAxes(body, front, steps, body._axisX, body._axisY, body._axisZ);
+
+        for (const childKey of childKeys) {
+            const child = this._bodies.get(childKey);
+            if (!child) continue;
+            // ブロック相対座標を親の回転で補正
+            for (const b of child._blocks) {
+                const r = this._rotate90(b.rx, b.ry, b.rz, front, steps);
+                b.rx = r.x; b.ry = r.y; b.rz = r.z;
+            }
+            // front方向を親の回転で変換
+            const cf = child.GetFrontDirection();
+            const rf = this._rotate90(cf.dx, cf.dy, cf.dz, front, steps);
+            child._frontDx = rf.x; child._frontDy = rf.y; child._frontDz = rf.z;
+            // 独立させて再帰解除
+            child._parentBody = null;
+            this._bodies.delete(childKey);
+            const newKey = `${child._axisX},${child._axisY},${child._axisZ}`;
+            this._bodies.set(newKey, child);
+            this._dissolveBody(newKey);
+        }
+    }
+
+    /**
+     * ブロックの復元時orientation計算
+     */
+    _calcRestoredOrientation(blockData, front, steps) {
+        const ori = blockData.orientation || 0;
+        if (steps === 0 || blockData.orientation === undefined) return ori;
+        // ハーフブロック
+        if (ori >= 101 && ori <= 106) return this._rotateHalfOrientation(ori, front, steps);
+        // カスタム・rotatable・sidePlaceableブロック
+        const blockDef = this._textureLoader ? this._textureLoader.getBlockDef(blockData.blockId) : null;
+        if (blockDef && (blockDef.shape_type === 'custom' || blockDef.rotatable || blockDef.sidePlaceable)) {
+            return this._rotateOrientation(ori, front, steps);
+        }
+        return 0;
+    }
+
     _dissolveBody(key) {
         const body = this._bodies.get(key);
         if (!body) return;
 
-        const wx = body._axisX;
-        const wy = body._axisY;
-        const wz = body._axisZ;
+        const wx = body._axisX, wy = body._axisY, wz = body._axisZ;
 
-        // 子回転体を先に解除（親の回転を子孫の軸位置・ブロック座標に反映してから）
-        const childKeys = [];
-        for (const [childKey, childBody] of this._bodies) {
-            if (childBody._parentBody === body) {
-                childKeys.push(childKey);
-            }
-        }
-        if (childKeys.length > 0) {
-            const parentFront = body.GetFrontDirection();
-            const parentSteps = ((Math.round(body._angle / (Math.PI / 2)) % 4) + 4) % 4;
-            // 全 descendant（孫以下含む）の軸位置を親の回転で補正
-            this._rotateDescendantAxes(body, parentFront, parentSteps, wx, wy, wz);
-            for (const childKey of childKeys) {
-                const childBody = this._bodies.get(childKey);
-                if (!childBody) continue;
-                // 子体のブロック相対座標を親の回転分で補正
-                for (const b of childBody._blocks) {
-                    const rotated = this._rotate90(b.rx, b.ry, b.rz, parentFront, parentSteps);
-                    b.rx = rotated.x;
-                    b.ry = rotated.y;
-                    b.rz = rotated.z;
-                }
-                // 子体の front 方向も親の回転で変換
-                const childFront = childBody.GetFrontDirection();
-                const rotatedFront = this._rotate90(childFront.dx, childFront.dy, childFront.dz, parentFront, parentSteps);
-                childBody._frontDx = rotatedFront.x;
-                childBody._frontDy = rotatedFront.y;
-                childBody._frontDz = rotatedFront.z;
-                // 親子関係を切る（子は独立した位置で復元する）
-                childBody._parentBody = null;
-                // _bodies のキーを更新
-                this._bodies.delete(childKey);
-                const newKey = `${childBody._axisX},${childBody._axisY},${childBody._axisZ}`;
-                this._bodies.set(newKey, childBody);
-                this._dissolveBody(newKey);
-            }
-        }
+        // 子回転体を先に解除
+        this._dissolveChildren(body);
+
         const front = body.GetFrontDirection();
-        // 90°ステップ数を整数で求める（浮動小数点誤差を排除）
-        const steps = ((Math.round(body._angle / (Math.PI / 2)) % 4) + 4) % 4;
+        const steps = RotationAxisManager._GetAngleSteps(body._angle);
 
-        // 回転体の構成ブロックを整数90°回転で復元 + ライトマップ更新
+        // 構成ブロックを90°回転で復元
         const restoredBlocks = [];
         for (const b of body._blocks) {
             const restored = this._rotate90(b.rx, b.ry, b.rz, front, steps);
             const bx = wx + restored.x, by = wy + restored.y, bz = wz + restored.z;
-            let newOri = b.orientation || 0;
-            if (steps !== 0 && b.orientation !== undefined) {
-                if (b.orientation >= 101 && b.orientation <= 106) {
-                    newOri = this._rotateHalfOrientation(b.orientation, front, steps);
-                } else {
-                    const blockDef = this._textureLoader ? this._textureLoader.getBlockDef(b.blockId) : null;
-                    if (blockDef && blockDef.shape_type === 'custom') {
-                        // カスタムブロック: 0-23回転行列で変換
-                        newOri = this._rotateOrientation(b.orientation, front, steps);
-                    } else if (blockDef && (blockDef.rotatable || blockDef.sidePlaceable)) {
-                        // rotatable/sidePlaceable ブロック: 0-23回転行列で変換
-                        newOri = this._rotateOrientation(b.orientation, front, steps);
-                    } else {
-                        newOri = 0;
-                    }
-                }
-            }
-            this._setBlockAt(bx, by, bz, b.blockId, newOri);
+            this._setBlockAt(bx, by, bz, b.blockId, this._calcRestoredOrientation(b, front, steps));
             this._updateLight(bx, by, bz, false);
             restoredBlocks.push({ rx: restored.x, ry: restored.y, rz: restored.z });
+        }
+
+        // 軸ブロック復元（子bodyの軸はairになっているため）
+        const currentAxisBlock = this._getBlockAt(wx, wy, wz);
+        if (!currentAxisBlock || currentAxisBlock === 'air') {
+            this._setBlockAt(wx, wy, wz, body._axisBlockId, body._orientation);
+            this._updateLight(wx, wy, wz, false);
         }
 
         // メッシュ削除
@@ -472,7 +485,7 @@ class RotationAxisManager {
         this._bodies.delete(key);
         this._bodiesCacheDirty = true;
 
-        // チャンクメッシュ再構築（元の位置と復元位置の両方）
+        // チャンクメッシュ再構築
         this._rebuildAffectedChunks(wx, wy, wz, body._blocks);
         if (steps !== 0) {
             this._rebuildAffectedChunks(wx, wy, wz, restoredBlocks);
