@@ -412,6 +412,38 @@ class RotationAxisManager {
 
         const front = body.GetFrontDirection();
         const steps = RotationAxisManager._GetAngleSteps(body._angle);
+
+        // 親回転によるロープ端点移動を先に反映（_connectionsキー更新）
+        if (this.ropeManager && steps !== 0) {
+            const moves = [];
+            for (const childKey of childKeys) {
+                const child = this._bodies.get(childKey);
+                if (!child) continue;
+                // 子軸の回転後位置を計算
+                const axRel = this._rotate90(
+                    child._axisX - body._axisX,
+                    child._axisY - body._axisY,
+                    child._axisZ - body._axisZ, front, steps);
+                const newAx = body._axisX + axRel.x;
+                const newAy = body._axisY + axRel.y;
+                const newAz = body._axisZ + axRel.z;
+                for (const b of child._blocks) {
+                    if (b.blockId !== 'pole_with_rope') continue;
+                    const oldX = child._axisX + b.rx;
+                    const oldY = child._axisY + b.ry;
+                    const oldZ = child._axisZ + b.rz;
+                    const r = this._rotate90(b.rx, b.ry, b.rz, front, steps);
+                    const newX = newAx + r.x, newY = newAy + r.y, newZ = newAz + r.z;
+                    if (oldX !== newX || oldY !== newY || oldZ !== newZ) {
+                        moves.push({ oldX, oldY, oldZ, newX, newY, newZ });
+                    }
+                }
+            }
+            if (moves.length > 0) {
+                this.ropeManager.OnEndpointsMoved(moves);
+            }
+        }
+
         // 孫以下の軸位置を補正
         this._rotateDescendantAxes(body, front, steps, body._axisX, body._axisY, body._axisZ);
 
