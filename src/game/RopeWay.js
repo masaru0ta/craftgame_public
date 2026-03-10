@@ -27,7 +27,7 @@ class RopeWayBody {
         this._totalDistance = totalDistance;
         this._blocks = blocks;
         this._displacement = 0;
-        this._speed = 4.0;
+        this._speed = 6.0;
         this._isMoving = true;
     }
 
