@@ -16,12 +16,13 @@ class BlockInteraction {
 
     /**
      * クリックした面がrotorの軸側（front面の反対面）かを判定
-     * @param {number} orientation - rotorのorientation (0-5)
+     * @param {number} orientation - rotorのorientation (0-23: topDir×4+rotation)
      * @param {string} face - クリックした面名
      * @returns {boolean}
      */
     static _isRotorAxisFace(orientation, face) {
-        return BlockInteraction._ROTOR_AXIS_FACE[orientation] === face;
+        const topDir = Math.floor(orientation / 4);
+        return BlockInteraction._ROTOR_AXIS_FACE[topDir] === face;
     }
 
     /**
