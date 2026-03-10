@@ -938,6 +938,11 @@ class BlockInteraction {
             if (topDir <= 1) {
                 // 上面/下面設置時: プレイヤーyawからrotationを算出
                 rotation = this._rotationFromYaw(playerYaw, topDir);
+                if (!isCustom) {
+                    // 通常ブロックはfront面=Z-、カスタムブロックはfront面=Z+
+                    // _rotationFromYawはカスタムブロック用（Z+正面）なので180°戻す
+                    rotation = (rotation + 2) % 4;
+                }
             } else if (isCustom) {
                 // カスタムブロックの側面: ヒット位置からrotationを決定
                 rotation = BlockInteraction._sideRotationFromHit(face, target);
