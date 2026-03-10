@@ -939,11 +939,6 @@ class BlockInteraction {
             if (topDir <= 1) {
                 // 上面/下面設置時: プレイヤーyawからrotationを算出
                 rotation = this._rotationFromYaw(playerYaw, topDir);
-                if (!isCustom) {
-                    // 通常ブロックはfront面=Z-、カスタムブロックはfront面=Z+
-                    // _rotationFromYawはカスタムブロック用（Z+正面）なので180°戻す
-                    rotation = (rotation + 2) % 4;
-                }
             } else if (isCustom) {
                 // カスタムブロックの側面: ヒット位置からrotationを決定
                 rotation = BlockInteraction._sideRotationFromHit(face, target);
@@ -971,9 +966,10 @@ class BlockInteraction {
         else if (angle >= -135 && angle < -45) rotation = 3;
         else rotation = 2;
 
-        // 上面(topDir=0): 180度反転でプレイヤーの向き方向に正面を合わせる
-        // 下面(topDir=1): Rx(π)がZを反転するため、回転方向を逆にして補正
-        rotation = (topDir === 0) ? (rotation + 2) % 4 : (4 - rotation) % 4;
+        // front=Z-基準:
+        // 上面(topDir=0): base rotationがそのまま正しい方向（front=Z-はrotation=0で南向き）
+        // 下面(topDir=1): Rx(π)でZ反転→front=Z-がZ+になるため、+2で補正
+        rotation = (topDir === 0) ? rotation : (rotation + 2) % 4;
 
         return rotation;
     }
@@ -1004,9 +1000,10 @@ class BlockInteraction {
         else if (angle >= -135 && angle < -45) rotation = 3;
         else rotation = 2;
 
-        // 上面(face=0): Ry(π)反転でプレイヤーの向き方向に正面を合わせる
-        // 下面(face=1): Rx(π)がZを反転するため、回転方向を逆にして補正
-        rotation = (face === 0) ? (rotation + 2) % 4 : (4 - rotation) % 4;
+        // front=Z-基準:
+        // 上面(face=0): base rotationがそのまま正しい方向
+        // 下面(face=1): Rx(π)でZ反転→+2で補正
+        rotation = (face === 0) ? rotation : (rotation + 2) % 4;
 
         return face * 4 + rotation;
     }

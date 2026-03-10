@@ -212,15 +212,15 @@ class StructureEditor extends VoxelEditorBase {
     const faceBrightness = StructureEditor.FACE_BRIGHTNESS;
 
     // 各面のテクスチャ名を決定
-    // BoxGeometry面順: +X(right), -X(left), +Y(top), -Y(bottom), +Z(front), -Z(back)
+    // BoxGeometry面順: +X(right), -X(left), +Y(top), -Y(bottom), +Z(back/北), -Z(front/南)
     const texDefault = blockInfo ? blockInfo.tex_default : '';
     const faceTexNames = [
       (blockInfo && blockInfo.tex_right) || texDefault,   // +X
       (blockInfo && blockInfo.tex_left) || texDefault,    // -X
       (blockInfo && blockInfo.tex_top) || texDefault,     // +Y
       (blockInfo && blockInfo.tex_bottom) || texDefault,  // -Y
-      (blockInfo && blockInfo.tex_front) || texDefault,   // +Z
-      (blockInfo && blockInfo.tex_back) || texDefault     // -Z
+      (blockInfo && blockInfo.tex_back) || texDefault,    // +Z (back=北)
+      (blockInfo && blockInfo.tex_front) || texDefault    // -Z (front=南)
     ];
 
     const materials = [];

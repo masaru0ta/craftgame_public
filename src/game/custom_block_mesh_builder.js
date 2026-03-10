@@ -12,8 +12,8 @@ class CustomBlockMeshBuilder {
   static FACE_BRIGHTNESS = {
     TOP: 1.0,      // +Y (上面)
     BOTTOM: 0.5,   // -Y (底面)
-    FRONT: 0.85,   // +Z (前)
-    BACK: 0.85,    // -Z (後)
+    FRONT: 0.85,   // -Z (前・南)
+    BACK: 0.85,    // +Z (後・北)
     LEFT: 0.75,    // -X (左)
     RIGHT: 0.75    // +X (右)
   };
@@ -134,8 +134,8 @@ class CustomBlockMeshBuilder {
       brightness.LEFT,   // -X (4-7)
       brightness.TOP,    // +Y (8-11)
       brightness.BOTTOM, // -Y (12-15)
-      brightness.FRONT,  // +Z (16-19)
-      brightness.BACK    // -Z (20-23)
+      brightness.BACK,   // +Z (16-19) back=北
+      brightness.FRONT   // -Z (20-23) front=南
     ];
 
     const colors = new Float32Array(24 * 3);
@@ -166,14 +166,14 @@ class CustomBlockMeshBuilder {
 
     // 各面のUV計算（仕様書 9.3 に基づく）
     // BoxGeometryの面順序:
-    // 0-3: +X (right), 4-7: -X (left), 8-11: +Y (top), 12-15: -Y (bottom), 16-19: +Z (front), 20-23: -Z (back)
+    // 0-3: +X (right), 4-7: -X (left), 8-11: +Y (top), 12-15: -Y (bottom), 16-19: +Z (back), 20-23: -Z (front)
     const faces = [
       { start: 0, u: 7 - z, v: y },   // +X (right)
       { start: 4, u: z, v: y },       // -X (left)
       { start: 8, u: x, v: 7 - z },   // +Y (top)
       { start: 12, u: x, v: z },      // -Y (bottom)
-      { start: 16, u: x, v: y },      // +Z (front)
-      { start: 20, u: 7 - x, v: y }   // -Z (back)
+      { start: 16, u: x, v: y },      // +Z (back)
+      { start: 20, u: 7 - x, v: y }   // -Z (front)
     ];
 
     faces.forEach(face => {
@@ -225,8 +225,8 @@ class CustomBlockMeshBuilder {
       { name: '-X', axis: 0, u: 2, v: 1, offset: 0, brightness: br.LEFT },
       { name: '+Y', axis: 1, u: 0, v: 2, offset: 1, brightness: br.TOP },
       { name: '-Y', axis: 1, u: 0, v: 2, offset: 0, brightness: br.BOTTOM },
-      { name: '+Z', axis: 2, u: 0, v: 1, offset: 1, brightness: br.FRONT },
-      { name: '-Z', axis: 2, u: 0, v: 1, offset: 0, brightness: br.BACK }
+      { name: '+Z', axis: 2, u: 0, v: 1, offset: 1, brightness: br.BACK },
+      { name: '-Z', axis: 2, u: 0, v: 1, offset: 0, brightness: br.FRONT }
     ];
 
     // 各マテリアル用のインデックス開始位置を追跡
@@ -439,8 +439,8 @@ class CustomBlockMeshBuilder {
       { name: '-X', axis: 0, u: 2, v: 1, offset: 0, brightness: br.LEFT },
       { name: '+Y', axis: 1, u: 0, v: 2, offset: 1, brightness: br.TOP },
       { name: '-Y', axis: 1, u: 0, v: 2, offset: 0, brightness: br.BOTTOM },
-      { name: '+Z', axis: 2, u: 0, v: 1, offset: 1, brightness: br.FRONT },
-      { name: '-Z', axis: 2, u: 0, v: 1, offset: 0, brightness: br.BACK }
+      { name: '+Z', axis: 2, u: 0, v: 1, offset: 1, brightness: br.BACK },
+      { name: '-Z', axis: 2, u: 0, v: 1, offset: 0, brightness: br.FRONT }
     ];
 
     // 各ブロックを処理

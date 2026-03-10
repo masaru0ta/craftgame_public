@@ -3,8 +3,9 @@
  * Three.jsを使用してブロックのメッシュを生成する
  */
 class StandardBlockMeshBuilder {
-  // 面の順序: right(+X), left(-X), top(+Y), bottom(-Y), front(+Z), back(-Z)
-  static FACE_ORDER = ['right', 'left', 'top', 'bottom', 'front', 'back'];
+  // 面の順序: right(+X), left(-X), top(+Y), bottom(-Y), back(+Z), front(-Z)
+  // Three.js BoxGeometry の面順序に合わせる（front=Z-南、back=Z+北）
+  static FACE_ORDER = ['right', 'left', 'top', 'bottom', 'back', 'front'];
 
   /**
    * @param {Object} THREE - Three.jsライブラリ
