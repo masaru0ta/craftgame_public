@@ -303,8 +303,7 @@ class PlacementPreview {
                     uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
                 }
             } else {
-                const faceUVRot = (uvRotLookup && (face.name === 'top' || face.name === 'bottom'))
-                    ? (uvRotLookup[face.name] || 0) : 0;
+                const faceUVRot = uvRotLookup ? (uvRotLookup[face.name] || 0) : 0;
                 this._addFaceUVs(uvs, face.name, faceUVRot);
             }
             this._addQuadIndices(indices, vertexOffset);
@@ -420,7 +419,13 @@ class PlacementPreview {
     _addFaceUVs(uvs, faceName, uvRotation = 0) {
         if (faceName === 'top' || faceName === 'bottom') {
             const baseUVs = [[0,1], [1,1], [1,0], [0,0]];
-            // uvRotationは_OrientableUVRotで算出済みの正しいシフト量
+            const shift = uvRotation;
+            for (let i = 0; i < 4; i++) {
+                const uv = baseUVs[(i + shift) % 4];
+                uvs.push(uv[0], uv[1]);
+            }
+        } else if (uvRotation !== 0) {
+            const baseUVs = [[1,0], [0,0], [0,1], [1,1]];
             const shift = uvRotation;
             for (let i = 0; i < 4; i++) {
                 const uv = baseUVs[(i + shift) % 4];

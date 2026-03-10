@@ -429,8 +429,7 @@ class ChunkMeshBuilder {
                 const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
                 const ori = isOrientable ? chunkData.getOrientation(x, y, z) : 0;
                 const uvRotLookup = isOrientable ? ChunkMeshBuilder._OrientableUVRot[ori] : null;
-                const uvRot = (uvRotLookup && (faceName === 'top' || faceName === 'bottom'))
-                    ? (uvRotLookup[faceName] || 0) : 0;
+                const uvRot = uvRotLookup ? (uvRotLookup[faceName] || 0) : 0;
                 const key = `${blockStrId}:${faceName}:${texFace}:${uvRot}`;
                 if (!blockFacesMap.has(key)) {
                     blockFacesMap.set(key, { blockStrId, faceName, texFace, uvRot, faces: [] });
@@ -1165,13 +1164,25 @@ class ChunkMeshBuilder {
                 uvs.push(uv[0], uv[1]);
             }
         } else {
-            // front, back, right, left はすべて同じUVパターン
-            uvs.push(
-                uScale, 0,
-                0, 0,
-                0, vScale,
-                uScale, vScale
-            );
+            // front, back, right, left
+            if (uvRot !== 0) {
+                const swap = (uvRot === 1 || uvRot === 3);
+                const u = swap ? vScale : uScale;
+                const v = swap ? uScale : vScale;
+                const baseUVs = [[u, 0], [0, 0], [0, v], [u, v]];
+                const shift = uvRot;
+                for (let i = 0; i < 4; i++) {
+                    const uv = baseUVs[(i + shift) % 4];
+                    uvs.push(uv[0], uv[1]);
+                }
+            } else {
+                uvs.push(
+                    uScale, 0,
+                    0, 0,
+                    0, vScale,
+                    uScale, vScale
+                );
+            }
         }
     }
 

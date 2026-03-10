@@ -749,12 +749,18 @@ class RotationAxisManager {
     _rotate90(rx, ry, rz, front, steps) {
         if (steps === 0) return { x: rx, y: ry, z: rz };
 
+        // 負方向の軸は回転方向が逆なので、stepsを反転
+        let effectiveSteps = steps;
+        const sign = front.dy || front.dz || front.dx;
+        if (sign < 0) effectiveSteps = (4 - steps) % 4;
+        if (effectiveSteps === 0) return { x: rx, y: ry, z: rz };
+
         let a = rx, b = rz; // Y軸回転の場合
         if (front.dz !== 0) { a = rx; b = ry; }
         else if (front.dx !== 0) { a = ry; b = rz; }
 
         // 左手座標系での90°×steps回転: (a,b) → (b,-a) → (-a,-b) → (-b,a)
-        for (let i = 0; i < steps; i++) {
+        for (let i = 0; i < effectiveSteps; i++) {
             const tmp = a;
             a = b;
             b = -tmp;

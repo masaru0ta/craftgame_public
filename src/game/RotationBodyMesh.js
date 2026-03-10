@@ -144,12 +144,13 @@ class RotationBodyMesh {
                     atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
                     lightLevels.push(1.0);
                     aoLevels.push(1.0);
-                    // top/bottom面: orientationに応じたUV回転
-                    const cmbRot = (uvRotLookup && (faceName === 'top' || faceName === 'bottom'))
-                        ? (uvRotLookup[faceName] || 0) : 0;
+                    // orientationに応じたUV回転（全面対応）
+                    const cmbRot = uvRotLookup ? (uvRotLookup[faceName] || 0) : 0;
                     if (cmbRot !== 0) {
-                        // RM baseUVはCMBと180°異なるため+2補正
-                        const shift = (cmbRot + 2) % 4;
+                        // top/bottom: RM baseUVはCMBと180°異なるため+2補正
+                        // side: RM/CMB同じbaseUV順なので補正不要
+                        const isTopBottom = (faceName === 'top' || faceName === 'bottom');
+                        const shift = isTopBottom ? (cmbRot + 2) % 4 : cmbRot;
                         const si = ((vi + shift) % 4) * 2;
                         uvs.push(RotationBodyMesh._UV[si], RotationBodyMesh._UV[si + 1]);
                     } else {
