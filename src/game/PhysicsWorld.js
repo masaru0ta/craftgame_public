@@ -1088,8 +1088,8 @@ class PhysicsWorld {
                         // orientation考慮: レイを逆回転してDDA判定、ヒット面を正回転で戻す
                         const ori = this.getOrientationAt(blockX, blockY, blockZ);
                         let localOrigin = origin, localDir = direction;
-                        if (ori > 0 && ori < 24 && typeof ChunkMeshBuilder !== 'undefined') {
-                            const m = ChunkMeshBuilder.ORIENTATION_MATRICES[ori];
+                        if (ori > 0 && ori < 24 && typeof BlockOrientation !== 'undefined') {
+                            const m = BlockOrientation.Matrices[ori];
                             // 逆行列 = 転置（直交行列）
                             const cx = blockX + 0.5, cy = blockY + 0.5, cz = blockZ + 0.5;
                             const ox = origin.x - cx, oy = origin.y - cy, oz = origin.z - cz;
@@ -1110,8 +1110,8 @@ class PhysicsWorld {
                         );
                         if (customHit) {
                             // ヒット面をorientationで正回転して戻す
-                            const hitFace = (ori > 0 && ori < 24 && typeof ChunkMeshBuilder !== 'undefined')
-                                ? PhysicsWorld._rotateFace(customHit.face, ori)
+                            const hitFace = (ori > 0 && ori < 24 && typeof BlockOrientation !== 'undefined')
+                                ? BlockOrientation.RotateRaycastFace(customHit.face, ori)
                                 : customHit.face;
                             const adjacent = this._getAdjacentBlock(blockX, blockY, blockZ, hitFace);
                             return {
@@ -1321,33 +1321,6 @@ class PhysicsWorld {
      * @param {number} localZ
      * @returns {string}
      */
-    /**
-     * 面名をorientation回転行列で変換する
-     * @param {string} face - 元の面名
-     * @param {number} orientation - orientation (0-23)
-     * @returns {string} 回転後の面名
-     */
-    static _rotateFace(face, orientation) {
-        const m = ChunkMeshBuilder.ORIENTATION_MATRICES[orientation];
-        // 面名 → 法線ベクトル
-        const normals = {
-            top: [0,1,0], bottom: [0,-1,0],
-            north: [0,0,1], south: [0,0,-1],
-            east: [1,0,0], west: [-1,0,0]
-        };
-        const n = normals[face];
-        if (!n) return face;
-        // 正回転: M * n
-        const rx = m[0]*n[0] + m[1]*n[1] + m[2]*n[2];
-        const ry = m[3]*n[0] + m[4]*n[1] + m[5]*n[2];
-        const rz = m[6]*n[0] + m[7]*n[1] + m[8]*n[2];
-        // 最大成分で面名を決定
-        const ax = Math.abs(rx), ay = Math.abs(ry), az = Math.abs(rz);
-        if (ay >= ax && ay >= az) return ry > 0 ? 'top' : 'bottom';
-        if (ax >= az) return rx > 0 ? 'east' : 'west';
-        return rz > 0 ? 'north' : 'south';
-    }
-
     _determineFace(localX, localY, localZ) {
         const faces = [
             { name: 'west', value: localX },

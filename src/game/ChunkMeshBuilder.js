@@ -51,67 +51,8 @@ class ChunkMeshBuilder {
         { name: 'left',  dx:-1, dz:  0, normal:[-1, 0,  0] },
     ];
 
-    /**
-     * orientation(0〜23)に対応する3x3回転行列テーブル
-     * orientation = face * 4 + rotation
-     * face: ブロック+Y面の向き（0:+Y, 1:-Y, 2:+Z, 3:-Z, 4:+X, 5:-X）
-     * rotation: Y軸周りの回転（0:0°, 1:90°, 2:180°, 3:270°）
-     * 行列は [m00,m01,m02, m10,m11,m12, m20,m21,m22] のフラット配列
-     */
-    static ORIENTATION_MATRICES = (() => {
-        const matrices = new Array(24);
-        const PI = Math.PI;
-        const HP = PI / 2;
-
-        // 3x3回転行列を軸-角度から生成
-        const fromAxisAngle = (ax, ay, az, angle) => {
-            const c = Math.cos(angle), s = Math.sin(angle), t = 1 - c;
-            return [
-                t*ax*ax + c,    t*ax*ay - s*az, t*ax*az + s*ay,
-                t*ax*ay + s*az, t*ay*ay + c,    t*ay*az - s*ax,
-                t*ax*az - s*ay, t*ay*az + s*ax, t*az*az + c
-            ];
-        };
-
-        // 3x3行列の積
-        const mul = (a, b) => [
-            a[0]*b[0]+a[1]*b[3]+a[2]*b[6], a[0]*b[1]+a[1]*b[4]+a[2]*b[7], a[0]*b[2]+a[1]*b[5]+a[2]*b[8],
-            a[3]*b[0]+a[4]*b[3]+a[5]*b[6], a[3]*b[1]+a[4]*b[4]+a[5]*b[7], a[3]*b[2]+a[4]*b[5]+a[5]*b[8],
-            a[6]*b[0]+a[7]*b[3]+a[8]*b[6], a[6]*b[1]+a[7]*b[4]+a[8]*b[7], a[6]*b[2]+a[7]*b[5]+a[8]*b[8]
-        ];
-
-        const identity = [1,0,0, 0,1,0, 0,0,1];
-
-        // face回転行列（StructureEditor._applyOrientationと同一ロジック）
-        const faceMatrices = [
-            identity,                           // face 0: +Y（デフォルト）
-            fromAxisAngle(1, 0, 0, PI),         // face 1: -Y（X軸π回転）
-            fromAxisAngle(1, 0, 0, HP),         // face 2: +Z（X軸+π/2回転）
-            fromAxisAngle(1, 0, 0, -HP),        // face 3: -Z（X軸-π/2回転）
-            fromAxisAngle(0, 0, 1, -HP),        // face 4: +X（Z軸-π/2回転）
-            fromAxisAngle(0, 0, 1, HP)          // face 5: -X（Z軸+π/2回転）
-        ];
-
-        for (let face = 0; face < 6; face++) {
-            for (let rot = 0; rot < 4; rot++) {
-                const rotM = (rot === 0) ? identity : fromAxisAngle(0, 1, 0, rot * HP);
-                // StructureEditorと同じ合成順: faceQ * rotQ
-                matrices[face * 4 + rot] = mul(faceMatrices[face], rotM);
-            }
-        }
-
-        // 浮動小数点誤差を除去（-1, 0, 1 にスナップ）
-        for (let i = 0; i < 24; i++) {
-            for (let j = 0; j < 9; j++) {
-                const v = matrices[i][j];
-                if (Math.abs(v) < 1e-10) matrices[i][j] = 0;
-                else if (Math.abs(v - 1) < 1e-10) matrices[i][j] = 1;
-                else if (Math.abs(v + 1) < 1e-10) matrices[i][j] = -1;
-            }
-        }
-
-        return matrices;
-    })();
+    /** orientation(0〜23)に対応する3x3回転行列テーブル（BlockOrientation に委譲） */
+    static ORIENTATION_MATRICES = BlockOrientation.Matrices;
 
     // LoD0シェーダーと同じライティングパラメータ（方向性ライティング）
     static LIGHT_AMBIENT = 0.4;
@@ -743,82 +684,11 @@ class ChunkMeshBuilder {
      * 側面ハーフのテクスチャ面リマップ（物理面→テクスチャ面）
      * ブロックの底面が設置面に向く回転に対応
      */
-    // orient(0-23) のテクスチャ面リマップ（ORIENTATION_MATRICES から自動生成）
-    // orient = topDir × 4 + rotation
-    // 物理面 → テクスチャ面（回転後の物理面にどの元テクスチャを表示するか）
-    static _OrientableTexRemap = (() => {
-        const faceNames = ['top', 'bottom', 'front', 'back', 'right', 'left'];
-        const faceNormals = {
-            top: [0, 1, 0], bottom: [0, -1, 0],
-            front: [0, 0, -1], back: [0, 0, 1],
-            right: [1, 0, 0], left: [-1, 0, 0],
-        };
-        const remap = {};
-        const matrices = ChunkMeshBuilder.ORIENTATION_MATRICES;
-        for (let orient = 1; orient < 24; orient++) {
-            const m = matrices[orient];
-            if (!m) continue;
-            const mapping = {};
-            for (const origFace of faceNames) {
-                const n = faceNormals[origFace];
-                const rx = Math.round(m[0] * n[0] + m[1] * n[1] + m[2] * n[2]);
-                const ry = Math.round(m[3] * n[0] + m[4] * n[1] + m[5] * n[2]);
-                const rz = Math.round(m[6] * n[0] + m[7] * n[1] + m[8] * n[2]);
-                for (const physFace of faceNames) {
-                    const pn = faceNormals[physFace];
-                    if (pn[0] === rx && pn[1] === ry && pn[2] === rz) {
-                        mapping[physFace] = origFace;
-                        break;
-                    }
-                }
-            }
-            remap[orient] = mapping;
-        }
-        return remap;
-    })();
+    /** orient(0-23) のテクスチャ面リマップ（BlockOrientation に委譲） */
+    static _OrientableTexRemap = BlockOrientation.TexRemap;
 
-    // orient(0-23) × 物理面 → UV回転量(0-3)
-    // ソース面のUV座標系が物理面のUV座標系にどう回転するかを算出
-    static _OrientableUVRot = (() => {
-        // 各面のUV座標系: tangent(u+方向), bitangent(v+方向)
-        const T = {
-            top: [1,0,0], bottom: [1,0,0],
-            front: [1,0,0], back: [-1,0,0],
-            right: [0,0,1], left: [0,0,-1]
-        };
-        const B = {
-            top: [0,0,1], bottom: [0,0,-1],
-            front: [0,1,0], back: [0,1,0],
-            right: [0,1,0], left: [0,1,0]
-        };
-        const faceNames = ['top', 'bottom', 'front', 'back', 'right', 'left'];
-        const result = {};
-        const matrices = ChunkMeshBuilder.ORIENTATION_MATRICES;
-        const texRemap = ChunkMeshBuilder._OrientableTexRemap;
-
-        for (let ori = 0; ori < 24; ori++) {
-            const m = matrices[ori];
-            if (!m) continue;
-            const remap = texRemap[ori] || null;
-            const rots = {};
-            for (const pf of faceNames) {
-                const sf = remap ? remap[pf] : pf;
-                const st = T[sf];
-                // M × src_tangent
-                const rx = Math.round(m[0]*st[0] + m[1]*st[1] + m[2]*st[2]);
-                const ry = Math.round(m[3]*st[0] + m[4]*st[1] + m[5]*st[2]);
-                const rz = Math.round(m[6]*st[0] + m[7]*st[1] + m[8]*st[2]);
-                // 物理面のtangent/bitangentに射影
-                const pt = T[pf], pb = B[pf];
-                const uu = rx*pt[0] + ry*pt[1] + rz*pt[2];
-                const uv = rx*pb[0] + ry*pb[1] + rz*pb[2];
-                // (uu,uv): (1,0)→0, (0,1)→1, (-1,0)→2, (0,-1)→3
-                rots[pf] = uu === 0 ? (uv > 0 ? 1 : 3) : (uu > 0 ? 0 : 2);
-            }
-            result[ori] = rots;
-        }
-        return result;
-    })();
+    /** orient(0-23) × 物理面 → UV回転量(0-3)（BlockOrientation に委譲） */
+    static _OrientableUVRot = BlockOrientation.UVRot;
 
     static _SideHalfTexRemap = {
         // orientation 3: 南付き(-Z) Rx(+90°)

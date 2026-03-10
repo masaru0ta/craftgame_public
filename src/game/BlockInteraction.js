@@ -8,11 +8,11 @@ class BlockInteraction {
     /** 横4方向 + 真上の隣接オフセット（水フロー・decay スケジュール用） */
     static _ADJACENT_5 = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]];
 
-    /** カスタムブロック orientation 計算用 face 文字列 → 数値マップ */
-    static _FACE_TO_INT = { top: 0, bottom: 1, north: 2, south: 3, east: 4, west: 5 };
+    /** face 文字列 → topDir 数値マップ（BlockOrientation に委譲） */
+    static _FACE_TO_INT = BlockOrientation.FaceToTopDir;
 
-    // orientation → 軸側の面名（front面＝軸が突き出る面）
-    static _ROTOR_AXIS_FACE = ['top', 'bottom', 'north', 'south', 'east', 'west'];
+    /** topDir → 面名（BlockOrientation に委譲） */
+    static _ROTOR_AXIS_FACE = BlockOrientation.TopDirToFace;
 
     /**
      * クリックした面がrotorの軸側（front面の反対面）かを判定
@@ -21,8 +21,7 @@ class BlockInteraction {
      * @returns {boolean}
      */
     static _isRotorAxisFace(orientation, face) {
-        const topDir = Math.floor(orientation / 4);
-        return BlockInteraction._ROTOR_AXIS_FACE[topDir] === face;
+        return BlockOrientation.TopDirToFace[BlockOrientation.GetTopDir(orientation)] === face;
     }
 
     /**
@@ -930,7 +929,7 @@ class BlockInteraction {
         }
 
         // sidePlaceable: クリック面からtopDirを決定
-        const face = BlockInteraction._FACE_TO_INT[target.face] || 0;
+        const face = BlockOrientation.FaceToTopDir[target.face] || 0;
         const topDir = sidePlaceable ? face : 0;
 
         // rotation の決定
@@ -938,118 +937,46 @@ class BlockInteraction {
         if (rotatable) {
             if (topDir <= 1) {
                 // 上面/下面設置時: プレイヤーyawからrotationを算出
-                rotation = this._rotationFromYaw(playerYaw, topDir);
+                rotation = BlockOrientation.RotationFromYaw(playerYaw, topDir);
             } else if (isCustom) {
                 // カスタムブロックの側面: ヒット位置からrotationを決定
-                rotation = BlockInteraction._sideRotationFromHit(face, target);
+                rotation = BlockOrientation.SideRotationFromHit(face, target);
             }
             // 通常ブロック側面設置時: rotation=0固定（front面が下を向く方向）
         }
 
-        return topDir * 4 + rotation;
+        return BlockOrientation.Encode(topDir, rotation);
     }
 
-    /**
-     * プレイヤーのyawからrotation(0〜3)を算出
-     * @param {number} playerYaw - Yaw角（ラジアン）
-     * @param {number} topDir - 0=上面, 1=下面
-     * @returns {number} rotation (0〜3)
-     */
+    /** プレイヤーのyawからrotation(0〜3)を算出（BlockOrientation に委譲） */
     _rotationFromYaw(playerYaw, topDir) {
-        const camDirX = -Math.sin(playerYaw);
-        const camDirZ = Math.cos(playerYaw);
-        const angle = Math.atan2(camDirX, camDirZ) * 180 / Math.PI;
-
-        let rotation;
-        if (angle >= -45 && angle < 45) rotation = 0;
-        else if (angle >= 45 && angle < 135) rotation = 1;
-        else if (angle >= -135 && angle < -45) rotation = 3;
-        else rotation = 2;
-
-        // front=Z-基準:
-        // 上面(topDir=0): base rotationがそのまま正しい方向（front=Z-はrotation=0で南向き）
-        // 下面(topDir=1): Rx(π)でZ反転→front=Z-がZ+になるため、+2で補正
-        rotation = (topDir === 0) ? rotation : (rotation + 2) % 4;
-
-        return rotation;
+        return BlockOrientation.RotationFromYaw(playerYaw, topDir);
     }
 
     /**
      * カスタムブロックの設置方向（orientation）を計算（後方互換用）
      * _calculateBlockOrientation に統一されたが、外部参照があるため残す
-     * @param {Object} target - レイキャスト結果（face, hitX, hitY, hitZ, adjacentX, adjacentY, adjacentZ）
-     * @param {number} playerYaw - プレイヤーのYaw角（ラジアン、0=北/Z+方向）
-     * @returns {number} orientation (0〜23)
      */
     _calculateOrientation(target, playerYaw) {
-        const face = BlockInteraction._FACE_TO_INT[target.face] || 0;
-
+        const face = BlockOrientation.FaceToTopDir[target.face] || 0;
         if (face >= 2) {
-            // 側面: ヒット位置の上/下/左/右で rotation を決定（プレイヤー向き不問）
-            return face * 4 + BlockInteraction._sideRotationFromHit(face, target);
+            return BlockOrientation.Encode(face, BlockOrientation.SideRotationFromHit(face, target));
         }
-
-        // 上面・下面: プレイヤーの視線方向から rotation を決定
-        const camDirX = -Math.sin(playerYaw);
-        const camDirZ = Math.cos(playerYaw);
-        const angle = Math.atan2(camDirX, camDirZ) * 180 / Math.PI;
-
-        let rotation;
-        if (angle >= -45 && angle < 45) rotation = 0;
-        else if (angle >= 45 && angle < 135) rotation = 1;
-        else if (angle >= -135 && angle < -45) rotation = 3;
-        else rotation = 2;
-
-        // front=Z-基準:
-        // 上面(face=0): base rotationがそのまま正しい方向
-        // 下面(face=1): Rx(π)でZ反転→+2で補正
-        rotation = (face === 0) ? rotation : (rotation + 2) % 4;
-
-        return face * 4 + rotation;
+        return BlockOrientation.Encode(face, BlockOrientation.RotationFromYaw(playerYaw, face));
     }
 
-    // 側面の rotation 対応表（配列: [face-2] → [上ヒット, 下ヒット, +水平軸ヒット, -水平軸ヒット]）
-    // ヒット方向と逆側に正面を向ける（上を狙う→正面は下、右を狙う→正面は左）
-    static _SideRotations = [
-        [2, 0, 1, 3], // face=2 north: 上→DOWN, 下→UP, +X→-X, -X→+X
-        [0, 2, 1, 3], // face=3 south: 上→DOWN, 下→UP, +X→-X, -X→+X
-        [3, 1, 0, 2], // face=4 east:  上→DOWN, 下→UP, +Z→-Z, -Z→+Z
-        [1, 3, 0, 2], // face=5 west:  上→DOWN, 下→UP, +Z→-Z, -Z→+Z
-    ];
-
-    /**
-     * 側面のヒット位置から rotation を決定
-     * 面の中心からの上下/左右の偏りが大きい方向に正面を向ける
-     */
+    /** 側面のヒット位置から rotation を決定（BlockOrientation に委譲） */
     static _sideRotationFromHit(face, target) {
-        const dy = target.hitY - (target.adjacentY + 0.5);
-        const dh = (face <= 3)
-            ? target.hitX - (target.adjacentX + 0.5)   // north/south: 水平軸=X
-            : target.hitZ - (target.adjacentZ + 0.5);  // east/west:   水平軸=Z
-        const rots = BlockInteraction._SideRotations[face - 2];
-        if (Math.abs(dy) >= Math.abs(dh)) {
-            return dy > 0 ? rots[0] : rots[1];
-        }
-        return dh > 0 ? rots[2] : rots[3];
+        return BlockOrientation.SideRotationFromHit(face, target);
     }
 
     /**
-     * 回転軸ブロックの orientation を決定する
-     * 設置方向可変ブロックの orientation を決定する
-     * クリック面の方向 = orientation（top面/front面の方向）
+     * 回転軸ブロック / 設置方向可変ブロックの orientation を決定する
      * @param {string} face - クリック面
      * @returns {number} 0〜5
      */
     _calculateOrientableOrientation(face) {
-        switch (face) {
-            case 'top':    return 0; // top面は上
-            case 'bottom': return 1; // top面は下
-            case 'north':  return 2; // top面は北
-            case 'south':  return 3; // top面は南
-            case 'east':   return 4; // top面は東
-            case 'west':   return 5; // top面は西
-            default:       return 0;
-        }
+        return BlockOrientation.FaceToTopDir[face] || 0;
     }
 
     /**

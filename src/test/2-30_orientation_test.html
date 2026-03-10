@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2-30 BlockOrientation テスト</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #eee; }
+        #test-results { white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>BlockOrientation テスト</h1>
+    <div id="test-results">読み込み中...</div>
+
+    <!-- BlockOrientation ユーティリティ -->
+    <script src="../game/BlockOrientation.js"></script>
+    <!-- 既存テーブルとの比較用 -->
+    <script src="../game/ChunkMeshBuilder.js"></script>
+
+    <script>
+        // テストページ初期化完了マーカー
+        document.getElementById('test-results').textContent = 'ready';
+    </script>
+</body>
+</html>

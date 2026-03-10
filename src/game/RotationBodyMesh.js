@@ -117,11 +117,11 @@ class RotationBodyMesh {
             // rotatable/sidePlaceable ブロックのテクスチャリマップ取得
             const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
             const ori = isOrientable ? (b.orientation || 0) : 0;
-            const texRemap = isOrientable && typeof ChunkMeshBuilder !== 'undefined'
-                ? (ChunkMeshBuilder._OrientableTexRemap[ori] || null)
+            const texRemap = isOrientable && typeof BlockOrientation !== 'undefined'
+                ? (BlockOrientation.TexRemap[ori] || null)
                 : null;
-            const uvRotLookup = isOrientable && typeof ChunkMeshBuilder !== 'undefined'
-                ? (ChunkMeshBuilder._OrientableUVRot[ori] || null)
+            const uvRotLookup = isOrientable && typeof BlockOrientation !== 'undefined'
+                ? (BlockOrientation.UVRot[ori] || null)
                 : null;
 
             for (const faceName of RotationBodyMesh._FACE_NAMES) {
@@ -295,8 +295,8 @@ class RotationBodyMesh {
         }
 
         // orientation回転適用（0以外の場合のみ）
-        if (orientation !== 0 && typeof ChunkMeshBuilder !== 'undefined' && ChunkMeshBuilder.ORIENTATION_MATRICES) {
-            const m = ChunkMeshBuilder.ORIENTATION_MATRICES[orientation];
+        if (orientation !== 0 && typeof BlockOrientation !== 'undefined') {
+            const m = BlockOrientation.Matrices[orientation];
             if (m) {
                 const cx = rx, cy = ry, cz = rz;
                 const endVertexCount = positions.length / 3;

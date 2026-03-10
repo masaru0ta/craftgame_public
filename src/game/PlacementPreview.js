@@ -235,12 +235,12 @@ class PlacementPreview {
      * フルブロック（1×1×1）のジオメトリを生成
      */
     _buildFullMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
-        const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
-            ? (ChunkMeshBuilder._OrientableTexRemap[orientation] || null)
+        const texRemap = (typeof BlockOrientation !== 'undefined')
+            ? (BlockOrientation.TexRemap[orientation] || null)
             : null;
         // 面ごとのUV回転テーブル（全24 orientationの3D回転を反映）
-        const uvRotLookup = (typeof ChunkMeshBuilder !== 'undefined')
-            ? (ChunkMeshBuilder._OrientableUVRot[orientation] || null)
+        const uvRotLookup = (typeof BlockOrientation !== 'undefined')
+            ? (BlockOrientation.UVRot[orientation] || null)
             : null;
         return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), null, texRemap, uvRotLookup, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
@@ -372,8 +372,8 @@ class PlacementPreview {
 
         // 回転 + Three.js座標系変換（Z反転）を1パスで処理
         const endVertexCount = positions.length / 3;
-        const m = (orientation !== 0 && typeof ChunkMeshBuilder !== 'undefined')
-            ? ChunkMeshBuilder.ORIENTATION_MATRICES[orientation] : null;
+        const m = (orientation !== 0 && typeof BlockOrientation !== 'undefined')
+            ? BlockOrientation.Matrices[orientation] : null;
 
         if (m) {
             const cx = 0.5, cy = 0.5, cz = 0.5;

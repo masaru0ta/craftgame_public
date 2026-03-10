@@ -795,32 +795,12 @@ class RotationAxisManager {
      * 回転体の回転に応じてカスタムブロックの orientation (0-23) を変換
      */
     _rotateOrientation(orientation, front, steps) {
-        if (typeof ChunkMeshBuilder === 'undefined' || !ChunkMeshBuilder.ORIENTATION_MATRICES) {
+        if (typeof BlockOrientation === 'undefined') {
             return orientation;
         }
-        const origM = ChunkMeshBuilder.ORIENTATION_MATRICES[orientation];
-        if (!origM) return orientation;
-
         const bodyM = this._buildBodyRotationMatrix(front, steps);
-        const composed = RotationAxisManager._mulMatrix3(bodyM, origM);
-
-        // 誤差除去（整数回転なので各要素は0,1,-1のいずれか）
-        for (let i = 0; i < 9; i++) {
-            const v = composed[i];
-            composed[i] = Math.abs(v) < 0.5 ? 0 : (v > 0 ? 1 : -1);
-        }
-
-        // ORIENTATION_MATRICES から一致する orientation を逆引き
-        const matrices = ChunkMeshBuilder.ORIENTATION_MATRICES;
-        for (let i = 0; i < 24; i++) {
-            const m = matrices[i];
-            let match = true;
-            for (let j = 0; j < 9; j++) {
-                if (m[j] !== composed[j]) { match = false; break; }
-            }
-            if (match) return i;
-        }
-        return orientation;
+        const result = BlockOrientation.ComposeOrient(orientation, bodyM);
+        return result >= 0 ? result : orientation;
     }
 
     // ハーフブロック orientation (1-6) の方向ベクトル
