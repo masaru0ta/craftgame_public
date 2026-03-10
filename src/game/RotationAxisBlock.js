@@ -35,7 +35,8 @@ class RotationBody {
         this._stopAt90 = stopAt90; // 90度で自動停止するか
         this._parentBody = null; // 親回転体（入れ子の場合）
         // front方向をキャッシュ（毎フレームの再計算を回避）
-        const f = RotationAxisManager._FRONT_DIRS[orientation] || RotationAxisManager._FRONT_DIRS[0];
+        const topDir = Math.floor(orientation / 4);
+        const f = RotationAxisManager._FRONT_DIRS[topDir] || RotationAxisManager._FRONT_DIRS[0];
         this._frontDx = f.dx;
         this._frontDy = f.dy;
         this._frontDz = f.dz;
@@ -94,7 +95,7 @@ class RotationAxisManager {
     // 回転体に含めないブロック（自然ブロック）
     static _NON_ROTATABLE = new Set(['stone', 'dirt', 'grass', 'sand', 'water']);
 
-    // orientation(0-5) → front面方向のマッピング
+    // topDir(0-5) → front面方向のマッピング
     // ゲーム座標系: north=Z+(back), south=Z-(front)
     static _FRONT_DIRS = [
         { dx: 0, dy: 1, dz: 0 },   // 0: top (Y+)
@@ -117,12 +118,12 @@ class RotationAxisManager {
 
     /**
      * orientationからfront面の方向を返す
-     * orientation 0-5 がそのまま _FRONT_DIRS のインデックス
-     * @param {number} orientation - 0〜5
+     * @param {number} orientation - 0〜23 (topDir×4+rotation)
      * @returns {{dx:number, dy:number, dz:number}}
      */
     static OrientationToFrontDir(orientation) {
-        return RotationAxisManager._FRONT_DIRS[orientation] || { dx: 0, dy: 1, dz: 0 };
+        const topDir = Math.floor(orientation / 4);
+        return RotationAxisManager._FRONT_DIRS[topDir] || { dx: 0, dy: 1, dz: 0 };
     }
 
     /**
