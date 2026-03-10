@@ -10,126 +10,70 @@ class RopeManager {
     constructor(chunkManager, scene) {
         this._chunkManager = chunkManager;
         this._scene = scene;
-        // 接続情報: "x,y,z" → {x, y, z}
-        this._connections = new Map();
-        // ロープメッシュ: 正規化キー → THREE.Mesh
-        this._meshes = new Map();
-        // 接続待ちポール座標
+        this._connections = new Map();  // "x,y,z" → {x, y, z}
+        this._meshes = new Map();       // 正規化キー → THREE.Mesh
         this._pendingRopeStart = null;
-        // 動的ロープ: ropeKey → {bodyA, rxA, ryA, rzA, bodyB, rxB, ryB, rzB}
-        this._dynamicRopes = new Map();
-        // RotationAxisManager参照（外部から設定）
+        // 動的ロープ
+        this._dynamicRopes = new Map(); // ropeKey → {bodyA, rxA, ryA, rzA, bodyB, rxB, ryB, rzB}
         this._rotationAxisManager = null;
-        // 前フレームの端点キャッシュ（変化検出用）
         this._prevEndpoints = new Map();
+        // メッシュ更新用の再利用オブジェクト
+        this._tmpDir = new THREE.Vector3();
+        this._tmpUp = new THREE.Vector3(0, 1, 0);
+        this._tmpQuat = new THREE.Quaternion();
     }
 
-    /**
-     * ロープ接続を開始（1つ目のポールクリック）
-     * @param {number} wx
-     * @param {number} wy
-     * @param {number} wz
-     */
     StartConnection(wx, wy, wz) {
-        // pole を pole_with_rope に変更
         this._setBlockAt(wx, wy, wz, 'pole_with_rope');
         this._pendingRopeStart = { x: wx, y: wy, z: wz };
-        this._rebuildChunkAt(wx, wy, wz);
+        this._rebuildChunkAt(wx, wz);
     }
 
-    /**
-     * ロープ接続を完了（2つ目のポールクリック）
-     * @param {number} wx
-     * @param {number} wy
-     * @param {number} wz
-     */
     CompleteConnection(wx, wy, wz) {
         if (!this._pendingRopeStart) return;
         const p1 = this._pendingRopeStart;
-        // 同じ座標なら無視
         if (p1.x === wx && p1.y === wy && p1.z === wz) return;
 
-        // 2つ目を pole_with_rope に変更
         this._setBlockAt(wx, wy, wz, 'pole_with_rope');
-
-        // 双方向の接続情報を保存
-        const key1 = `${p1.x},${p1.y},${p1.z}`;
-        const key2 = `${wx},${wy},${wz}`;
-        this._connections.set(key1, { x: wx, y: wy, z: wz });
-        this._connections.set(key2, { x: p1.x, y: p1.y, z: p1.z });
-
-        // ロープメッシュ生成
+        this._connections.set(`${p1.x},${p1.y},${p1.z}`, { x: wx, y: wy, z: wz });
+        this._connections.set(`${wx},${wy},${wz}`, { x: p1.x, y: p1.y, z: p1.z });
         this._createRopeMesh(p1.x, p1.y, p1.z, wx, wy, wz);
-
         this._pendingRopeStart = null;
-        this._rebuildChunkAt(wx, wy, wz);
+        this._rebuildChunkAt(wx, wz);
     }
 
-    /**
-     * 接続待ちをキャンセル
-     */
     CancelConnection() {
         if (!this._pendingRopeStart) return;
         const p = this._pendingRopeStart;
-        // pole_with_rope を pole に戻す
         this._setBlockAt(p.x, p.y, p.z, 'pole');
-        this._rebuildChunkAt(p.x, p.y, p.z);
+        this._rebuildChunkAt(p.x, p.z);
         this._pendingRopeStart = null;
     }
 
-    /**
-     * 接続待ち中かどうか
-     * @returns {boolean}
-     */
     IsPending() {
         return this._pendingRopeStart !== null;
     }
 
-    /**
-     * ポール破壊時の処理
-     * @param {number} wx
-     * @param {number} wy
-     * @param {number} wz
-     */
     OnPoleDestroyed(wx, wy, wz) {
         const key = `${wx},${wy},${wz}`;
         const target = this._connections.get(key);
         if (!target) return;
 
-        // 結び先を pole に戻す
         this._setBlockAt(target.x, target.y, target.z, 'pole');
-        this._rebuildChunkAt(target.x, target.y, target.z);
+        this._rebuildChunkAt(target.x, target.z);
 
-        // 双方の接続情報を削除
-        const targetKey = `${target.x},${target.y},${target.z}`;
         this._connections.delete(key);
-        this._connections.delete(targetKey);
+        this._connections.delete(`${target.x},${target.y},${target.z}`);
 
-        // ロープメッシュ削除
-        const meshKey = this._ropeKey(wx, wy, wz, target.x, target.y, target.z);
-        const mesh = this._meshes.get(meshKey);
-        if (mesh) {
-            this._scene.remove(mesh);
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) mesh.material.dispose();
-            this._meshes.delete(meshKey);
-        }
+        this._removeRopeMesh(this._ropeKey(wx, wy, wz, target.x, target.y, target.z));
     }
 
-    /**
-     * 指定座標の結び先を取得
-     * @param {number} wx
-     * @param {number} wy
-     * @param {number} wz
-     * @returns {{x:number, y:number, z:number}|null}
-     */
     GetConnection(wx, wy, wz) {
         return this._connections.get(`${wx},${wy},${wz}`) || null;
     }
 
     /**
      * 回転体生成時の通知 — 構成ブロックにpole_with_ropeがあれば動的ロープに登録
-     * @param {RotationBody} body
      */
     NotifyBodyCreated(body) {
         if (!body || !body._blocks) return;
@@ -142,7 +86,6 @@ class RopeManager {
 
             const ropeKey = this._ropeKey(wx, wy, wz, target.x, target.y, target.z);
             if (this._dynamicRopes.has(ropeKey)) {
-                // 既に片方が登録済み → もう片方がこのbodyならB側を更新
                 const entry = this._dynamicRopes.get(ropeKey);
                 if (!entry.bodyB && entry.bodyA !== body) {
                     entry.bodyB = body;
@@ -171,24 +114,18 @@ class RopeManager {
 
     /**
      * 回転体解除時の通知 — 該当bodyを含む動的ロープを除外
-     * @param {RotationBody} body
      */
     NotifyBodyDissolved(body) {
-        const toDelete = [];
         for (const [ropeKey, entry] of this._dynamicRopes) {
             if (entry.bodyA === body || entry.bodyB === body) {
-                toDelete.push(ropeKey);
+                this._dynamicRopes.delete(ropeKey);
+                this._prevEndpoints.delete(ropeKey);
             }
-        }
-        for (const k of toDelete) {
-            this._dynamicRopes.delete(k);
-            this._prevEndpoints.delete(k);
         }
     }
 
     /**
      * 回転体解除後の接続座標更新 — ブロック移動に伴い_connectionsとメッシュを更新
-     * @param {Array<{oldX:number,oldY:number,oldZ:number,newX:number,newY:number,newZ:number}>} moves
      */
     OnEndpointsMoved(moves) {
         for (const m of moves) {
@@ -197,7 +134,6 @@ class RopeManager {
             if (!target) continue;
 
             const newKey = `${m.newX},${m.newY},${m.newZ}`;
-            // 古い接続情報を削除して新座標で再登録
             this._connections.delete(oldKey);
             this._connections.set(newKey, { x: target.x, y: target.y, z: target.z });
 
@@ -215,46 +151,23 @@ class RopeManager {
             if (mesh) {
                 this._meshes.delete(oldMeshKey);
                 this._meshes.set(newMeshKey, mesh);
-                // メッシュ位置を新座標に更新
-                const posA = { x: m.newX + 0.5, y: m.newY + 0.5, z: m.newZ + 0.5 };
-                const posB = { x: target.x + 0.5, y: target.y + 0.5, z: target.z + 0.5 };
-                this._updateRopeMesh(mesh, posA, posB);
+                this._updateRopeMesh(mesh,
+                    m.newX + 0.5, m.newY + 0.5, m.newZ + 0.5,
+                    target.x + 0.5, target.y + 0.5, target.z + 0.5);
             }
         }
     }
 
     /**
      * 毎フレーム更新 — 動的ロープのメッシュ端点を再計算
-     * @param {number} deltaTime
      */
     Update(deltaTime) {
         if (this._dynamicRopes.size === 0) return;
         const ram = this._rotationAxisManager;
 
         for (const [ropeKey, entry] of this._dynamicRopes) {
-            // 端点A座標計算
-            let posA;
-            if (entry.bodyA) {
-                const lx = entry.bodyA._axisX + entry.rxA + 0.5;
-                const ly = entry.bodyA._axisY + entry.ryA + 0.5;
-                const lz = entry.bodyA._axisZ + entry.rzA + 0.5;
-                const w = ram.LocalToWorld(entry.bodyA, lx, ly, lz);
-                posA = { x: w.x, y: w.y, z: w.z };
-            } else {
-                posA = { x: entry.rxA + 0.5, y: entry.ryA + 0.5, z: entry.rzA + 0.5 };
-            }
-
-            // 端点B座標計算
-            let posB;
-            if (entry.bodyB) {
-                const lx = entry.bodyB._axisX + entry.rxB + 0.5;
-                const ly = entry.bodyB._axisY + entry.ryB + 0.5;
-                const lz = entry.bodyB._axisZ + entry.rzB + 0.5;
-                const w = ram.LocalToWorld(entry.bodyB, lx, ly, lz);
-                posB = { x: w.x, y: w.y, z: w.z };
-            } else {
-                posB = { x: entry.rxB + 0.5, y: entry.ryB + 0.5, z: entry.rzB + 0.5 };
-            }
+            const posA = this._calcEndpoint(entry.bodyA, entry.rxA, entry.ryA, entry.rzA, ram);
+            const posB = this._calcEndpoint(entry.bodyB, entry.rxB, entry.ryB, entry.rzB, ram);
 
             // 前フレームとの変化検出
             const prev = this._prevEndpoints.get(ropeKey);
@@ -265,32 +178,38 @@ class RopeManager {
             }
             this._prevEndpoints.set(ropeKey, { ax: posA.x, ay: posA.y, az: posA.z, bx: posB.x, by: posB.y, bz: posB.z });
 
-            // メッシュ更新
             const mesh = this._meshes.get(ropeKey);
             if (mesh) {
-                this._updateRopeMesh(mesh, posA, posB);
+                this._updateRopeMesh(mesh, posA.x, posA.y, posA.z, posB.x, posB.y, posB.z);
             }
         }
     }
 
     /**
+     * 端点のワールド座標を算出
+     */
+    _calcEndpoint(body, rx, ry, rz, ram) {
+        if (body) {
+            const w = ram.LocalToWorld(body, body._axisX + rx + 0.5, body._axisY + ry + 0.5, body._axisZ + rz + 0.5);
+            return { x: w.x, y: w.y, z: w.z };
+        }
+        return { x: rx + 0.5, y: ry + 0.5, z: rz + 0.5 };
+    }
+
+    /**
      * ロープメッシュの位置・向き・長さを更新
      */
-    _updateRopeMesh(mesh, posA, posB) {
-        const dx = posB.x - posA.x, dy = posB.y - posA.y, dz = posB.z - posA.z;
+    _updateRopeMesh(mesh, ax, ay, az, bx, by, bz) {
+        const dx = bx - ax, dy = by - ay, dz = bz - az;
         const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (length === 0) return;
 
-        // 中点に配置
-        mesh.position.set((posA.x + posB.x) / 2, (posA.y + posB.y) / 2, (posA.z + posB.z) / 2);
+        mesh.position.set((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
+        this._tmpDir.set(dx, dy, dz).normalize();
+        this._tmpUp.set(0, 1, 0);
+        this._tmpQuat.setFromUnitVectors(this._tmpUp, this._tmpDir);
+        mesh.quaternion.copy(this._tmpQuat);
 
-        // 向き更新
-        const dir = new THREE.Vector3(dx, dy, dz).normalize();
-        const up = new THREE.Vector3(0, 1, 0);
-        const quat = new THREE.Quaternion().setFromUnitVectors(up, dir);
-        mesh.quaternion.copy(quat);
-
-        // 長さ更新（ジオメトリ再生成）
         if (mesh.geometry) mesh.geometry.dispose();
         mesh.geometry = new THREE.CylinderGeometry(0.05, 0.05, length, 6);
     }
@@ -299,31 +218,36 @@ class RopeManager {
      * ロープメッシュを生成
      */
     _createRopeMesh(x1, y1, z1, x2, y2, z2) {
-        // ブロック中央座標（worldContainer内なのでZ反転不要）
         const cx1 = x1 + 0.5, cy1 = y1 + 0.5, cz1 = z1 + 0.5;
         const cx2 = x2 + 0.5, cy2 = y2 + 0.5, cz2 = z2 + 0.5;
-
         const dx = cx2 - cx1, dy = cy2 - cy1, dz = cz2 - cz1;
         const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (length === 0) return;
 
-        // 円柱ジオメトリ（半径0.03）
         const geometry = new THREE.CylinderGeometry(0.05, 0.05, length, 6);
         const material = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
         const mesh = new THREE.Mesh(geometry, material);
 
-        // 中点に配置
         mesh.position.set((cx1 + cx2) / 2, (cy1 + cy2) / 2, (cz1 + cz2) / 2);
-
-        // 向きを設定（Y軸デフォルト→2点間ベクトルへ回転）
-        const dir = new THREE.Vector3(dx, dy, dz).normalize();
-        const up = new THREE.Vector3(0, 1, 0);
-        const quat = new THREE.Quaternion().setFromUnitVectors(up, dir);
-        mesh.quaternion.copy(quat);
+        this._tmpDir.set(dx, dy, dz).normalize();
+        this._tmpUp.set(0, 1, 0);
+        this._tmpQuat.setFromUnitVectors(this._tmpUp, this._tmpDir);
+        mesh.quaternion.copy(this._tmpQuat);
 
         this._scene.add(mesh);
-        const key = this._ropeKey(x1, y1, z1, x2, y2, z2);
-        this._meshes.set(key, mesh);
+        this._meshes.set(this._ropeKey(x1, y1, z1, x2, y2, z2), mesh);
+    }
+
+    /**
+     * ロープメッシュ削除
+     */
+    _removeRopeMesh(meshKey) {
+        const mesh = this._meshes.get(meshKey);
+        if (!mesh) return;
+        this._scene.remove(mesh);
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) mesh.material.dispose();
+        this._meshes.delete(meshKey);
     }
 
     /**
@@ -336,9 +260,6 @@ class RopeManager {
         return `${x2},${y2},${z2}-${x1},${y1},${z1}`;
     }
 
-    /**
-     * チャンクデータのブロックを変更
-     */
     _setBlockAt(wx, wy, wz, blockId) {
         const cx = Math.floor(wx / 16);
         const cz = Math.floor(wz / 16);
@@ -348,21 +269,14 @@ class RopeManager {
         const lz = ((wz % 16) + 16) % 16;
         const ly = wy - chunk.chunkData.baseY;
         if (ly < 0 || ly >= 128) return;
-        // 既存のorientationを保持
         const ori = chunk.chunkData.getOrientation(lx, ly, lz);
         chunk.chunkData.setBlock(lx, ly, lz, blockId, ori);
     }
 
-    /**
-     * 該当チャンクのメッシュを再構築
-     */
-    _rebuildChunkAt(wx, wy, wz) {
+    _rebuildChunkAt(wx, wz) {
         const cx = Math.floor(wx / 16);
         const cz = Math.floor(wz / 16);
-        const chunk = this._chunkManager.chunks.get(`${cx},${cz}`);
-        if (chunk) {
-            this._chunkManager.rebuildChunkMesh(cx, cz);
-        }
+        this._chunkManager.rebuildChunkMesh(cx, cz);
     }
 }
 
