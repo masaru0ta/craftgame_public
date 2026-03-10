@@ -262,6 +262,14 @@ class GameTestApp {
             this.blockInteraction.directionBlockManager = this.directionBlockManager;
         }
 
+        // ロープウェイ管理初期化
+        if (typeof RopeWayManager !== 'undefined' && this.ropeManager) {
+            this.ropeWayManager = new RopeWayManager(
+                this.chunkManager, this.worldContainer, this.textureLoader, this.ropeManager
+            );
+            this.blockInteraction.ropeWayManager = this.ropeWayManager;
+        }
+
         // ホットバーに最初の9ブロックを自動設定
         placeableBlocks.slice(0, Hotbar.SLOT_COUNT).forEach((block, i) => {
             this.hotbar.setSlotBlock(i, block);
@@ -1248,6 +1256,11 @@ class GameTestApp {
         // 移動ブロック更新
         if (this.directionBlockManager) {
             this.directionBlockManager.Update(this.deltaTime);
+        }
+
+        // ロープウェイ更新
+        if (this.ropeWayManager) {
+            this.ropeWayManager.Update(this.deltaTime);
         }
 
         // 雨粒パーティクル

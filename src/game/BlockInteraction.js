@@ -115,7 +115,8 @@ class BlockInteraction {
         const targetBlockId = this.physicsWorld.getBlockAt(
             this.currentTarget.blockX, this.currentTarget.blockY, this.currentTarget.blockZ);
         if (targetBlockId === 'workbench' ||
-            targetBlockId === 'switch_off' || targetBlockId === 'switch') {
+            targetBlockId === 'switch_off' || targetBlockId === 'switch' ||
+            targetBlockId === 'rope_way') {
             this.placementPreview.hide();
             return;
         }
@@ -227,6 +228,12 @@ class BlockInteraction {
         // 移動ブロックチェック
         if (targetBlockId === 'direction' && this.directionBlockManager) {
             this.OnDirectionRightClick(target.blockX, target.blockY, target.blockZ);
+            return true;
+        }
+
+        // ロープウェイチェック
+        if (targetBlockId === 'rope_way' && this.ropeWayManager) {
+            this.OnRopeWayRightClick(target.blockX, target.blockY, target.blockZ);
             return true;
         }
 
@@ -638,6 +645,7 @@ class BlockInteraction {
             if (!BlockInteraction._isRotorAxisFace(ori, target.face)) return '回転';
         }
         if (blockId === 'direction' && this.directionBlockManager) return '移動';
+        if (blockId === 'rope_way' && this.ropeWayManager) return 'ロープウェイ';
         return null;
     }
 
@@ -650,6 +658,14 @@ class BlockInteraction {
     OnDirectionRightClick(wx, wy, wz) {
         if (!this.directionBlockManager) return;
         this.directionBlockManager.ToggleBody(wx, wy, wz);
+    }
+
+    /**
+     * ロープウェイブロックの右クリック処理
+     */
+    OnRopeWayRightClick(wx, wy, wz) {
+        if (!this.ropeWayManager) return;
+        this.ropeWayManager.ToggleBody(wx, wy, wz);
     }
 
     /**
@@ -757,6 +773,48 @@ class BlockInteraction {
                     const body = dbm.GetBodyAt(pos.x, pos.y, pos.z);
                     if (body) {
                         dbm.ToggleBody(pos.x, pos.y, pos.z);
+                    }
+                }
+            }
+        }
+
+        // マンハッタン距離5以内のrope_wayを検索して操作
+        const rwm = this.ropeWayManager;
+        if (rwm) {
+            const rwPositions = [];
+            for (let dx = -range; dx <= range; dx++) {
+                for (let dy = -range; dy <= range; dy++) {
+                    for (let dz = -range; dz <= range; dz++) {
+                        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > range) continue;
+                        const rx = wx + dx, ry = wy + dy, rz = wz + dz;
+                        const blockId = this.physicsWorld.getBlockAt(rx, ry, rz);
+                        if (blockId === 'rope_way') {
+                            rwPositions.push({ x: rx, y: ry, z: rz });
+                        }
+                    }
+                }
+            }
+            // 移動体内のrope_wayも検索
+            for (const [, body] of rwm._bodies) {
+                for (const b of body._blocks) {
+                    if (b.blockId !== 'rope_way') continue;
+                    const rx = body._originX + b.rx;
+                    const ry = body._originY + b.ry;
+                    const rz = body._originZ + b.rz;
+                    const dist = Math.abs(rx - wx) + Math.abs(ry - wy) + Math.abs(rz - wz);
+                    if (dist > range) continue;
+                    if (!rwPositions.some(p => p.x === rx && p.y === ry && p.z === rz)) {
+                        rwPositions.push({ x: rx, y: ry, z: rz });
+                    }
+                }
+            }
+            for (const pos of rwPositions) {
+                if (turningOn) {
+                    rwm.ToggleBody(pos.x, pos.y, pos.z);
+                } else {
+                    const body = rwm.GetBodyAt(pos.x, pos.y, pos.z);
+                    if (body) {
+                        rwm.StopBody(pos.x, pos.y, pos.z);
                     }
                 }
             }
