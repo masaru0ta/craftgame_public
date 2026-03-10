@@ -393,7 +393,7 @@ class RotationAxisManager {
         const wy = body._axisY;
         const wz = body._axisZ;
 
-        // 子回転体を先に解除（親の回転を子の軸位置・ブロック座標に反映してから）
+        // 子回転体を先に解除（親の回転を子孫の軸位置・ブロック座標に反映してから）
         const childKeys = [];
         for (const [childKey, childBody] of this._bodies) {
             if (childBody._parentBody === body) {
@@ -403,21 +403,12 @@ class RotationAxisManager {
         if (childKeys.length > 0) {
             const parentFront = body.GetFrontDirection();
             const parentSteps = ((Math.round(body._angle / (Math.PI / 2)) % 4) + 4) % 4;
+            // 全 descendant（孫以下含む）の軸位置を親の回転で補正
+            this._rotateDescendantAxes(body, parentFront, parentSteps, wx, wy, wz);
             for (const childKey of childKeys) {
                 const childBody = this._bodies.get(childKey);
                 if (!childBody) continue;
-                // 子体の軸位置を親の回転分で補正
-                const relX = childBody._axisX - wx;
-                const relY = childBody._axisY - wy;
-                const relZ = childBody._axisZ - wz;
-                const rotatedAxis = this._rotate90(relX, relY, relZ, parentFront, parentSteps);
-                childBody._axisX = wx + rotatedAxis.x;
-                childBody._axisY = wy + rotatedAxis.y;
-                childBody._axisZ = wz + rotatedAxis.z;
-                childBody._centerX = childBody._axisX + 0.5;
-                childBody._centerY = childBody._axisY + 0.5;
-                childBody._centerZ = childBody._axisZ + 0.5;
-                // 子体のブロック相対座標も親の回転分で補正
+                // 子体のブロック相対座標を親の回転分で補正
                 for (const b of childBody._blocks) {
                     const rotated = this._rotate90(b.rx, b.ry, b.rz, parentFront, parentSteps);
                     b.rx = rotated.x;
@@ -781,6 +772,38 @@ class RotationAxisManager {
      * @param {{dx:number, dy:number, dz:number}} front - 回転軸方向
      * @param {number} steps - 90°ステップ数 (0-3)
      * @returns {{x:number, y:number, z:number}}
+     */
+
+    /**
+     * 全 descendant（子・孫・曽孫...）の軸位置を親の回転分で再帰的に補正
+     * @param {RotationBody} parentBody - 親回転体
+     * @param {{dx:number, dy:number, dz:number}} front - 回転軸方向
+     * @param {number} steps - 90°ステップ数 (0-3)
+     * @param {number} pivotX - 回転中心X（親軸のワールド座標）
+     * @param {number} pivotY - 回転中心Y
+     * @param {number} pivotZ - 回転中心Z
+     */
+    _rotateDescendantAxes(parentBody, front, steps, pivotX, pivotY, pivotZ) {
+        if (steps === 0) return;
+        for (const [, descendant] of this._bodies) {
+            if (descendant._parentBody !== parentBody) continue;
+            // descendant の軸位置を回転
+            const relX = descendant._axisX - pivotX;
+            const relY = descendant._axisY - pivotY;
+            const relZ = descendant._axisZ - pivotZ;
+            const rotated = this._rotate90(relX, relY, relZ, front, steps);
+            descendant._axisX = pivotX + rotated.x;
+            descendant._axisY = pivotY + rotated.y;
+            descendant._axisZ = pivotZ + rotated.z;
+            descendant._centerX = descendant._axisX + 0.5;
+            descendant._centerY = descendant._axisY + 0.5;
+            descendant._centerZ = descendant._axisZ + 0.5;
+            // さらに深い descendant も再帰的に補正
+            this._rotateDescendantAxes(descendant, front, steps, pivotX, pivotY, pivotZ);
+        }
+    }
+
+    /**
      */
     _rotate90(rx, ry, rz, front, steps) {
         if (steps === 0) return { x: rx, y: ry, z: rz };
