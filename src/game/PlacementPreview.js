@@ -238,8 +238,8 @@ class PlacementPreview {
         const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
             ? (ChunkMeshBuilder._OrientableTexRemap[orientation] || null)
             : null;
-        // Y軸回転によるUV回転（rotation = orient % 4）
-        const uvRotation = orientation % 4;
+        // Y軸回転によるUV回転（+2ベースライン: front側をテクスチャ下端に合わせる）
+        const uvRotation = (orientation % 4 + 2) % 4;
         return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), null, texRemap, uvRotation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
@@ -416,11 +416,9 @@ class PlacementPreview {
     _addFaceUVs(uvs, faceName, uvRotation = 0) {
         if (faceName === 'top' || faceName === 'bottom') {
             const baseUVs = [[0,1], [1,1], [1,0], [0,0]];
-            // top: front側をテクスチャ下端(v=0)に合わせるため+2のベースライン補正
-            // bottom: デフォルトで既にfront=v=0なので補正不要
-            const shift = faceName === 'top'
-                ? (uvRotation + 2) % 4
-                : (4 - uvRotation) % 4;
+            // top: rotation分シフト、bottom: 逆方向シフト
+            // ベースライン補正(+2)は呼び出し側のuvRotation計算に含まれている
+            const shift = faceName === 'top' ? uvRotation : (4 - uvRotation) % 4;
             for (let i = 0; i < 4; i++) {
                 const uv = baseUVs[(i + shift) % 4];
                 uvs.push(uv[0], uv[1]);

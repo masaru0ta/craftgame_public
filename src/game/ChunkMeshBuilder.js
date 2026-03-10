@@ -425,9 +425,11 @@ class ChunkMeshBuilder {
 
                 // orientable: テクスチャ面をリマップ（物理面はそのまま）
                 const texFace = texRemap ? texRemap[faceName] : faceName;
-                // UV回転: rotatable/sidePlaceableブロックのtop/bottom面はrotation分回転
-                const ori = (texRemap) ? chunkData.getOrientation(x, y, z) : 0;
-                const uvRot = ori % 4;
+                // UV回転: rotatable/sidePlaceableブロックのみ適用
+                // +2ベースライン: top面のfront側をテクスチャ下端に合わせる
+                const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
+                const ori = isOrientable ? chunkData.getOrientation(x, y, z) : 0;
+                const uvRot = isOrientable ? (ori % 4 + 2) % 4 : 0;
                 const key = `${blockStrId}:${faceName}:${texFace}:${uvRot}`;
                 if (!blockFacesMap.has(key)) {
                     blockFacesMap.set(key, { blockStrId, faceName, texFace, uvRot, faces: [] });
@@ -1108,11 +1110,9 @@ class ChunkMeshBuilder {
     _addTilingUVs(uvs, faceName, uScale, vScale, uvRot = 0) {
         if (faceName === 'top' || faceName === 'bottom') {
             const baseUVs = [[0, vScale], [uScale, vScale], [uScale, 0], [0, 0]];
-            // top: front側をテクスチャ下端(v=0)に合わせるため+2のベースライン補正
-            // bottom: デフォルトで既にfront=v=0なので補正不要
-            const shift = faceName === 'top'
-                ? (uvRot + 2) % 4
-                : (4 - uvRot) % 4;
+            // top: rotation分シフト、bottom: 逆方向シフト
+            // ベースライン補正(+2)は呼び出し側のuvRot計算に含まれている
+            const shift = faceName === 'top' ? uvRot : (4 - uvRot) % 4;
             for (let i = 0; i < 4; i++) {
                 const uv = baseUVs[(i + shift) % 4];
                 uvs.push(uv[0], uv[1]);
