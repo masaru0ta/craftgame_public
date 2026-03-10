@@ -670,19 +670,23 @@ class StructureEditor extends VoxelEditorBase {
     else if (nx > 0) face = 4;  // +X
     else if (nx < 0) face = 5;  // -X
 
-    // rotation決定: カメラの視線方向（プレイヤーが見ている方向）から
+    // rotation決定: カメラ位置方向（原点→カメラ）から
     const hRad = this.horizontalAngle * Math.PI / 180;
-    // カメラから原点への方向（プレイヤーの視線方向）
+    // camDirはカメラ位置方向（視線方向の逆）
     const camDirX = Math.sin(hRad);
     const camDirZ = Math.cos(hRad);
 
-    // 視線方向から4方向のrotationを決定（ブロック正面がプレイヤーに向く）
+    // カメラ位置方向から4方向のbaseを決定
     const angle = Math.atan2(camDirX, camDirZ) * 180 / Math.PI;
     let rotation;
     if (angle >= -45 && angle < 45) rotation = 0;
     else if (angle >= 45 && angle < 135) rotation = 1;
     else if (angle >= -135 && angle < -45) rotation = 3;
     else rotation = 2;
+
+    // front=Z-基準: camDirは視線方向の逆なので+2で補正
+    // （BlockInteraction._rotationFromYaw topDir=0 と同じ結果になる）
+    rotation = (rotation + 2) % 4;
 
     return face * 4 + rotation;
   }
