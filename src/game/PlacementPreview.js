@@ -235,7 +235,10 @@ class PlacementPreview {
      * フルブロック（1×1×1）のジオメトリを生成
      */
     _buildFullMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
-        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
+            ? (ChunkMeshBuilder._OrientableTexRemap[orientation] || null)
+            : null;
+        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), null, texRemap, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
@@ -255,16 +258,20 @@ class PlacementPreview {
         ];
         const b = bounds[orientation];
         const faces = PlacementPreview._BoxFaces3D(b[0], b[1], b[2], b[3], b[4], b[5]);
-        return this._buildBoxFaces(blockDef, faces, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
+            ? (ChunkMeshBuilder._SideHalfTexRemap[orientation] || null)
+            : null;
+        return this._buildBoxFaces(blockDef, faces, orientation, texRemap, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
      * ボックス面定義配列から頂点を生成する共通処理
      */
-    _buildBoxFaces(blockDef, faces, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
-        const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
-            ? (ChunkMeshBuilder._SideHalfTexRemap[orientation] || ChunkMeshBuilder._OrientableTexRemap[orientation] || null)
-            : null;
+    /**
+     * @param {number|null} halfOrientation - ハーフブロックの向き(1-6)。フルブロック時はnull
+     * @param {Object|null} texRemap - テクスチャリマップ。呼び出し元で決定済み
+     */
+    _buildBoxFaces(blockDef, faces, halfOrientation, texRemap, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
         for (const face of faces) {
             const texFace = texRemap ? texRemap[face.name] : face.name;
             const atlasUV = this._textureLoader.getAtlasUV(blockDef.block_str_id, texFace);
@@ -273,18 +280,18 @@ class PlacementPreview {
                 normals.push(face.n[0], face.n[1], face.n[2]);
                 atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
             }
-            // 薄い面はテクスチャの対応部分を切り出す
+            // 薄い面はテクスチャの対応部分を切り出す（ハーフブロックのみ）
             let isThinFace = false;
-            if (orientation >= 1 && orientation <= 2) {
+            if (halfOrientation >= 1 && halfOrientation <= 2) {
                 isThinFace = face.name !== 'top' && face.name !== 'bottom';
-            } else if (orientation >= 3 && orientation <= 4) {
+            } else if (halfOrientation >= 3 && halfOrientation <= 4) {
                 isThinFace = face.name !== 'front' && face.name !== 'back';
-            } else if (orientation >= 5 && orientation <= 6) {
+            } else if (halfOrientation >= 5 && halfOrientation <= 6) {
                 isThinFace = face.name !== 'left' && face.name !== 'right';
             }
             if (isThinFace) {
-                const vLo = orientation === 2 ? 0.5 : 0.0;
-                const vHi = orientation === 2 ? 1.0 : 0.5;
+                const vLo = halfOrientation === 2 ? 0.5 : 0.0;
+                const vHi = halfOrientation === 2 ? 1.0 : 0.5;
                 if (face.name === 'top' || face.name === 'bottom') {
                     uvs.push(0, vHi, 1, vHi, 1, vLo, 0, vLo);
                 } else {
