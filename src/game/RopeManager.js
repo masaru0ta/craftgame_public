@@ -174,7 +174,9 @@ class RopeManager {
         const lz = ((wz % 16) + 16) % 16;
         const ly = wy - chunk.chunkData.baseY;
         if (ly < 0 || ly >= 128) return;
-        chunk.chunkData.setBlock(lx, ly, lz, blockId);
+        // 既存のorientationを保持
+        const ori = chunk.chunkData.getOrientation(lx, ly, lz);
+        chunk.chunkData.setBlock(lx, ly, lz, blockId, ori);
     }
 
     /**
