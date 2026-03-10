@@ -426,10 +426,9 @@ class ChunkMeshBuilder {
                 // orientable: テクスチャ面をリマップ（物理面はそのまま）
                 const texFace = texRemap ? texRemap[faceName] : faceName;
                 // UV回転: rotatable/sidePlaceableブロックのみ適用
-                // +2ベースライン: top面のfront側をテクスチャ下端に合わせる
                 const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
                 const ori = isOrientable ? chunkData.getOrientation(x, y, z) : 0;
-                const uvRot = isOrientable ? (ori % 4 + 2) % 4 : 0;
+                const uvRot = ori % 4;
                 const key = `${blockStrId}:${faceName}:${texFace}:${uvRot}`;
                 if (!blockFacesMap.has(key)) {
                     blockFacesMap.set(key, { blockStrId, faceName, texFace, uvRot, faces: [] });
