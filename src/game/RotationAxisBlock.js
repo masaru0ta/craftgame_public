@@ -420,9 +420,9 @@ class RotationAxisManager {
                     if (blockDef && blockDef.shape_type === 'custom') {
                         // カスタムブロック: 0-23回転行列で変換
                         newOri = this._rotateOrientation(b.orientation, front, steps);
-                    } else if (blockDef && blockDef.orientable && b.orientation >= 0 && b.orientation <= 5) {
-                        // orientable標準ブロック: 方向ベクトルを回転して0-5に変換
-                        newOri = this._rotateOrientableOrientation(b.orientation, front, steps);
+                    } else if (blockDef && (blockDef.rotatable || blockDef.sidePlaceable)) {
+                        // rotatable/sidePlaceable ブロック: 0-23回転行列で変換
+                        newOri = this._rotateOrientation(b.orientation, front, steps);
                     } else {
                         newOri = 0;
                     }

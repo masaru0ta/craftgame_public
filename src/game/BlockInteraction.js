@@ -135,10 +135,8 @@ class BlockInteraction {
             (this._halfPlacementModes.get(this.hotbar ? this.hotbar.selectedSlot : 0) || false);
         if (isHalfMode) {
             orientation = this._calculateHalfOrientation(this.currentTarget.face);
-        } else if (selectedBlock.orientable) {
-            orientation = this._calculateOrientableOrientation(this.currentTarget.face);
-        } else if (selectedBlock.shape_type === 'custom') {
-            orientation = this._calculateOrientation(this.currentTarget, this.player.getYaw());
+        } else {
+            orientation = this._calculateBlockOrientation(selectedBlock, this.currentTarget, this.player.getYaw());
         }
 
         // 設置可否判定
@@ -150,7 +148,7 @@ class BlockInteraction {
             && !this._intersectsPlayer(ax, ay, az)
             && ay >= 0 && ay < 128;
 
-        this.placementPreview.update(this.currentTarget, selectedBlock, orientation, canPlace);
+        this.placementPreview.update(this.currentTarget, selectedBlock, orientation, canPlace, isHalfMode);
     }
 
     /**
@@ -267,12 +265,22 @@ class BlockInteraction {
             (this._halfPlacementModes.get(this.hotbar ? this.hotbar.selectedSlot : 0) || false);
         if (isHalfMode) {
             orientation = this._calculateHalfOrientation(target.face);
-        } else if (selectedBlock.orientable) {
-            orientation = this._calculateOrientableOrientation(target.face);
-        } else if (selectedBlock.shape_type === 'custom') {
-            orientation = this._calculateOrientation(target, this.player.getYaw());
+        } else {
+            orientation = this._calculateBlockOrientation(selectedBlock, target, this.player.getYaw());
         }
 
+        // ハーフモード時は placeBlock（メッシュ再構築含む）の前に shape を設定
+        if (isHalfMode) {
+            const cx = Math.floor(target.adjacentX / 16);
+            const cz = Math.floor(target.adjacentZ / 16);
+            const chunk = this.chunkManager.chunks.get(`${cx},${cz}`);
+            if (chunk && chunk.chunkData && typeof chunk.chunkData.setShape === 'function') {
+                const lx = ((target.adjacentX % 16) + 16) % 16;
+                const lz = ((target.adjacentZ % 16) + 16) % 16;
+                const ly = target.adjacentY - chunk.chunkData.baseY;
+                chunk.chunkData.setShape(lx, ly, lz, 'half');
+            }
+        }
         const placed = this.placeBlock(target.adjacentX, target.adjacentY, target.adjacentZ, selectedBlock.block_str_id, orientation);
         if (placed && this._onBlockPlaced) {
             this._onBlockPlaced(selectedBlock.block_str_id);
@@ -904,9 +912,69 @@ class BlockInteraction {
     }
 
     /**
-     * カスタムブロックの設置方向（orientation）を計算
-     * - 上面・下面: プレイヤーの視線方向で正面がプレイヤー側を向く
-     * - 側面: 面上のヒット位置（上/下/左/右）で正面方向が決まる
+     * ブロック定義のフラグ（rotatable/sidePlaceable）に基づいてorientを計算する統一メソッド
+     * カスタムブロックは暗黙的に両フラグONとして扱う
+     * @param {Object} blockDef - ブロック定義
+     * @param {Object} target - レイキャスト結果
+     * @param {number} playerYaw - プレイヤーのYaw角
+     * @returns {number} orient格納値 (0〜23)
+     */
+    _calculateBlockOrientation(blockDef, target, playerYaw) {
+        const isCustom = blockDef.shape_type === 'custom';
+        const rotatable = isCustom || blockDef.rotatable || false;
+        const sidePlaceable = isCustom || blockDef.sidePlaceable || false;
+
+        if (!rotatable && !sidePlaceable) {
+            return 0;
+        }
+
+        // sidePlaceable: クリック面からtopDirを決定
+        const face = BlockInteraction._FACE_TO_INT[target.face] || 0;
+        const topDir = sidePlaceable ? face : 0;
+
+        // rotation の決定
+        let rotation = 0;
+        if (rotatable) {
+            if (topDir <= 1) {
+                // 上面/下面設置時: プレイヤーyawからrotationを算出
+                rotation = this._rotationFromYaw(playerYaw, topDir);
+            } else if (isCustom) {
+                // カスタムブロックの側面: ヒット位置からrotationを決定
+                rotation = BlockInteraction._sideRotationFromHit(face, target);
+            }
+            // 通常ブロック側面設置時: rotation=0固定（front面が下を向く方向）
+        }
+
+        return topDir * 4 + rotation;
+    }
+
+    /**
+     * プレイヤーのyawからrotation(0〜3)を算出
+     * @param {number} playerYaw - Yaw角（ラジアン）
+     * @param {number} topDir - 0=上面, 1=下面
+     * @returns {number} rotation (0〜3)
+     */
+    _rotationFromYaw(playerYaw, topDir) {
+        const camDirX = -Math.sin(playerYaw);
+        const camDirZ = Math.cos(playerYaw);
+        const angle = Math.atan2(camDirX, camDirZ) * 180 / Math.PI;
+
+        let rotation;
+        if (angle >= -45 && angle < 45) rotation = 0;
+        else if (angle >= 45 && angle < 135) rotation = 1;
+        else if (angle >= -135 && angle < -45) rotation = 3;
+        else rotation = 2;
+
+        // 上面(topDir=0): 180度反転でプレイヤーの向き方向に正面を合わせる
+        // 下面(topDir=1): Rx(π)がZを反転するため、回転方向を逆にして補正
+        rotation = (topDir === 0) ? (rotation + 2) % 4 : (4 - rotation) % 4;
+
+        return rotation;
+    }
+
+    /**
+     * カスタムブロックの設置方向（orientation）を計算（後方互換用）
+     * _calculateBlockOrientation に統一されたが、外部参照があるため残す
      * @param {Object} target - レイキャスト結果（face, hitX, hitY, hitZ, adjacentX, adjacentY, adjacentZ）
      * @param {number} playerYaw - プレイヤーのYaw角（ラジアン、0=北/Z+方向）
      * @returns {number} orientation (0〜23)
@@ -983,19 +1051,14 @@ class BlockInteraction {
 
     /**
      * ハーフブロックの orientation を決定する
+     * クリック面の反対側にtopDirを設定（ハーフがクリック面に寄る配置）
+     * topDir * 4 形式で返す（shapeは呼び出し側で 'half' に設定）
      * @param {string} face - クリック面
-     * @returns {number} 101〜106（orientation）
+     * @returns {number} topDir * 4（0, 4, 8, 12, 16, 20）
      */
     _calculateHalfOrientation(face) {
-        switch (face) {
-            case 'top':    return 101; // 下ハーフ
-            case 'bottom': return 102; // 上ハーフ
-            case 'north':  return 103; // 南付き（-Z）
-            case 'south':  return 104; // 北付き（+Z）
-            case 'east':   return 105; // 西付き（-X）
-            case 'west':   return 106; // 東付き（+X）
-            default:       return 101;
-        }
+        const topDir = BlockInteraction._FACE_TO_INT[face] || 0;
+        return topDir * 4;
     }
 
     /**

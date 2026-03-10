@@ -102,8 +102,10 @@ function cacheElements() {
   elements.isTransparent = document.getElementById('isTransparent');
   elements.halfPlaceable = document.getElementById('halfPlaceable');
   elements.halfPlaceableGroup = document.getElementById('halfPlaceableGroup');
-  elements.orientable = document.getElementById('orientable');
-  elements.orientableGroup = document.getElementById('orientableGroup');
+  elements.rotatable = document.getElementById('rotatable');
+  elements.rotatableGroup = document.getElementById('rotatableGroup');
+  elements.sidePlaceable = document.getElementById('sidePlaceable');
+  elements.sidePlaceableGroup = document.getElementById('sidePlaceableGroup');
   elements.saveBlockBtn = document.getElementById('saveBlockBtn');
   elements.deleteBlockBtn = document.getElementById('deleteBlockBtn');
   elements.createBlockModal = document.getElementById('createBlockModal');
@@ -162,7 +164,8 @@ function setupEventListeners() {
   });
   elements.isTransparent.addEventListener('change', () => { state.isModified = true; });
   elements.halfPlaceable.addEventListener('change', () => { state.isModified = true; });
-  elements.orientable.addEventListener('change', () => { state.isModified = true; });
+  elements.rotatable.addEventListener('change', () => { state.isModified = true; });
+  elements.sidePlaceable.addEventListener('change', () => { state.isModified = true; });
 
   // 新規作成モーダル
   elements.createBlockModal.querySelector('.modal-close').addEventListener('click', closeCreateModal);
@@ -448,13 +451,15 @@ function selectBlock(blockId) {
     elements.lightLevel.value = block.light_level || 0;
     elements.isTransparent.checked = block.is_transparent || false;
     elements.halfPlaceable.checked = block.half_placeable || false;
-    elements.orientable.checked = block.orientable || false;
+    elements.rotatable.checked = block.rotatable || false;
+    elements.sidePlaceable.checked = block.sidePlaceable || false;
 
-    // ハーフ設置はnormalブロックのみ、設置方向可変はcustom以外で表示
+    // ハーフ設置・方角可変・側面設置はcustom以外で表示（カスタムは暗黙的にすべて有効）
     const isNormal = (block.shape_type || 'normal') === 'normal';
     const isCustom = (block.shape_type || 'normal') === 'custom';
     elements.halfPlaceableGroup.style.display = isNormal ? '' : 'none';
-    elements.orientableGroup.style.display = isCustom ? 'none' : '';
+    elements.rotatableGroup.style.display = isCustom ? 'none' : '';
+    elements.sidePlaceableGroup.style.display = isCustom ? 'none' : '';
 
     // BlockEditorUI にブロックをロード
     if (state.editorUI) {
@@ -481,7 +486,8 @@ function handleBlockTypeChange(e) {
 
     // チェックボックスの表示切り替え
     elements.halfPlaceableGroup.style.display = newType === 'normal' ? '' : 'none';
-    elements.orientableGroup.style.display = newType === 'custom' ? 'none' : '';
+    elements.rotatableGroup.style.display = newType === 'custom' ? 'none' : '';
+    elements.sidePlaceableGroup.style.display = newType === 'custom' ? 'none' : '';
 
     // BlockEditorUI を再ロード
     if (state.editorUI) {
@@ -508,7 +514,8 @@ async function saveBlock() {
     light_level: parseInt(elements.lightLevel.value) || 0,
     is_transparent: elements.isTransparent.checked,
     ...(elements.blockTypeSelect.value === 'normal' && { half_placeable: elements.halfPlaceable.checked }),
-    orientable: elements.orientable.checked,
+    ...(elements.blockTypeSelect.value !== 'custom' && { rotatable: elements.rotatable.checked }),
+    ...(elements.blockTypeSelect.value !== 'custom' && { sidePlaceable: elements.sidePlaceable.checked }),
   };
 
   // BlockEditorUIから形状データを取得してマージ

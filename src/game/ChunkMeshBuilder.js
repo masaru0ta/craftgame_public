@@ -379,18 +379,26 @@ class ChunkMeshBuilder {
                 return;
             }
 
-            // ハーフブロック: グリーディーメッシングから除外して個別描画
+            // ハーフブロック: shape='half' ならグリーディーメッシングから除外して個別描画
             if (blockDef && blockDef.half_placeable) {
-                const orientation = chunkData.getOrientation(x, y, z);
-                if (orientation >= 101 && orientation <= 106) {
-                    halfBlocks.push({ blockStrId, x, y, z, orientation: orientation - 100 });
+                const shape = typeof chunkData.getShape === 'function'
+                    ? chunkData.getShape(x, y, z)
+                    : 'normal';
+                if (shape === 'half') {
+                    const orient = chunkData.getOrientation(x, y, z);
+                    const topDir = Math.floor(orient / 4);
+                    // topDir → _buildHalfBlockAtlas用のorientation(1-6)に変換
+                    // topDir: 0=top,1=bottom,2=north,3=south,4=east,5=west
+                    // ハーフはクリック面側に寄る（topDirの反対側）
+                    const topDirToHalfOri = [1, 2, 3, 4, 5, 6];
+                    halfBlocks.push({ blockStrId, x, y, z, orientation: topDirToHalfOri[topDir] || 1 });
                     return;
                 }
             }
 
-            // orientable ブロックのテクスチャリマップ取得
+            // rotatable/sidePlaceable ブロックのテクスチャリマップ取得
             let texRemap = null;
-            if (blockDef && blockDef.orientable) {
+            if (blockDef && (blockDef.rotatable || blockDef.sidePlaceable)) {
                 const ori = chunkData.getOrientation(x, y, z);
                 texRemap = ChunkMeshBuilder._OrientableTexRemap[ori] || null;
             }
@@ -715,11 +723,13 @@ class ChunkMeshBuilder {
         // 水ブロック・カスタムブロックは透過扱い（面をカリングしない）
         if (neighbor === 'air' || neighbor === 'water' || neighbor === null) return false;
         if (this._isCustomBlock(neighbor)) return false;
-        // ハーフブロック（orientation 101-106）は面を隠しきれないのでカリングしない
-        const nOrientation = loc.chunk.getOrientation(loc.localX, loc.localY, loc.localZ);
-        if (nOrientation >= 101 && nOrientation <= 106) {
-            const neighborDef = this.textureLoader.getBlockDef(neighbor);
-            if (neighborDef && neighborDef.half_placeable) return false;
+        // ハーフブロック（shape='half'）は面を隠しきれないのでカリングしない
+        if (typeof loc.chunk.getShape === 'function') {
+            const nShape = loc.chunk.getShape(loc.localX, loc.localY, loc.localZ);
+            if (nShape === 'half') {
+                const neighborDef = this.textureLoader.getBlockDef(neighbor);
+                if (neighborDef && neighborDef.half_placeable) return false;
+            }
         }
         return true;
     }
@@ -728,22 +738,39 @@ class ChunkMeshBuilder {
      * 側面ハーフのテクスチャ面リマップ（物理面→テクスチャ面）
      * ブロックの底面が設置面に向く回転に対応
      */
-    // orientable ブロック（orientation 0-5）のテクスチャ面リマップ
-    // 物理面 → テクスチャ面（正しい3D回転に基づく）
-    // 座標系: right=X+, left=X-, top=Y+, bottom=Y-, front=Z-, back=Z+
-    static _OrientableTexRemap = {
-        // 0: デフォルト（top=Y+）リマップ不要
-        // 1: top=Y- Rz(180°): Y反転、X反転、Z不変
-        1: { top: 'bottom', bottom: 'top', front: 'front', back: 'back', left: 'right', right: 'left' },
-        // 2: top=Z+(北/back) Rx(90°): top→back, front→top, bottom→front, back→bottom
-        2: { top: 'front', bottom: 'back', front: 'bottom', back: 'top', left: 'left', right: 'right' },
-        // 3: top=Z-(南/front) Rx(-90°): top→front, back→top, bottom→back, front→bottom
-        3: { top: 'back', bottom: 'front', front: 'top', back: 'bottom', left: 'left', right: 'right' },
-        // 4: top=X+(東/right) Rz(-90°): top→right, left→top, bottom→left, right→bottom
-        4: { top: 'left', bottom: 'right', front: 'front', back: 'back', left: 'bottom', right: 'top' },
-        // 5: top=X-(西/left) Rz(+90°): top→left, right→top, bottom→right, left→bottom
-        5: { top: 'right', bottom: 'left', front: 'front', back: 'back', left: 'top', right: 'bottom' },
-    };
+    // orient(0-23) のテクスチャ面リマップ（ORIENTATION_MATRICES から自動生成）
+    // orient = topDir × 4 + rotation
+    // 物理面 → テクスチャ面（回転後の物理面にどの元テクスチャを表示するか）
+    static _OrientableTexRemap = (() => {
+        const faceNames = ['top', 'bottom', 'front', 'back', 'right', 'left'];
+        const faceNormals = {
+            top: [0, 1, 0], bottom: [0, -1, 0],
+            front: [0, 0, -1], back: [0, 0, 1],
+            right: [1, 0, 0], left: [-1, 0, 0],
+        };
+        const remap = {};
+        const matrices = ChunkMeshBuilder.ORIENTATION_MATRICES;
+        for (let orient = 1; orient < 24; orient++) {
+            const m = matrices[orient];
+            if (!m) continue;
+            const mapping = {};
+            for (const origFace of faceNames) {
+                const n = faceNormals[origFace];
+                const rx = Math.round(m[0] * n[0] + m[1] * n[1] + m[2] * n[2]);
+                const ry = Math.round(m[3] * n[0] + m[4] * n[1] + m[5] * n[2]);
+                const rz = Math.round(m[6] * n[0] + m[7] * n[1] + m[8] * n[2]);
+                for (const physFace of faceNames) {
+                    const pn = faceNormals[physFace];
+                    if (pn[0] === rx && pn[1] === ry && pn[2] === rz) {
+                        mapping[physFace] = origFace;
+                        break;
+                    }
+                }
+            }
+            remap[orient] = mapping;
+        }
+        return remap;
+    })();
 
     static _SideHalfTexRemap = {
         // orientation 3: 南付き(-Z) Rx(+90°)
@@ -1353,16 +1380,18 @@ class ChunkMeshBuilder {
         if (!loc) return 15;
         const light = loc.chunk.getLight(loc.localX, loc.localY, loc.localZ);
 
-        // ハーフブロック（orientation 101-106）は固体扱いで光レベルが 0 になるため、
+        // ハーフブロック（shape='half'）は固体扱いで光レベルが 0 になるため、
         // 上のブロックの光レベルとの最大値を使って面が真っ黒になるのを防ぐ。
-        const orientation = loc.chunk.getOrientation(loc.localX, loc.localY, loc.localZ);
-        if (orientation >= 101 && orientation <= 106 && ny + 1 < ChunkData.SIZE_Y) {
-            const block = loc.chunk.getBlock(loc.localX, loc.localY, loc.localZ);
-            const blockDef = block ? this.textureLoader.getBlockDef(block) : null;
-            if (blockDef && blockDef.half_placeable) {
-                const aboveLoc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, ny + 1, nz, neighborChunks);
-                if (aboveLoc) {
-                    return Math.max(light, aboveLoc.chunk.getLight(aboveLoc.localX, aboveLoc.localY, aboveLoc.localZ));
+        if (typeof loc.chunk.getShape === 'function' && ny + 1 < ChunkData.SIZE_Y) {
+            const nShape = loc.chunk.getShape(loc.localX, loc.localY, loc.localZ);
+            if (nShape === 'half') {
+                const block = loc.chunk.getBlock(loc.localX, loc.localY, loc.localZ);
+                const blockDef = block ? this.textureLoader.getBlockDef(block) : null;
+                if (blockDef && blockDef.half_placeable) {
+                    const aboveLoc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, ny + 1, nz, neighborChunks);
+                    if (aboveLoc) {
+                        return Math.max(light, aboveLoc.chunk.getLight(aboveLoc.localX, aboveLoc.localY, aboveLoc.localZ));
+                    }
                 }
             }
         }

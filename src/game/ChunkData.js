@@ -40,6 +40,10 @@ class ChunkData {
         // orientation格納（スパース管理: カスタムブロックのみ使用）
         // key: ボクセルインデックス, value: orientation(0-23)
         this._orientationMap = new Map();
+
+        // shape格納（スパース管理: ハーフブロック等の形状情報）
+        // key: ボクセルインデックス, value: 'half' など（'normal' はデフォルトのため格納しない）
+        this._shapeMap = new Map();
     }
 
     /**
@@ -205,6 +209,11 @@ class ChunkData {
         } else {
             this._orientationMap.set(index, orientation);
         }
+
+        // air設置時はshapeもクリア
+        if (blockStrId === 'air') {
+            this._shapeMap.delete(index);
+        }
     }
 
     /**
@@ -218,6 +227,36 @@ class ChunkData {
         if (!this._isInBounds(x, y, z)) return 0;
         const index = this._getIndex(x, y, z);
         return this._orientationMap.get(index) || 0;
+    }
+
+    /**
+     * ブロックの形状を取得
+     * @param {number} x - ローカルX座標 (0-15)
+     * @param {number} y - Y座標 (0-127)
+     * @param {number} z - ローカルZ座標 (0-15)
+     * @returns {string} shape（'normal' or 'half'、未設定は'normal'）
+     */
+    getShape(x, y, z) {
+        if (!this._isInBounds(x, y, z)) return 'normal';
+        const index = this._getIndex(x, y, z);
+        return this._shapeMap.get(index) || 'normal';
+    }
+
+    /**
+     * ブロックの形状を設定
+     * @param {number} x - ローカルX座標 (0-15)
+     * @param {number} y - Y座標 (0-127)
+     * @param {number} z - ローカルZ座標 (0-15)
+     * @param {string} shape - 形状（'normal' or 'half'）
+     */
+    setShape(x, y, z, shape) {
+        if (!this._isInBounds(x, y, z)) return;
+        const index = this._getIndex(x, y, z);
+        if (!shape || shape === 'normal') {
+            this._shapeMap.delete(index);
+        } else {
+            this._shapeMap.set(index, shape);
+        }
     }
 
     /**
@@ -378,6 +417,11 @@ class ChunkData {
             result.orientationData = Array.from(this._orientationMap.entries());
         }
 
+        // shapeMapが空でなければシリアライズ
+        if (this._shapeMap.size > 0) {
+            result.shapeData = Array.from(this._shapeMap.entries());
+        }
+
         return result;
     }
 
@@ -400,6 +444,11 @@ class ChunkData {
         // orientationData復元（後方互換: フィールドがなければ空Map）
         if (serialized.orientationData) {
             chunk._orientationMap = new Map(serialized.orientationData);
+        }
+
+        // shapeData復元（後方互換: フィールドがなければ空Map）
+        if (serialized.shapeData) {
+            chunk._shapeMap = new Map(serialized.shapeData);
         }
 
         return chunk;

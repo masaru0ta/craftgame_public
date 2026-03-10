@@ -97,8 +97,9 @@ class PlacementPreview {
      * @param {Object|null} selectedBlock - 選択中のブロック定義
      * @param {number} orientation - orientation値
      * @param {boolean} canPlace - 設置可能か
+     * @param {boolean} [isHalfMode=false] - ハーフブロックモードか
      */
-    update(raycastResult, selectedBlock, orientation, canPlace) {
+    update(raycastResult, selectedBlock, orientation, canPlace, isHalfMode = false) {
         if (!raycastResult || !raycastResult.hit || !selectedBlock) {
             this.hide();
             this._lastAdjacentKey = '';
@@ -120,12 +121,12 @@ class PlacementPreview {
             return;
         }
 
-        const newKey = `${selectedBlock.block_str_id}:${orientation}`;
+        const newKey = `${selectedBlock.block_str_id}:${orientation}:${isHalfMode ? 'half' : 'full'}`;
 
         // キャッシュキーが異なる場合のみメッシュ再生成
         if (newKey !== this._cacheKey) {
             this._removeMesh();
-            this._currentMesh = this._buildMesh(selectedBlock, orientation);
+            this._currentMesh = this._buildMesh(selectedBlock, orientation, isHalfMode);
             this._scene.add(this._currentMesh);
             this._cacheKey = newKey;
         }
@@ -170,9 +171,10 @@ class PlacementPreview {
      * メッシュを生成（THREE.Group: テクスチャメッシュ + ワイヤーフレーム）
      * @param {Object} blockDef - ブロック定義
      * @param {number} orientation - orientation値
+     * @param {boolean} [isHalfMode=false] - ハーフブロックモードか
      * @returns {THREE.Group}
      */
-    _buildMesh(blockDef, orientation) {
+    _buildMesh(blockDef, orientation, isHalfMode = false) {
         const positions = [];
         const normals = [];
         const uvs = [];
@@ -182,10 +184,14 @@ class PlacementPreview {
 
         if (blockDef.shape_type === 'custom' && blockDef.voxel_look) {
             vertexOffset = this._buildCustomMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
-        } else if (blockDef.half_placeable && orientation >= 101 && orientation <= 106) {
-            vertexOffset = this._buildHalfMesh(blockDef, orientation - 100, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        } else if (blockDef.half_placeable && isHalfMode) {
+            // topDir → _buildHalfMesh用のorientation(1-6)に変換
+            const topDir = Math.floor(orientation / 4);
+            const topDirToHalfOri = [1, 2, 3, 4, 5, 6];
+            const halfOri = topDirToHalfOri[topDir] || 1;
+            vertexOffset = this._buildHalfMesh(blockDef, halfOri, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         } else {
-            vertexOffset = this._buildFullMesh(blockDef, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+            vertexOffset = this._buildFullMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         }
 
         const geometry = new THREE.BufferGeometry();
@@ -228,8 +234,8 @@ class PlacementPreview {
     /**
      * フルブロック（1×1×1）のジオメトリを生成
      */
-    _buildFullMesh(blockDef, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
-        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), 0, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+    _buildFullMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
@@ -257,7 +263,8 @@ class PlacementPreview {
      */
     _buildBoxFaces(blockDef, faces, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
         const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
-            ? ChunkMeshBuilder._SideHalfTexRemap[orientation] : null;
+            ? (ChunkMeshBuilder._SideHalfTexRemap[orientation] || ChunkMeshBuilder._OrientableTexRemap[orientation] || null)
+            : null;
         for (const face of faces) {
             const texFace = texRemap ? texRemap[face.name] : face.name;
             const atlasUV = this._textureLoader.getAtlasUV(blockDef.block_str_id, texFace);

@@ -752,24 +752,27 @@ class PhysicsWorld {
             }];
         }
 
-        // ハーフブロック対応（half_placeable=true かつ orientation 101-106）
+        // ハーフブロック対応（shape='half' + topDir）
         if (blockDef.half_placeable && blockDef.shape_type !== 'custom') {
             const localX = ((blockX % 16) + 16) % 16;
             const localZ = ((blockZ % 16) + 16) % 16;
-            const rawOrientation = chunk.chunkData.getOrientation(localX, localY, localZ);
-            const orientation = rawOrientation - 100;
-            if (orientation >= 1 && orientation <= 6) {
+            const shape = typeof chunk.chunkData.getShape === 'function'
+                ? chunk.chunkData.getShape(localX, localY, localZ)
+                : 'normal';
+            if (shape === 'half') {
+                const rawOrientation = chunk.chunkData.getOrientation(localX, localY, localZ);
+                const topDir = Math.floor(rawOrientation / 4);
                 const aabb = {
                     minX: blockX, minY: blockY, minZ: blockZ,
                     maxX: blockX + 1, maxY: blockY + 1, maxZ: blockZ + 1
                 };
-                switch (orientation) {
-                    case 1: aabb.maxY = blockY + 0.5; break; // 下ハーフ
-                    case 2: aabb.minY = blockY + 0.5; break; // 上ハーフ
-                    case 3: aabb.maxZ = blockZ + 0.5; break; // 南付き（-Z）
-                    case 4: aabb.minZ = blockZ + 0.5; break; // 北付き（+Z）
-                    case 5: aabb.maxX = blockX + 0.5; break; // 西付き（-X）
-                    case 6: aabb.minX = blockX + 0.5; break; // 東付き（+X）
+                switch (topDir) {
+                    case 0: aabb.maxY = blockY + 0.5; break; // top面クリック → 下ハーフ
+                    case 1: aabb.minY = blockY + 0.5; break; // bottom面クリック → 上ハーフ
+                    case 2: aabb.maxZ = blockZ + 0.5; break; // north面クリック → 手前(-Z)側
+                    case 3: aabb.minZ = blockZ + 0.5; break; // south面クリック → 奥(+Z)側
+                    case 4: aabb.maxX = blockX + 0.5; break; // east面クリック → 手前(-X)側
+                    case 5: aabb.minX = blockX + 0.5; break; // west面クリック → 奥(+X)側
                 }
                 return [aabb];
             }
