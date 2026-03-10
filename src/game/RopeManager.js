@@ -141,7 +141,15 @@ class RopeManager {
             if (!target) continue;
 
             const ropeKey = this._ropeKey(wx, wy, wz, target.x, target.y, target.z);
-            if (this._dynamicRopes.has(ropeKey)) continue; // 既に登録済み
+            if (this._dynamicRopes.has(ropeKey)) {
+                // 既に片方が登録済み → もう片方がこのbodyならB側を更新
+                const entry = this._dynamicRopes.get(ropeKey);
+                if (!entry.bodyB && entry.bodyA !== body) {
+                    entry.bodyB = body;
+                    entry.rxB = b.rx; entry.ryB = b.ry; entry.rzB = b.rz;
+                }
+                continue;
+            }
 
             // 結び先が同じbody内か判定
             let bodyB = null, rxB = target.x, ryB = target.y, rzB = target.z;
