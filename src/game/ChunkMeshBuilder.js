@@ -51,9 +51,6 @@ class ChunkMeshBuilder {
         { name: 'left',  dx:-1, dz:  0, normal:[-1, 0,  0] },
     ];
 
-    /** orientation(0〜23)に対応する3x3回転行列テーブル（BlockOrientation に委譲） */
-    static ORIENTATION_MATRICES = BlockOrientation.Matrices;
-
     // LoD0シェーダーと同じライティングパラメータ（方向性ライティング）
     static LIGHT_AMBIENT = 0.4;
     static LIGHT_DIRECTIONAL = 1.0;
@@ -683,12 +680,6 @@ class ChunkMeshBuilder {
      * 側面ハーフのテクスチャ面リマップ（物理面→テクスチャ面）
      * ブロックの底面が設置面に向く回転に対応
      */
-    /** orient(0-23) のテクスチャ面リマップ（BlockOrientation に委譲） */
-    static _OrientableTexRemap = BlockOrientation.TexRemap;
-
-    /** orient(0-23) × 物理面 → UV回転量(0-3)（BlockOrientation に委譲） */
-    static _OrientableUVRot = BlockOrientation.UVRot;
-
     static _SideHalfTexRemap = {
         // orientation 3: 南付き(-Z) Rx(+90°)
         3: { top: 'front', bottom: 'back', front: 'bottom', back: 'top', left: 'left', right: 'right' },
@@ -1487,7 +1478,7 @@ class ChunkMeshBuilder {
      * @param {number} orientation - 向き値（0〜23）
      */
     _applyOrientationToVertices(positions, normals, startIdx, endIdx, cx, cy, cz, orientation) {
-        const m = ChunkMeshBuilder.ORIENTATION_MATRICES[orientation];
+        const m = BlockOrientation.Matrices[orientation];
         if (!m) return;
 
         for (let i = startIdx; i < endIdx; i++) {
