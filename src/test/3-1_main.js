@@ -247,6 +247,7 @@ class GameTestApp {
         // ロープ管理初期化
         if (typeof RopeManager !== 'undefined') {
             this.ropeManager = new RopeManager(this.chunkManager, this.worldContainer);
+            this.blockInteraction.ropeManager = this.ropeManager;
         }
 
         // 移動ブロック管理初期化

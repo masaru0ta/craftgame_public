@@ -119,6 +119,11 @@ class BlockInteraction {
             this.placementPreview.hide();
             return;
         }
+        // ロープ選択時にポールをターゲット → ゴースト非表示
+        if (targetBlockId === 'pole' && selectedBlock && selectedBlock.block_str_id === 'rope') {
+            this.placementPreview.hide();
+            return;
+        }
         // rotorは穴面以外（操作面）ならゴースト非表示
         if (RotationAxisManager._ROTOR_IDS.has(targetBlockId) && this.rotationAxisManager) {
             const rotorOri = this.physicsWorld.getOrientationAt(
@@ -242,6 +247,23 @@ class BlockInteraction {
 
         const selectedBlock = this.hotbar.getSelectedBlock();
         if (!selectedBlock) return false;
+
+        // ロープ選択時 → ポールクリックでロープ接続
+        if (selectedBlock.block_str_id === 'rope' && this.ropeManager) {
+            if (targetBlockId === 'pole') {
+                if (this.ropeManager.IsPending()) {
+                    this.ropeManager.CompleteConnection(target.blockX, target.blockY, target.blockZ);
+                } else {
+                    this.ropeManager.StartConnection(target.blockX, target.blockY, target.blockZ);
+                }
+                return true;
+            }
+            // ポール以外をクリック → 接続待ちキャンセル
+            if (this.ropeManager.IsPending()) {
+                this.ropeManager.CancelConnection();
+            }
+            return false;
+        }
 
         // バケツ選択時 → 水汲み取りチェック
         if (selectedBlock.block_str_id === 'bucket') {
@@ -404,6 +426,11 @@ class BlockInteraction {
         // 回転軸ブロック破壊時は回転体を解除
         if (RotationAxisManager._ROTOR_IDS.has(currentBlock) && this.rotationAxisManager) {
             this.rotationAxisManager.OnAxisDestroyed(x, y, z);
+        }
+
+        // ロープ付きポール破壊時は結び先を復元
+        if (currentBlock === 'pole_with_rope' && this.ropeManager) {
+            this.ropeManager.OnPoleDestroyed(x, y, z);
         }
 
         // ブロックをairに置換
