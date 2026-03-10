@@ -1109,7 +1109,11 @@ class ChunkMeshBuilder {
      */
     _addTilingUVs(uvs, faceName, uScale, vScale, uvRot = 0) {
         if (faceName === 'top' || faceName === 'bottom') {
-            const baseUVs = [[0, vScale], [uScale, vScale], [uScale, 0], [0, 0]];
+            // 90°/270° 回転時はU/Vスケールを交換（タイリング方向を正しく保つ）
+            const swap = (uvRot === 1 || uvRot === 3);
+            const u = swap ? vScale : uScale;
+            const v = swap ? uScale : vScale;
+            const baseUVs = [[0, v], [u, v], [u, 0], [0, 0]];
             // top: rotation分シフト、bottom: 逆方向シフト
             // ベースライン補正(+2)は呼び出し側のuvRot計算に含まれている
             const shift = faceName === 'top' ? uvRot : (4 - uvRot) % 4;
