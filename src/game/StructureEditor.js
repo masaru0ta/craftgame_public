@@ -685,7 +685,6 @@ class StructureEditor extends VoxelEditorBase {
     else rotation = 2;
 
     // front=Z-基準: camDirは視線方向の逆なので+2で補正
-    // （BlockInteraction._rotationFromYaw topDir=0 と同じ結果になる）
     rotation = (rotation + 2) % 4;
 
     return face * 4 + rotation;
