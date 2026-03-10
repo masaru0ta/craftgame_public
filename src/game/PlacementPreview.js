@@ -238,7 +238,9 @@ class PlacementPreview {
         const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
             ? (ChunkMeshBuilder._OrientableTexRemap[orientation] || null)
             : null;
-        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), null, texRemap, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        // Y軸回転によるUV回転（rotation = orient % 4）
+        const uvRotation = orientation % 4;
+        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), null, texRemap, uvRotation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
@@ -261,7 +263,7 @@ class PlacementPreview {
         const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
             ? (ChunkMeshBuilder._SideHalfTexRemap[orientation] || null)
             : null;
-        return this._buildBoxFaces(blockDef, faces, orientation, texRemap, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        return this._buildBoxFaces(blockDef, faces, orientation, texRemap, 0, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
@@ -270,8 +272,9 @@ class PlacementPreview {
     /**
      * @param {number|null} halfOrientation - ハーフブロックの向き(1-6)。フルブロック時はnull
      * @param {Object|null} texRemap - テクスチャリマップ。呼び出し元で決定済み
+     * @param {number} uvRotation - UV回転（0-3、Y軸回転に対応）
      */
-    _buildBoxFaces(blockDef, faces, halfOrientation, texRemap, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+    _buildBoxFaces(blockDef, faces, halfOrientation, texRemap, uvRotation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
         for (const face of faces) {
             const texFace = texRemap ? texRemap[face.name] : face.name;
             const atlasUV = this._textureLoader.getAtlasUV(blockDef.block_str_id, texFace);
@@ -298,7 +301,7 @@ class PlacementPreview {
                     uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
                 }
             } else {
-                this._addFaceUVs(uvs, face.name);
+                this._addFaceUVs(uvs, face.name, uvRotation);
             }
             this._addQuadIndices(indices, vertexOffset);
             vertexOffset += 4;
@@ -410,9 +413,18 @@ class PlacementPreview {
     /**
      * 面のUV座標を追加（top/bottom/側面の標準パターン）
      */
-    _addFaceUVs(uvs, faceName) {
+    _addFaceUVs(uvs, faceName, uvRotation = 0) {
         if (faceName === 'top' || faceName === 'bottom') {
-            uvs.push(0, 1, 1, 1, 1, 0, 0, 0);
+            const baseUVs = [[0,1], [1,1], [1,0], [0,0]];
+            // top: front側をテクスチャ下端(v=0)に合わせるため+2のベースライン補正
+            // bottom: デフォルトで既にfront=v=0なので補正不要
+            const shift = faceName === 'top'
+                ? (uvRotation + 2) % 4
+                : (4 - uvRotation) % 4;
+            for (let i = 0; i < 4; i++) {
+                const uv = baseUVs[(i + shift) % 4];
+                uvs.push(uv[0], uv[1]);
+            }
         } else {
             uvs.push(1, 0, 0, 0, 0, 1, 1, 1);
         }

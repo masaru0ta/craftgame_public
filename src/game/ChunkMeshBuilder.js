@@ -425,9 +425,12 @@ class ChunkMeshBuilder {
 
                 // orientable: テクスチャ面をリマップ（物理面はそのまま）
                 const texFace = texRemap ? texRemap[faceName] : faceName;
-                const key = `${blockStrId}:${faceName}:${texFace}`;
+                // UV回転: rotatable/sidePlaceableブロックのtop/bottom面はrotation分回転
+                const ori = (texRemap) ? chunkData.getOrientation(x, y, z) : 0;
+                const uvRot = ori % 4;
+                const key = `${blockStrId}:${faceName}:${texFace}:${uvRot}`;
                 if (!blockFacesMap.has(key)) {
-                    blockFacesMap.set(key, { blockStrId, faceName, texFace, faces: [] });
+                    blockFacesMap.set(key, { blockStrId, faceName, texFace, uvRot, faces: [] });
                 }
                 blockFacesMap.get(key).faces.push({ x, y, z, faceName, light, ao });
             }
@@ -437,18 +440,18 @@ class ChunkMeshBuilder {
         let vertexOffset = 0;
 
         for (const [key, groupData] of blockFacesMap) {
-            const { blockStrId, faceName, texFace, faces } = groupData;
+            const { blockStrId, faceName, texFace, uvRot, faces } = groupData;
             const textureFace = texFace || faceName;
 
             if (greedy) {
                 // グリーディー・メッシング（アトラスUV対応、タイリングシェーダー使用）
                 vertexOffset = this._greedyMeshDirectionAtlas(
-                    faces, faceName, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevels, textureFace
+                    faces, faceName, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevels, textureFace, uvRot
                 );
             } else {
                 // 通常のメッシュ生成（アトラスUV対応）
                 vertexOffset = this._buildSimpleMeshAtlas(
-                    faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevels, textureFace
+                    faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevels, textureFace, uvRot
                 );
             }
         }
@@ -892,7 +895,7 @@ class ChunkMeshBuilder {
     /**
      * アトラスUV対応の通常メッシュ生成
      */
-    _buildSimpleMeshAtlas(faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevelsArr, textureFace) {
+    _buildSimpleMeshAtlas(faces, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevelsArr, textureFace, uvRot = 0) {
         for (const face of faces) {
             const corners = this._getFaceCorners(face.x, face.y, face.z, face.faceName, 1, 1);
             const faceInfo = ChunkMeshBuilder.FACES[face.faceName];
@@ -917,7 +920,7 @@ class ChunkMeshBuilder {
             }
 
             // UV追加（0-1の範囲、タイリングなし）
-            this._addTilingUVs(uvs, face.faceName, 1, 1);
+            this._addTilingUVs(uvs, face.faceName, 1, 1, uvRot);
 
             // インデックス追加（AO対角線フリップ対応）
             ChunkMeshBuilder._addQuadIndices(indices, vertexOffset, ao);
@@ -1002,7 +1005,7 @@ class ChunkMeshBuilder {
      * カスタムシェーダーでfract()を使ってタイリングを実現
      * マージした面を1つのクワッドとして描画（頂点数削減）
      */
-    _greedyMeshDirectionAtlas(faces, faceName, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevelsArr, textureFace) {
+    _greedyMeshDirectionAtlas(faces, faceName, blockStrId, positions, normals, uvs, atlasInfos, indices, vertexOffset, lightLevels, aoLevelsArr, textureFace, uvRot = 0) {
         const faceInfo = ChunkMeshBuilder.FACES[faceName];
 
         // アトラスUV情報を取得（textureFace でリマップ対応）
@@ -1084,9 +1087,9 @@ class ChunkMeshBuilder {
 
                 // タイリングUV追加（タイル数分のUV座標: 0-width, 0-height）
                 if (faceName === 'left' || faceName === 'right') {
-                    this._addTilingUVs(uvs, faceName, meshHeight, meshWidth);
+                    this._addTilingUVs(uvs, faceName, meshHeight, meshWidth, uvRot);
                 } else {
-                    this._addTilingUVs(uvs, faceName, meshWidth, meshHeight);
+                    this._addTilingUVs(uvs, faceName, meshWidth, meshHeight, uvRot);
                 }
 
                 // インデックス追加（AO対角線フリップ対応）
@@ -1102,14 +1105,18 @@ class ChunkMeshBuilder {
     /**
      * タイリング用UV座標を追加（0-N の範囲でシェーダーが fract() でタイリング）
      */
-    _addTilingUVs(uvs, faceName, uScale, vScale) {
+    _addTilingUVs(uvs, faceName, uScale, vScale, uvRot = 0) {
         if (faceName === 'top' || faceName === 'bottom') {
-            uvs.push(
-                0, vScale,
-                uScale, vScale,
-                uScale, 0,
-                0, 0
-            );
+            const baseUVs = [[0, vScale], [uScale, vScale], [uScale, 0], [0, 0]];
+            // top: front側をテクスチャ下端(v=0)に合わせるため+2のベースライン補正
+            // bottom: デフォルトで既にfront=v=0なので補正不要
+            const shift = faceName === 'top'
+                ? (uvRot + 2) % 4
+                : (4 - uvRot) % 4;
+            for (let i = 0; i < 4; i++) {
+                const uv = baseUVs[(i + shift) % 4];
+                uvs.push(uv[0], uv[1]);
+            }
         } else {
             // front, back, right, left はすべて同じUVパターン
             uvs.push(
