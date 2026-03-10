@@ -147,6 +147,8 @@ class RotationAxisManager {
         this._bodiesCacheDirty = true;
         // 座標変換用の再利用オブジェクト
         this._tmpVec = { x: 0, y: 0, z: 0 };
+        // RopeManager参照（外部から設定）
+        this.ropeManager = null;
     }
 
     /**
@@ -355,6 +357,11 @@ class RotationAxisManager {
                 }
             }
         }
+
+        // ロープ動的追従通知
+        if (this.ropeManager) {
+            this.ropeManager.NotifyBodyCreated(body);
+        }
     }
 
     /**
@@ -472,6 +479,11 @@ class RotationAxisManager {
         if (!currentAxisBlock || currentAxisBlock === 'air') {
             this._setBlockAt(wx, wy, wz, body._axisBlockId, body._orientation);
             this._updateLight(wx, wy, wz, false);
+        }
+
+        // ロープ動的追従解除通知
+        if (this.ropeManager) {
+            this.ropeManager.NotifyBodyDissolved(body);
         }
 
         // メッシュ削除

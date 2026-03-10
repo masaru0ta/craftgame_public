@@ -248,6 +248,10 @@ class GameTestApp {
         if (typeof RopeManager !== 'undefined') {
             this.ropeManager = new RopeManager(this.chunkManager, this.worldContainer);
             this.blockInteraction.ropeManager = this.ropeManager;
+            if (this.rotationAxisManager) {
+                this.ropeManager._rotationAxisManager = this.rotationAxisManager;
+                this.rotationAxisManager.ropeManager = this.ropeManager;
+            }
         }
 
         // 移動ブロック管理初期化
@@ -1234,6 +1238,11 @@ class GameTestApp {
         // 回転軸ブロック更新
         if (this.rotationAxisManager) {
             this.rotationAxisManager.Update(this.deltaTime);
+        }
+
+        // ロープ動的更新
+        if (this.ropeManager) {
+            this.ropeManager.Update(this.deltaTime);
         }
 
         // 移動ブロック更新
