@@ -268,6 +268,9 @@ class GameTestApp {
                 this.chunkManager, this.worldContainer, this.textureLoader, this.ropeManager
             );
             this.blockInteraction.ropeWayManager = this.ropeWayManager;
+            if (this.physicsWorld) {
+                this.physicsWorld.ropeWayManager = this.ropeWayManager;
+            }
         }
 
         // ホットバーに最初の9ブロックを自動設定

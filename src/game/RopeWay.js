@@ -73,6 +73,32 @@ class RopeWayManager {
         return this._bodiesCache;
     }
 
+    /**
+     * 移動体のブロック現在ワールドAABBリストを返す（プレイヤーAABB範囲でフィルタ）
+     * @param {RopeWayBody} body - 移動体
+     * @param {{minX:number,minY:number,minZ:number,maxX:number,maxY:number,maxZ:number}} playerAABB
+     * @returns {Array<{minX:number,minY:number,minZ:number,maxX:number,maxY:number,maxZ:number}>}
+     */
+    GetCollidingBlocks(body, playerAABB) {
+        const progress = body._totalDistance > 0 ? body._displacement / body._totalDistance : 0;
+        const offX = body._moveVector.x * progress;
+        const offY = body._moveVector.y * progress;
+        const offZ = body._moveVector.z * progress;
+        const result = [];
+        for (const b of body._blocks) {
+            const bx = body._originX + b.rx + offX;
+            const by = body._originY + b.ry + offY;
+            const bz = body._originZ + b.rz + offZ;
+            const blockAABB = { minX: bx, minY: by, minZ: bz, maxX: bx + 1, maxY: by + 1, maxZ: bz + 1 };
+            if (blockAABB.minX < playerAABB.maxX && blockAABB.maxX > playerAABB.minX &&
+                blockAABB.minY < playerAABB.maxY && blockAABB.maxY > playerAABB.minY &&
+                blockAABB.minZ < playerAABB.maxZ && blockAABB.maxZ > playerAABB.minZ) {
+                result.push(blockAABB);
+            }
+        }
+        return result;
+    }
+
     GetBodyAt(wx, wy, wz) {
         return this._bodies.get(`${wx},${wy},${wz}`) || null;
     }

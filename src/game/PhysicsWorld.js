@@ -22,6 +22,9 @@ class PhysicsWorld {
         // 回転軸マネージャーへの参照（セッターで設定）
         this.rotationAxisManager = null;
 
+        // ロープウェイマネージャーへの参照（セッターで設定）
+        this.ropeWayManager = null;
+
         // ステップアップの最大高さ（0.5ブロック以下の段差を瞬時に乗り越える）
         this.stepUpMaxHeight = 0.5;
 
@@ -79,11 +82,17 @@ class PhysicsWorld {
         // 回転体との衝突判定・押し出し
         this._resolveRotationBodyCollision(player);
 
-        // 接地判定を更新（回転体上も考慮）
+        // ロープウェイ移動体との衝突判定・押し出し
+        this._resolveRopeWayCollision(player);
+
+        // 接地判定を更新（回転体上 + 移動体上も考慮）
         player.setOnGround(this.isOnGround(player));
 
         // 回転体上のプレイヤー追従（Y軸回転のみ）
         this._applyRotationBodyRide(player, deltaTime);
+
+        // ロープウェイ移動体上のプレイヤー追従
+        this._applyRopeWayRide(player, deltaTime);
     }
 
     /**
@@ -425,6 +434,11 @@ class PhysicsWorld {
             return true;
         }
 
+        // 移動体ブロック上の接地判定
+        if (this._isOnRopeWayBody(checkAABB)) {
+            return true;
+        }
+
         return false;
     }
 
@@ -662,6 +676,186 @@ class PhysicsWorld {
 
         // 脱出失敗: 元の位置に戻す（次フレームで再試行）
         player.setPosition(pos.x, pos.y, pos.z);
+    }
+
+    // === ロープウェイ移動体との衝突・追従 ===
+
+    /**
+     * ロープウェイ移動体との衝突判定・押し出し
+     * @param {Player} player
+     */
+    _resolveRopeWayCollision(player) {
+        const rwm = this.ropeWayManager;
+        if (!rwm) return;
+
+        const bodies = rwm.GetAllBodies();
+        if (bodies.length === 0) return;
+
+        const halfWidth = Player.WIDTH / 2;
+        const height = player.getHeight();
+        const halfHeight = height / 2;
+
+        for (const body of bodies) {
+            const playerAABB = player.getAABB();
+            const collidingBlocks = rwm.GetCollidingBlocks(body, playerAABB);
+            if (collidingBlocks.length === 0) continue;
+
+            const pos = player.getPosition();
+            let pMinX = pos.x - halfWidth;
+            let pMinY = pos.y;
+            let pMaxX = pos.x + halfWidth;
+            let pMaxY = pos.y + height;
+            let pMinZ = pos.z - halfWidth;
+            let pMaxZ = pos.z + halfWidth;
+
+            for (const blockAABB of collidingBlocks) {
+                // 再チェック
+                if (!(pMinX < blockAABB.maxX && pMaxX > blockAABB.minX &&
+                      pMinY < blockAABB.maxY && pMaxY > blockAABB.minY &&
+                      pMinZ < blockAABB.maxZ && pMaxZ > blockAABB.minZ)) continue;
+
+                // 6方向のめり込み量
+                const overlapXp = blockAABB.maxX - pMinX;
+                const overlapXn = pMaxX - blockAABB.minX;
+                const overlapYp = blockAABB.maxY - pMinY;
+                const overlapYn = pMaxY - blockAABB.minY;
+                const overlapZp = blockAABB.maxZ - pMinZ;
+                const overlapZn = pMaxZ - blockAABB.minZ;
+
+                let minOverlap = overlapXp;
+                let axis = 0;
+                if (overlapXn < minOverlap) { minOverlap = overlapXn; axis = 1; }
+                if (overlapYp < minOverlap) { minOverlap = overlapYp; axis = 2; }
+                if (overlapYn < minOverlap) { minOverlap = overlapYn; axis = 3; }
+                if (overlapZp < minOverlap) { minOverlap = overlapZp; axis = 4; }
+                if (overlapZn < minOverlap) { minOverlap = overlapZn; axis = 5; }
+
+                switch (axis) {
+                    case 0: pMinX += minOverlap; pMaxX += minOverlap; break;
+                    case 1: pMinX -= minOverlap; pMaxX -= minOverlap; break;
+                    case 2: pMinY += minOverlap; pMaxY += minOverlap; break;
+                    case 3: pMinY -= minOverlap; pMaxY -= minOverlap; break;
+                    case 4: pMinZ += minOverlap; pMaxZ += minOverlap; break;
+                    case 5: pMinZ -= minOverlap; pMaxZ -= minOverlap; break;
+                }
+            }
+
+            const newX = (pMinX + pMaxX) / 2;
+            const newY = pMinY;
+            const newZ = (pMinZ + pMaxZ) / 2;
+            player.setPosition(newX, newY, newZ);
+
+            // 挟まれ防止: 地形との衝突チェック
+            this._resolveRopeWaySqueezeEscape(player, rwm, bodies);
+        }
+    }
+
+    /**
+     * ロープウェイ移動体での挟まれ防止: 押し出し後に地形にめり込んでいたら上方向に脱出
+     * @param {Player} player
+     * @param {RopeWayManager} rwm
+     * @param {Array<RopeWayBody>} bodies
+     */
+    _resolveRopeWaySqueezeEscape(player, rwm, bodies) {
+        const playerAABB = player.getAABB();
+        const terrainBlocks = this._getCollidingBlocks(playerAABB);
+        let squeezed = false;
+        for (const blockAABB of terrainBlocks) {
+            if (this._aabbIntersects(playerAABB, blockAABB)) {
+                squeezed = true;
+                break;
+            }
+        }
+        if (!squeezed) return;
+
+        const pos = player.getPosition();
+        for (let step = 1; step <= 10; step++) {
+            const tryY = pos.y + step * 0.5;
+            player.setPosition(pos.x, tryY, pos.z);
+
+            const tryAABB = player.getAABB();
+            const tryTerrain = this._getCollidingBlocks(tryAABB);
+            let terrainClear = true;
+            for (const blockAABB of tryTerrain) {
+                if (this._aabbIntersects(tryAABB, blockAABB)) {
+                    terrainClear = false;
+                    break;
+                }
+            }
+            if (!terrainClear) continue;
+
+            // 移動体チェック
+            let ropeWayClear = true;
+            for (const body of bodies) {
+                const colBlocks = rwm.GetCollidingBlocks(body, tryAABB);
+                if (colBlocks.length > 0) {
+                    ropeWayClear = false;
+                    break;
+                }
+            }
+            if (ropeWayClear) return; // 脱出成功
+        }
+
+        // 脱出失敗: 元の位置に戻す
+        player.setPosition(pos.x, pos.y, pos.z);
+    }
+
+    /**
+     * 移動体ブロック上の接地判定
+     * @param {{minX:number,minY:number,minZ:number,maxX:number,maxY:number,maxZ:number}} checkAABB
+     * @returns {boolean}
+     */
+    _isOnRopeWayBody(checkAABB) {
+        const rwm = this.ropeWayManager;
+        if (!rwm) return false;
+
+        const bodies = rwm.GetAllBodies();
+        for (const body of bodies) {
+            const colBlocks = rwm.GetCollidingBlocks(body, checkAABB);
+            if (colBlocks.length > 0) return true;
+        }
+        return false;
+    }
+
+    /**
+     * ロープウェイ移動体上のプレイヤー追従
+     * @param {Player} player
+     * @param {number} deltaTime
+     */
+    _applyRopeWayRide(player, deltaTime) {
+        if (!player.isOnGround() || player.isFlying()) return;
+
+        const rwm = this.ropeWayManager;
+        if (!rwm) return;
+
+        const bodies = rwm.GetAllBodies();
+        if (bodies.length === 0) return;
+
+        const pos = player.getPosition();
+        const halfWidth = Player.WIDTH / 2;
+        const checkAABB = {
+            minX: pos.x - halfWidth,
+            minY: pos.y - this.groundCheckDistance,
+            minZ: pos.z - halfWidth,
+            maxX: pos.x + halfWidth,
+            maxY: pos.y,
+            maxZ: pos.z + halfWidth
+        };
+
+        for (const body of bodies) {
+            if (!body.isMoving) continue;
+            const colBlocks = rwm.GetCollidingBlocks(body, checkAABB);
+            if (colBlocks.length === 0) continue;
+
+            // 1フレームの移動差分
+            const moveDelta = body._speed * deltaTime / body._totalDistance;
+            const dx = body._moveVector.x * moveDelta;
+            const dy = body._moveVector.y * moveDelta;
+            const dz = body._moveVector.z * moveDelta;
+
+            player.setPosition(pos.x + dx, pos.y + dy, pos.z + dz);
+            return; // 最初に見つかった移動体で追従
+        }
     }
 
     /**
