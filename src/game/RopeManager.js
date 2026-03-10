@@ -125,35 +125,74 @@ class RopeManager {
     }
 
     /**
+     * ポール座標のロープメッシュを正しい位置に復元
+     */
+    RepositionRopeAt(wx, wy, wz) {
+        const target = this._connections.get(`${wx},${wy},${wz}`);
+        if (!target) return;
+        const meshKey = this._ropeKey(wx, wy, wz, target.x, target.y, target.z);
+        const mesh = this._meshes.get(meshKey);
+        if (mesh) {
+            this._updateRopeMesh(mesh,
+                wx + 0.5, wy + 0.5, wz + 0.5,
+                target.x + 0.5, target.y + 0.5, target.z + 0.5);
+        }
+    }
+
+    /**
      * 回転体解除後の接続座標更新 — ブロック移動に伴い_connectionsとメッシュを更新
      */
     OnEndpointsMoved(moves) {
+        // バッチ処理: 全移動のスナップショットを先に取り、一括で更新する
+        // （逐次処理だと、ポールAの新座標がポールBの旧座標と重なる場合に
+        //   _connectionsの参照が壊れる）
+
+        // 1. oldKey→newKey マッピングと、移動前の接続先スナップショットを構築
+        const oldToNew = new Map();  // oldKey → {newX, newY, newZ}
+        const snapshots = [];       // {oldKey, newKey, target} の配列
         for (const m of moves) {
             const oldKey = `${m.oldX},${m.oldY},${m.oldZ}`;
             const target = this._connections.get(oldKey);
             if (!target) continue;
-
             const newKey = `${m.newX},${m.newY},${m.newZ}`;
-            this._connections.delete(oldKey);
-            this._connections.set(newKey, { x: target.x, y: target.y, z: target.z });
+            oldToNew.set(oldKey, { x: m.newX, y: m.newY, z: m.newZ });
+            snapshots.push({ oldKey, newKey, target: { x: target.x, y: target.y, z: target.z }, move: m });
+        }
+        if (snapshots.length === 0) return;
 
-            // 相手側の接続先も更新
-            const targetKey = `${target.x},${target.y},${target.z}`;
-            const partnerConn = this._connections.get(targetKey);
-            if (partnerConn && partnerConn.x === m.oldX && partnerConn.y === m.oldY && partnerConn.z === m.oldZ) {
-                this._connections.set(targetKey, { x: m.newX, y: m.newY, z: m.newZ });
+        // 2. 旧エントリを一括削除
+        for (const s of snapshots) {
+            this._connections.delete(s.oldKey);
+        }
+
+        // 3. 新エントリを一括登録（接続先も移動している場合は新座標を使用）
+        for (const s of snapshots) {
+            const targetKey = `${s.target.x},${s.target.y},${s.target.z}`;
+            const targetMoved = oldToNew.get(targetKey);
+            const finalTarget = targetMoved
+                ? { x: targetMoved.x, y: targetMoved.y, z: targetMoved.z }
+                : { x: s.target.x, y: s.target.y, z: s.target.z };
+            this._connections.set(s.newKey, finalTarget);
+
+            // 相手が移動しない場合のみ、相手側の接続先を更新
+            if (!targetMoved) {
+                const partnerConn = this._connections.get(targetKey);
+                if (partnerConn && partnerConn.x === s.move.oldX && partnerConn.y === s.move.oldY && partnerConn.z === s.move.oldZ) {
+                    this._connections.set(targetKey, { x: s.move.newX, y: s.move.newY, z: s.move.newZ });
+                }
             }
 
             // ロープメッシュのキーを更新
-            const oldMeshKey = this._ropeKey(m.oldX, m.oldY, m.oldZ, target.x, target.y, target.z);
-            const newMeshKey = this._ropeKey(m.newX, m.newY, m.newZ, target.x, target.y, target.z);
+            const finalTargetPos = this._connections.get(s.newKey);
+            const oldMeshKey = this._ropeKey(s.move.oldX, s.move.oldY, s.move.oldZ, s.target.x, s.target.y, s.target.z);
+            const newMeshKey = this._ropeKey(s.move.newX, s.move.newY, s.move.newZ, finalTargetPos.x, finalTargetPos.y, finalTargetPos.z);
             const mesh = this._meshes.get(oldMeshKey);
             if (mesh) {
                 this._meshes.delete(oldMeshKey);
                 this._meshes.set(newMeshKey, mesh);
                 this._updateRopeMesh(mesh,
-                    m.newX + 0.5, m.newY + 0.5, m.newZ + 0.5,
-                    target.x + 0.5, target.y + 0.5, target.z + 0.5);
+                    s.move.newX + 0.5, s.move.newY + 0.5, s.move.newZ + 0.5,
+                    finalTargetPos.x + 0.5, finalTargetPos.y + 0.5, finalTargetPos.z + 0.5);
             }
         }
     }

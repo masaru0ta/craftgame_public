@@ -450,10 +450,13 @@ class RotationAxisManager {
         for (const childKey of childKeys) {
             const child = this._bodies.get(childKey);
             if (!child) continue;
-            // ブロック相対座標を親の回転で補正
+            // ブロック相対座標とorientationを親の回転で補正
             for (const b of child._blocks) {
                 const r = this._rotate90(b.rx, b.ry, b.rz, front, steps);
                 b.rx = r.x; b.ry = r.y; b.rz = r.z;
+                if (steps !== 0) {
+                    b.orientation = this._calcRestoredOrientation(b, front, steps);
+                }
             }
             // front方向を親の回転で変換
             const cf = child.GetFrontDirection();
@@ -513,7 +516,7 @@ class RotationAxisManager {
             this._updateLight(wx, wy, wz, false);
         }
 
-        // ロープ動的追従解除 & 接続座標更新
+        // ロープ動的追従解除 & 接続座標・メッシュ位置更新
         if (this.ropeManager) {
             this.ropeManager.NotifyBodyDissolved(body);
             // 回転で位置が変わったpole_with_ropeの接続情報を更新
@@ -533,6 +536,12 @@ class RotationAxisManager {
                 if (moves.length > 0) {
                     this.ropeManager.OnEndpointsMoved(moves);
                 }
+            }
+            // 動的ロープ解除後、メッシュを復元位置に再配置
+            for (let i = 0; i < body._blocks.length; i++) {
+                if (body._blocks[i].blockId !== 'pole_with_rope') continue;
+                const r = restoredBlocks[i];
+                this.ropeManager.RepositionRopeAt(wx + r.rx, wy + r.ry, wz + r.rz);
             }
         }
 
