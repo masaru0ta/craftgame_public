@@ -389,15 +389,51 @@ class RotationAxisManager {
         const body = this._bodies.get(key);
         if (!body) return;
 
-        // 子回転体を先に解除
+        // 子回転体を先に解除（親の回転を子の軸位置・ブロック座標に反映してから）
         const childKeys = [];
         for (const [childKey, childBody] of this._bodies) {
             if (childBody._parentBody === body) {
                 childKeys.push(childKey);
             }
         }
-        for (const childKey of childKeys) {
-            this._dissolveBody(childKey);
+        if (childKeys.length > 0) {
+            const parentFront = body.GetFrontDirection();
+            const parentSteps = ((Math.round(body._angle / (Math.PI / 2)) % 4) + 4) % 4;
+            for (const childKey of childKeys) {
+                const childBody = this._bodies.get(childKey);
+                if (!childBody) continue;
+                // 子体の軸位置を親の回転分で補正
+                const relX = childBody._axisX - wx;
+                const relY = childBody._axisY - wy;
+                const relZ = childBody._axisZ - wz;
+                const rotatedAxis = this._rotate90(relX, relY, relZ, parentFront, parentSteps);
+                childBody._axisX = wx + rotatedAxis.x;
+                childBody._axisY = wy + rotatedAxis.y;
+                childBody._axisZ = wz + rotatedAxis.z;
+                childBody._centerX = childBody._axisX + 0.5;
+                childBody._centerY = childBody._axisY + 0.5;
+                childBody._centerZ = childBody._axisZ + 0.5;
+                // 子体のブロック相対座標も親の回転分で補正
+                for (const b of childBody._blocks) {
+                    const rotated = this._rotate90(b.rx, b.ry, b.rz, parentFront, parentSteps);
+                    b.rx = rotated.x;
+                    b.ry = rotated.y;
+                    b.rz = rotated.z;
+                }
+                // 子体の front 方向も親の回転で変換
+                const childFront = childBody.GetFrontDirection();
+                const rotatedFront = this._rotate90(childFront.dx, childFront.dy, childFront.dz, parentFront, parentSteps);
+                childBody._frontDx = rotatedFront.x;
+                childBody._frontDy = rotatedFront.y;
+                childBody._frontDz = rotatedFront.z;
+                // 親子関係を切る（子は独立した位置で復元する）
+                childBody._parentBody = null;
+                // _bodies のキーを更新
+                this._bodies.delete(childKey);
+                const newKey = `${childBody._axisX},${childBody._axisY},${childBody._axisZ}`;
+                this._bodies.set(newKey, childBody);
+                this._dissolveBody(newKey);
+            }
         }
 
         const wx = body._axisX;
