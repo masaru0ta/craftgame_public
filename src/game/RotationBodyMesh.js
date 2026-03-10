@@ -114,6 +114,14 @@ class RotationBodyMesh {
             }
 
             // 通常ブロック: 立方体メッシュ生成
+            // rotatable/sidePlaceable ブロックのテクスチャリマップ取得
+            const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
+            const ori = isOrientable ? (b.orientation || 0) : 0;
+            const texRemap = isOrientable && typeof ChunkMeshBuilder !== 'undefined'
+                ? (ChunkMeshBuilder._OrientableTexRemap[ori] || null)
+                : null;
+            const uvRot = ori % 4;
+
             for (const faceName of RotationBodyMesh._FACE_NAMES) {
                 const off = RotationBodyMesh._FACE_OFFSETS[faceName];
                 const neighborKey = packBlockKey(b.rx + off.dx, b.ry + off.dy, b.rz + off.dz);
@@ -122,7 +130,9 @@ class RotationBodyMesh {
 
                 const cornerOffsets = RotationBodyMesh._FACE_CORNER_OFFSETS[faceName];
                 const normal = RotationBodyMesh._FACE_NORMALS[faceName];
-                const atlasUV = this._textureLoader.getAtlasUV(b.blockId, faceName);
+                // テクスチャリマップ: orientationに応じて正しい面テクスチャを使用
+                const texFace = texRemap ? texRemap[faceName] : faceName;
+                const atlasUV = this._textureLoader.getAtlasUV(b.blockId, texFace);
                 const bx = b.rx - 0.5, by = b.ry - 0.5, bz = b.rz - 0.5;
 
                 for (let vi = 0; vi < 4; vi++) {
@@ -132,7 +142,15 @@ class RotationBodyMesh {
                     atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
                     lightLevels.push(1.0);
                     aoLevels.push(1.0);
-                    uvs.push(RotationBodyMesh._UV[vi * 2], RotationBodyMesh._UV[vi * 2 + 1]);
+                    // top/bottom面: orientationに応じたUV回転
+                    if (uvRot !== 0 && (faceName === 'top' || faceName === 'bottom')) {
+                        // RM baseUVはCMBと180°異なるため+2補正
+                        const shift = faceName === 'top' ? (6 - uvRot) % 4 : (uvRot + 2) % 4;
+                        const si = ((vi + shift) % 4) * 2;
+                        uvs.push(RotationBodyMesh._UV[si], RotationBodyMesh._UV[si + 1]);
+                    } else {
+                        uvs.push(RotationBodyMesh._UV[vi * 2], RotationBodyMesh._UV[vi * 2 + 1]);
+                    }
                 }
 
                 indices.push(
