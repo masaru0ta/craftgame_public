@@ -324,31 +324,32 @@ class RopeWayManager {
         const ram = this.rotationAxisManager;
         if (!ram) return;
 
-        // ロープウェイブロックの座標セットを作成
-        const blockPositions = new Set();
+        // 整数キーで高速ルックアップ
+        const blockKeys = new Set();
         for (const b of blocks) {
-            blockPositions.add(`${wx + b.rx},${wy + b.ry},${wz + b.rz}`);
+            blockKeys.add(packBlockKeyRW(b.rx, b.ry, b.rz));
         }
 
-        // 全回転体をチェック：軸座標がロープウェイブロック範囲内、
-        // または軸の隣接1ブロック以内にロープウェイブロックがあるもの
         const allBodies = ram.GetAllBodies();
         for (const rotBody of allBodies) {
-            const axKey = `${rotBody._axisX},${rotBody._axisY},${rotBody._axisZ}`;
-            let carried = blockPositions.has(axKey);
+            // 軸座標がロープウェイブロック範囲内か
+            const axRx = rotBody._axisX - wx, axRy = rotBody._axisY - wy, axRz = rotBody._axisZ - wz;
+            let carried = blockKeys.has(packBlockKeyRW(axRx, axRy, axRz));
             if (!carried) {
                 // 回転体の構成ブロックのいずれかがロープウェイ範囲にあるか
                 for (const rb of rotBody._blocks) {
-                    const rbKey = `${rotBody._axisX + rb.rx},${rotBody._axisY + rb.ry},${rotBody._axisZ + rb.rz}`;
-                    if (blockPositions.has(rbKey)) {
+                    if (blockKeys.has(packBlockKeyRW(axRx + rb.rx, axRy + rb.ry, axRz + rb.rz))) {
                         carried = true;
                         break;
                     }
                 }
             }
             if (carried) {
-                const key = `${rotBody._axisX},${rotBody._axisY},${rotBody._axisZ}`;
-                rwBody._carriedRotationBodies.push({ body: rotBody, key });
+                rwBody._carriedRotationBodies.push({
+                    body: rotBody,
+                    key: `${rotBody._axisX},${rotBody._axisY},${rotBody._axisZ}`,
+                    origX: rotBody._axisX, origY: rotBody._axisY, origZ: rotBody._axisZ
+                });
             }
         }
     }
@@ -357,12 +358,9 @@ class RopeWayManager {
      * 搭載回転体の座標・メッシュを差分移動する
      */
     _moveCarriedRotationBodies(rwBody, ddx, ddy, ddz) {
-        const ram = this.rotationAxisManager;
-        if (!ram) return;
-
+        const meshes = this.rotationAxisManager._meshes;
         for (const carried of rwBody._carriedRotationBodies) {
             const rotBody = carried.body;
-            // 座標を更新（浮動小数点で蓄積）
             rotBody._axisX += ddx;
             rotBody._axisY += ddy;
             rotBody._axisZ += ddz;
@@ -370,8 +368,7 @@ class RopeWayManager {
             rotBody._centerY += ddy;
             rotBody._centerZ += ddz;
 
-            // メッシュ位置を更新
-            const mesh = ram._meshes.get(carried.key);
+            const mesh = meshes.get(carried.key);
             if (mesh) {
                 const group = mesh.GetGroup();
                 group.position.x += ddx;
@@ -392,14 +389,10 @@ class RopeWayManager {
         for (const carried of rwBody._carriedRotationBodies) {
             const rotBody = carried.body;
             const oldKey = carried.key;
+            const finalX = carried.origX + dx;
+            const finalY = carried.origY + dy;
+            const finalZ = carried.origZ + dz;
 
-            // originからの整数オフセットで最終座標を確定
-            const origAxKey = oldKey.split(',').map(Number);
-            const finalX = origAxKey[0] + dx;
-            const finalY = origAxKey[1] + dy;
-            const finalZ = origAxKey[2] + dz;
-
-            // 座標をスナップ
             rotBody._axisX = finalX;
             rotBody._axisY = finalY;
             rotBody._axisZ = finalZ;
@@ -407,33 +400,26 @@ class RopeWayManager {
             rotBody._centerY = finalY + 0.5;
             rotBody._centerZ = finalZ + 0.5;
 
-            // メッシュ位置もスナップ
+            const newKey = `${finalX},${finalY},${finalZ}`;
+            if (newKey === oldKey) continue;
+
+            // _bodies / _meshes / _nextDirection のキーを一括更新
+            const bodyRef = ram._bodies.get(oldKey);
+            if (bodyRef) {
+                ram._bodies.delete(oldKey);
+                ram._bodies.set(newKey, bodyRef);
+                ram._bodiesCacheDirty = true;
+            }
             const mesh = ram._meshes.get(oldKey);
             if (mesh) {
-                const group = mesh.GetGroup();
-                group.position.set(finalX + 0.5, finalY + 0.5, finalZ + 0.5);
+                mesh.GetGroup().position.set(finalX + 0.5, finalY + 0.5, finalZ + 0.5);
+                ram._meshes.delete(oldKey);
+                ram._meshes.set(newKey, mesh);
             }
-
-            // _bodiesマップのキーを更新
-            const newKey = `${finalX},${finalY},${finalZ}`;
-            if (newKey !== oldKey) {
-                const bodyRef = ram._bodies.get(oldKey);
-                if (bodyRef) {
-                    ram._bodies.delete(oldKey);
-                    ram._bodies.set(newKey, bodyRef);
-                    ram._bodiesCacheDirty = true;
-                }
-                // メッシュマップのキーも更新
-                if (mesh) {
-                    ram._meshes.delete(oldKey);
-                    ram._meshes.set(newKey, mesh);
-                }
-                // _nextDirectionも移行
-                const nd = ram._nextDirection.get(oldKey);
-                if (nd !== undefined) {
-                    ram._nextDirection.delete(oldKey);
-                    ram._nextDirection.set(newKey, nd);
-                }
+            const nd = ram._nextDirection.get(oldKey);
+            if (nd !== undefined) {
+                ram._nextDirection.delete(oldKey);
+                ram._nextDirection.set(newKey, nd);
             }
         }
     }

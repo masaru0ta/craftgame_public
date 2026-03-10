@@ -633,6 +633,20 @@ class PhysicsWorld {
      * @param {Array<RotationBody>} bodies
      */
     _resolveSqueezeEscape(player, ram, bodies) {
+        this._squeezeEscapeCommon(player, (tryAABB) => {
+            for (const body of bodies) {
+                if (ram.GetLocalCollidingBlocks(body, tryAABB).length > 0) return false;
+            }
+            return true;
+        });
+    }
+
+    /**
+     * 挟まれ防止の共通処理: 地形めり込みチェック＋上方向脱出
+     * @param {Player} player
+     * @param {function} extraClearCheck - 追加のクリアチェック(tryAABB) => boolean
+     */
+    _squeezeEscapeCommon(player, extraClearCheck) {
         const playerAABB = player.getAABB();
         const terrainBlocks = this._getCollidingBlocks(playerAABB);
         let squeezed = false;
@@ -644,13 +658,11 @@ class PhysicsWorld {
         }
         if (!squeezed) return;
 
-        // 上方向に0.5ずつ、最大5ブロックまで脱出を試みる
         const pos = player.getPosition();
         for (let step = 1; step <= 10; step++) {
             const tryY = pos.y + step * 0.5;
             player.setPosition(pos.x, tryY, pos.z);
 
-            // 地形チェック
             const tryAABB = player.getAABB();
             const tryTerrain = this._getCollidingBlocks(tryAABB);
             let terrainClear = true;
@@ -661,20 +673,10 @@ class PhysicsWorld {
                 }
             }
             if (!terrainClear) continue;
-
-            // 回転体チェック
-            let rotationClear = true;
-            for (const body of bodies) {
-                const colBlocks = ram.GetLocalCollidingBlocks(body, tryAABB);
-                if (colBlocks.length > 0) {
-                    rotationClear = false;
-                    break;
-                }
-            }
-            if (rotationClear) return; // 脱出成功
+            if (extraClearCheck(tryAABB)) return; // 脱出成功
         }
 
-        // 脱出失敗: 元の位置に戻す（次フレームで再試行）
+        // 脱出失敗: 元の位置に戻す
         player.setPosition(pos.x, pos.y, pos.z);
     }
 
@@ -693,7 +695,6 @@ class PhysicsWorld {
 
         const halfWidth = Player.WIDTH / 2;
         const height = player.getHeight();
-        const halfHeight = height / 2;
 
         for (const body of bodies) {
             const playerAABB = player.getAABB();
@@ -751,53 +752,15 @@ class PhysicsWorld {
     }
 
     /**
-     * ロープウェイ移動体での挟まれ防止: 押し出し後に地形にめり込んでいたら上方向に脱出
-     * @param {Player} player
-     * @param {RopeWayManager} rwm
-     * @param {Array<RopeWayBody>} bodies
+     * ロープウェイ移動体での挟まれ防止
      */
     _resolveRopeWaySqueezeEscape(player, rwm, bodies) {
-        const playerAABB = player.getAABB();
-        const terrainBlocks = this._getCollidingBlocks(playerAABB);
-        let squeezed = false;
-        for (const blockAABB of terrainBlocks) {
-            if (this._aabbIntersects(playerAABB, blockAABB)) {
-                squeezed = true;
-                break;
-            }
-        }
-        if (!squeezed) return;
-
-        const pos = player.getPosition();
-        for (let step = 1; step <= 10; step++) {
-            const tryY = pos.y + step * 0.5;
-            player.setPosition(pos.x, tryY, pos.z);
-
-            const tryAABB = player.getAABB();
-            const tryTerrain = this._getCollidingBlocks(tryAABB);
-            let terrainClear = true;
-            for (const blockAABB of tryTerrain) {
-                if (this._aabbIntersects(tryAABB, blockAABB)) {
-                    terrainClear = false;
-                    break;
-                }
-            }
-            if (!terrainClear) continue;
-
-            // 移動体チェック
-            let ropeWayClear = true;
+        this._squeezeEscapeCommon(player, (tryAABB) => {
             for (const body of bodies) {
-                const colBlocks = rwm.GetCollidingBlocks(body, tryAABB);
-                if (colBlocks.length > 0) {
-                    ropeWayClear = false;
-                    break;
-                }
+                if (rwm.GetCollidingBlocks(body, tryAABB).length > 0) return false;
             }
-            if (ropeWayClear) return; // 脱出成功
-        }
-
-        // 脱出失敗: 元の位置に戻す
-        player.setPosition(pos.x, pos.y, pos.z);
+            return true;
+        });
     }
 
     /**
