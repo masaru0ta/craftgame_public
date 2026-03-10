@@ -389,6 +389,10 @@ class RotationAxisManager {
         const body = this._bodies.get(key);
         if (!body) return;
 
+        const wx = body._axisX;
+        const wy = body._axisY;
+        const wz = body._axisZ;
+
         // 子回転体を先に解除（親の回転を子の軸位置・ブロック座標に反映してから）
         const childKeys = [];
         for (const [childKey, childBody] of this._bodies) {
@@ -435,10 +439,6 @@ class RotationAxisManager {
                 this._dissolveBody(newKey);
             }
         }
-
-        const wx = body._axisX;
-        const wy = body._axisY;
-        const wz = body._axisZ;
         const front = body.GetFrontDirection();
         // 90°ステップ数を整数で求める（浮動小数点誤差を排除）
         const steps = ((Math.round(body._angle / (Math.PI / 2)) % 4) + 4) % 4;
