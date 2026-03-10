@@ -271,6 +271,9 @@ class GameTestApp {
             if (this.physicsWorld) {
                 this.physicsWorld.ropeWayManager = this.ropeWayManager;
             }
+            if (this.rotationAxisManager) {
+                this.ropeWayManager.rotationAxisManager = this.rotationAxisManager;
+            }
         }
 
         // ホットバーに最初の9ブロックを自動設定
