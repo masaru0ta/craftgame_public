@@ -114,15 +114,10 @@ class RotationBodyMesh {
             }
 
             // 通常ブロック: 立方体メッシュ生成
-            // rotatable/sidePlaceable ブロックのテクスチャリマップ取得
+            // rotatable/sidePlaceable ブロックのorientを配列インデックスで高速取得
             const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
             const ori = isOrientable ? (b.orientation || 0) : 0;
-            const texRemap = isOrientable && typeof BlockOrientation !== 'undefined'
-                ? (BlockOrientation.TexRemap[ori] || null)
-                : null;
-            const uvRotLookup = isOrientable && typeof BlockOrientation !== 'undefined'
-                ? (BlockOrientation.UVRot[ori] || null)
-                : null;
+            const oriBase = ori * 6;
 
             for (const faceName of RotationBodyMesh._FACE_NAMES) {
                 const off = RotationBodyMesh._FACE_OFFSETS[faceName];
@@ -132,10 +127,13 @@ class RotationBodyMesh {
 
                 const cornerOffsets = RotationBodyMesh._FACE_CORNER_OFFSETS[faceName];
                 const normal = RotationBodyMesh._FACE_NORMALS[faceName];
-                // テクスチャリマップ: orientationに応じて正しい面テクスチャを使用
-                const texFace = texRemap ? texRemap[faceName] : faceName;
+                // テクスチャリマップ: 配列インデックスで高速に取得
+                const fi = BlockOrientation.FaceIdx[faceName];
+                const texFace = isOrientable ? BlockOrientation.FaceNames[BlockOrientation.TexRemapIdx[oriBase + fi]] : faceName;
                 const atlasUV = this._textureLoader.getAtlasUV(b.blockId, texFace);
                 const bx = b.rx - 0.5, by = b.ry - 0.5, bz = b.rz - 0.5;
+                // UV回転を面ループの外で一度だけ取得
+                const cmbRot = isOrientable ? BlockOrientation.UVRotIdx[oriBase + fi] : 0;
 
                 for (let vi = 0; vi < 4; vi++) {
                     const co = cornerOffsets[vi];
@@ -147,7 +145,6 @@ class RotationBodyMesh {
                     // orientationに応じたUV回転
                     // top/bottom: RM baseUVはCMBと180°異なるため常に+2補正
                     // side: RM/CMBは同じbaseUV順なので補正不要
-                    const cmbRot = uvRotLookup ? (uvRotLookup[faceName] || 0) : 0;
                     const isTopBottom = (faceName === 'top' || faceName === 'bottom');
                     if (isTopBottom) {
                         const shift = (cmbRot + 2) % 4;

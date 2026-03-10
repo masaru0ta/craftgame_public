@@ -235,14 +235,7 @@ class PlacementPreview {
      * フルブロック（1×1×1）のジオメトリを生成
      */
     _buildFullMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
-        const texRemap = (typeof BlockOrientation !== 'undefined')
-            ? (BlockOrientation.TexRemap[orientation] || null)
-            : null;
-        // 面ごとのUV回転テーブル（全24 orientationの3D回転を反映）
-        const uvRotLookup = (typeof BlockOrientation !== 'undefined')
-            ? (BlockOrientation.UVRot[orientation] || null)
-            : null;
-        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), null, texRemap, uvRotLookup, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        return this._buildBoxFaces(blockDef, PlacementPreview._BoxFaces3D(0, 1, 0, 1, -1, 0), null, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
     }
 
     /**
@@ -265,7 +258,7 @@ class PlacementPreview {
         const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
             ? (ChunkMeshBuilder._SideHalfTexRemap[orientation] || null)
             : null;
-        return this._buildBoxFaces(blockDef, faces, orientation, texRemap, null, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        return this._buildBoxFaces(blockDef, faces, orientation, 0, positions, normals, uvs, atlasInfos, indices, vertexOffset, texRemap);
     }
 
     /**
@@ -273,12 +266,23 @@ class PlacementPreview {
      */
     /**
      * @param {number|null} halfOrientation - ハーフブロックの向き(1-6)。フルブロック時はnull
-     * @param {Object|null} texRemap - テクスチャリマップ。呼び出し元で決定済み
-     * @param {Object|null} uvRotLookup - 面ごとのUV回転テーブル {top:0-3, bottom:0-3, ...}
+     * @param {number} orient - orient値(0〜23)。配列インデックスベースのテクスチャリマップ・UV回転に使用
+     * @param {Object|null} [overrideTexRemap] - ハーフブロック用の外部テクスチャリマップ（オプション）
      */
-    _buildBoxFaces(blockDef, faces, halfOrientation, texRemap, uvRotLookup, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+    _buildBoxFaces(blockDef, faces, halfOrientation, orient, positions, normals, uvs, atlasInfos, indices, vertexOffset, overrideTexRemap) {
+        const oriBase = orient * 6;
+        const hasBo = typeof BlockOrientation !== 'undefined';
         for (const face of faces) {
-            const texFace = texRemap ? texRemap[face.name] : face.name;
+            // テクスチャリマップ: overrideTexRemap（ハーフブロック）優先、なければ配列インデックスで取得
+            let texFace;
+            if (overrideTexRemap) {
+                texFace = overrideTexRemap[face.name] || face.name;
+            } else if (hasBo && orient > 0) {
+                const fi = BlockOrientation.FaceIdx[face.name];
+                texFace = BlockOrientation.FaceNames[BlockOrientation.TexRemapIdx[oriBase + fi]];
+            } else {
+                texFace = face.name;
+            }
             const atlasUV = this._textureLoader.getAtlasUV(blockDef.block_str_id, texFace);
             for (const c of face.corners) {
                 positions.push(c[0], c[1], c[2]);
@@ -303,7 +307,7 @@ class PlacementPreview {
                     uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
                 }
             } else {
-                const faceUVRot = uvRotLookup ? (uvRotLookup[face.name] || 0) : 0;
+                const faceUVRot = hasBo ? BlockOrientation.UVRotIdx[oriBase + BlockOrientation.FaceIdx[face.name]] : 0;
                 this._addFaceUVs(uvs, face.name, faceUVRot);
             }
             this._addQuadIndices(indices, vertexOffset);

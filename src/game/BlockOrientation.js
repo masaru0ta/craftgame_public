@@ -232,6 +232,53 @@ class BlockOrientation {
     })();
 
     // ========================================
+    // 配列インデックスベースのテーブル（パフォーマンス最適化）
+    // ========================================
+
+    /** 面名 → インデックス変換（FaceNames の並び順と一致） */
+    static FaceIdx = { top: 0, bottom: 1, front: 2, back: 3, right: 4, left: 5 };
+
+    /**
+     * TexRemap の配列インデックス版
+     * アクセス: TexRemapIdx[orient * 6 + faceIdx] → textureFaceIdx (0〜5)
+     * orient=0 は恒等写像
+     */
+    static TexRemapIdx = (() => {
+        const arr = new Uint8Array(144);
+        const faceNames = BlockOrientation.FaceNames;
+        const faceIdx = BlockOrientation.FaceIdx;
+        const texRemap = BlockOrientation.TexRemap;
+        for (let ori = 0; ori < 24; ori++) {
+            const remap = texRemap[ori] || null;
+            const base = ori * 6;
+            for (let fi = 0; fi < 6; fi++) {
+                const faceName = faceNames[fi];
+                const texFace = remap ? remap[faceName] : faceName;
+                arr[base + fi] = faceIdx[texFace];
+            }
+        }
+        return arr;
+    })();
+
+    /**
+     * UVRot の配列インデックス版
+     * アクセス: UVRotIdx[orient * 6 + faceIdx] → rotation (0〜3)
+     */
+    static UVRotIdx = (() => {
+        const arr = new Uint8Array(144);
+        const faceNames = BlockOrientation.FaceNames;
+        const uvRot = BlockOrientation.UVRot;
+        for (let ori = 0; ori < 24; ori++) {
+            const rots = uvRot[ori];
+            const base = ori * 6;
+            for (let fi = 0; fi < 6; fi++) {
+                arr[base + fi] = rots ? (rots[faceNames[fi]] || 0) : 0;
+            }
+        }
+        return arr;
+    })();
+
+    // ========================================
     // 面変換
     // ========================================
 

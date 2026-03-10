@@ -337,12 +337,14 @@ class ChunkMeshBuilder {
                 }
             }
 
-            // rotatable/sidePlaceable ブロックのテクスチャリマップ取得
-            let texRemap = null;
-            if (blockDef && (blockDef.rotatable || blockDef.sidePlaceable)) {
-                const ori = chunkData.getOrientation(x, y, z);
-                texRemap = ChunkMeshBuilder._OrientableTexRemap[ori] || null;
-            }
+            // rotatable/sidePlaceable ブロックのorient取得（配列インデックスベースで高速化）
+            const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
+            const ori = isOrientable ? chunkData.getOrientation(x, y, z) : 0;
+            const oriBase = ori * 6;
+            const texRemapIdx = BlockOrientation.TexRemapIdx;
+            const uvRotIdx = BlockOrientation.UVRotIdx;
+            const boFaceNames = BlockOrientation.FaceNames;
+            const boFaceIdx = BlockOrientation.FaceIdx;
 
             // 各面をチェック
             for (const [faceName, faceInfo] of Object.entries(ChunkMeshBuilder.FACES)) {
@@ -364,13 +366,10 @@ class ChunkMeshBuilder {
                     ? this._getVertexAO(chunkData, x, y, z, faceName, neighborChunks)
                     : [0, 0, 0, 0];
 
-                // orientable: テクスチャ面をリマップ（物理面はそのまま）
-                const texFace = texRemap ? texRemap[faceName] : faceName;
-                // UV回転: rotatable/sidePlaceableブロックのみ、面ごとに算出
-                const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
-                const ori = isOrientable ? chunkData.getOrientation(x, y, z) : 0;
-                const uvRotLookup = isOrientable ? ChunkMeshBuilder._OrientableUVRot[ori] : null;
-                const uvRot = uvRotLookup ? (uvRotLookup[faceName] || 0) : 0;
+                // orientable: 配列インデックスで高速にテクスチャ面リマップ・UV回転を取得
+                const fi = boFaceIdx[faceName];
+                const texFace = isOrientable ? boFaceNames[texRemapIdx[oriBase + fi]] : faceName;
+                const uvRot = isOrientable ? uvRotIdx[oriBase + fi] : 0;
                 const key = `${blockStrId}:${faceName}:${texFace}:${uvRot}`;
                 if (!blockFacesMap.has(key)) {
                     blockFacesMap.set(key, { blockStrId, faceName, texFace, uvRot, faces: [] });
