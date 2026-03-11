@@ -276,6 +276,12 @@ class GameTestApp {
             }
         }
 
+        // 粘着ピストン管理初期化
+        if (typeof PistonManager !== 'undefined') {
+            this.pistonManager = new PistonManager(this.chunkManager);
+            this.blockInteraction.pistonManager = this.pistonManager;
+        }
+
         // ホットバーに最初の9ブロックを自動設定
         placeableBlocks.slice(0, Hotbar.SLOT_COUNT).forEach((block, i) => {
             this.hotbar.setSlotBlock(i, block);

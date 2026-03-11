@@ -116,7 +116,8 @@ class BlockInteraction {
             this.currentTarget.blockX, this.currentTarget.blockY, this.currentTarget.blockZ);
         if (targetBlockId === 'workbench' ||
             targetBlockId === 'switch_off' || targetBlockId === 'switch' ||
-            targetBlockId === 'rope_way') {
+            targetBlockId === 'rope_way' ||
+            targetBlockId === 'sticky_piston' || targetBlockId === 'piston_base') {
             this.placementPreview.hide();
             return;
         }
@@ -234,6 +235,16 @@ class BlockInteraction {
         // ロープウェイチェック
         if (targetBlockId === 'rope_way' && this.ropeWayManager) {
             this.OnRopeWayRightClick(target.blockX, target.blockY, target.blockZ);
+            return true;
+        }
+
+        // 粘着ピストンチェック
+        if (targetBlockId === 'sticky_piston' && this.pistonManager) {
+            this.pistonManager.Extend(target.blockX, target.blockY, target.blockZ);
+            return true;
+        }
+        if (targetBlockId === 'piston_base' && this.pistonManager) {
+            this.pistonManager.Retract(target.blockX, target.blockY, target.blockZ);
             return true;
         }
 
@@ -646,6 +657,7 @@ class BlockInteraction {
         }
         if (blockId === 'direction' && this.directionBlockManager) return '移動';
         if (blockId === 'rope_way' && this.ropeWayManager) return 'ロープウェイ';
+        if ((blockId === 'sticky_piston' || blockId === 'piston_base') && this.pistonManager) return 'ピストン';
         return null;
     }
 
@@ -815,6 +827,25 @@ class BlockInteraction {
                     const body = rwm.GetBodyAt(pos.x, pos.y, pos.z);
                     if (body) {
                         rwm.StopBody(pos.x, pos.y, pos.z);
+                    }
+                }
+            }
+        }
+
+        // マンハッタン距離5以内のsticky_piston / piston_baseを検索して操作
+        const psm = this.pistonManager;
+        if (psm) {
+            for (let dx = -range; dx <= range; dx++) {
+                for (let dy = -range; dy <= range; dy++) {
+                    for (let dz = -range; dz <= range; dz++) {
+                        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > range) continue;
+                        const rx = wx + dx, ry = wy + dy, rz = wz + dz;
+                        const bid = this.physicsWorld.getBlockAt(rx, ry, rz);
+                        if (turningOn && bid === 'sticky_piston') {
+                            psm.Extend(rx, ry, rz);
+                        } else if (!turningOn && bid === 'piston_base') {
+                            psm.Retract(rx, ry, rz);
+                        }
                     }
                 }
             }
