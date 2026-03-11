@@ -32,10 +32,10 @@ class PistonBody {
 class PistonManager {
     static _MAX_EXTEND_DISTANCE = 8;
 
+    /** 移動不可ブロック（自然ブロック + pole系。回転体・ロープウェイと同じ方針） */
     static _IMMOVABLE = new Set([
-        'sticky_piston', 'piston_base', 'sticky_piston_head',
-        'pole', 'pole_with_rope', 'rotor', 'switch', 'switch_off',
-        'rope_way', 'water'
+        'stone', 'dirt', 'grass', 'sand', 'water',
+        'pole', 'pole_with_rope'
     ]);
 
     static _DIRECTION_FROM_TOPDIR = [
