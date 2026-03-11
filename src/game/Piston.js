@@ -1,48 +1,44 @@
 /**
  * Piston.js
- * 粘着ピストン管理クラス - アニメーション付き伸長・収縮ロジック
+ * 粘着ピストン管理クラス - 1往復動作・1ブロック運搬
  */
 
 class PistonBody {
     /**
-     * @param {number} pistonX - ピストン基部のワールドX
-     * @param {number} pistonY - ピストン基部のワールドY
-     * @param {number} pistonZ - ピストン基部のワールドZ
-     * @param {{x:number,y:number,z:number}} moveVector - 移動ベクトル（D * N）
-     * @param {number} totalDistance - 移動距離（N）
-     * @param {Array<{rx:number,ry:number,rz:number,blockId:string,orientation:number}>} blocks
-     * @param {boolean} isExtending - 伸長中か収縮中か
+     * @param {number} pistonX - ピストンのワールドX
+     * @param {number} pistonY - ピストンのワールドY
+     * @param {number} pistonZ - ピストンのワールドZ
+     * @param {{x:number,y:number,z:number}} direction - 方向ベクトル D
+     * @param {number} totalDistance - 伸長距離N
+     * @param {'pickup'|'push'} mode - 動作モード
+     * @param {{blockId:string, orientation:number}|null} carriedBlock - 運搬ブロック
      * @param {number} orientation - ピストンの orientation
-     * @param {Array<{fromX:number,fromY:number,fromZ:number,toX:number,toY:number,toZ:number,blockId:string,orientation:number}>} [pushedBlocks] - 押し出されたブロック（伸長時のみ）
      */
-    constructor(pistonX, pistonY, pistonZ, moveVector, totalDistance, blocks, isExtending, orientation, pushedBlocks) {
+    constructor(pistonX, pistonY, pistonZ, direction, totalDistance, mode, carriedBlock, orientation) {
         this._pistonX = pistonX;
         this._pistonY = pistonY;
         this._pistonZ = pistonZ;
-        this._moveVector = moveVector;
+        this._direction = direction;
         this._totalDistance = totalDistance;
-        this._blocks = blocks;
+        this._mode = mode;
+        this._carriedBlock = carriedBlock;
+        this._orientation = orientation;
+        this._phase = 'extending'; // 'extending' → 'retracting'
         this._displacement = 0;
         this._speed = 10.0; // 10ブロック/秒
-        this._isExtending = isExtending;
-        this._orientation = orientation;
-        this._pushedBlocks = pushedBlocks || [];
     }
 }
 
 class PistonManager {
     /** 最大伸長距離 */
-    static _MAX_EXTEND_DISTANCE = 5;
+    static _MAX_EXTEND_DISTANCE = 8;
 
-    /** BFS最大ブロック数 */
-    static _MAX_CONNECTED_COUNT = 12;
-
-    /** 押し出しチェーン上限 */
-    static _MAX_PUSH_CHAIN = 5;
-
-    /** 非連結ブロック（BFS対象外だが押し出し可能） */
-    static _NON_CONNECTABLE = new Set(['stone', 'dirt', 'grass', 'sand', 'water',
-        'piston_base', 'sticky_piston_head', 'pole', 'pole_with_rope']);
+    /** 移動不可ブロック */
+    static _IMMOVABLE = new Set([
+        'sticky_piston', 'piston_base', 'sticky_piston_head',
+        'pole', 'pole_with_rope', 'rotor', 'switch', 'switch_off',
+        'rope_way', 'water'
+    ]);
 
     /** topDir → 方向ベクトル */
     static _DIRECTION_FROM_TOPDIR = [
@@ -52,13 +48,6 @@ class PistonManager {
         { x: 0, y: 0, z: -1 },  // 3: Z-
         { x: 1, y: 0, z: 0 },   // 4: X+
         { x: -1, y: 0, z: 0 },  // 5: X-
-    ];
-
-    /** BFS探索用6方向 */
-    static _SIX_DIRS = [
-        { x: 1, y: 0, z: 0 }, { x: -1, y: 0, z: 0 },
-        { x: 0, y: 1, z: 0 }, { x: 0, y: -1, z: 0 },
-        { x: 0, y: 0, z: 1 }, { x: 0, y: 0, z: -1 },
     ];
 
     /**
@@ -72,7 +61,7 @@ class PistonManager {
         this._textureLoader = textureLoader;
         /** @type {Map<string, PistonBody>} */
         this._bodies = new Map();
-        /** @type {Map<string, object>} */
+        /** @type {Map<string, object>} アニメーションメッシュ */
         this._meshes = new Map();
         /** @type {Map<string, THREE.Mesh>} アーム（棒）メッシュ */
         this._armMeshes = new Map();
@@ -125,484 +114,144 @@ class PistonManager {
         }
     }
 
-    _rebuildAffectedChunks(baseX, baseZ, blocks) {
+    _rebuildChunksAround(positions) {
         const affected = new Set();
-        for (const b of blocks) {
-            const bwx = baseX + b.rx, bwz = baseZ + b.rz;
-            const cx = Math.floor(bwx / 16), cz = Math.floor(bwz / 16);
+        for (const [wx, , wz] of positions) {
+            const cx = Math.floor(wx / 16), cz = Math.floor(wz / 16);
             affected.add(`${cx},${cz}`);
-            const lx = ((bwx % 16) + 16) % 16;
-            const lz = ((bwz % 16) + 16) % 16;
+            const lx = ((wx % 16) + 16) % 16;
+            const lz = ((wz % 16) + 16) % 16;
             if (lx === 0)  affected.add(`${cx - 1},${cz}`);
             if (lx === 15) affected.add(`${cx + 1},${cz}`);
             if (lz === 0)  affected.add(`${cx},${cz - 1}`);
             if (lz === 15) affected.add(`${cx},${cz + 1}`);
         }
-        affected.add(`${Math.floor(baseX / 16)},${Math.floor(baseZ / 16)}`);
         for (const chunkKey of affected) {
             const [cx, cz] = chunkKey.split(',').map(Number);
             this._chunkManager.rebuildChunkMesh(cx, cz);
         }
     }
 
-    // === BFS ===
+    // === メイン操作 ===
 
     /**
-     * 連結ブロックをBFSで検出
-     * @param {number} startX - BFS起点X
-     * @param {number} startY - BFS起点Y
-     * @param {number} startZ - BFS起点Z
-     * @param {number} [excludeX] - 除外座標X（ピストン自身）
-     * @param {number} [excludeY] - 除外座標Y
-     * @param {number} [excludeZ] - 除外座標Z
-     */
-    _bfsConnectedBlocks(startX, startY, startZ, excludeX, excludeY, excludeZ) {
-        const startBlock = this._getBlock(startX, startY, startZ);
-        if (!startBlock || startBlock === 'air' || PistonManager._NON_CONNECTABLE.has(startBlock)) {
-            return [];
-        }
-
-        const result = [];
-        const visited = new Set();
-        const queue = [{ x: startX, y: startY, z: startZ }];
-        visited.add(`${startX},${startY},${startZ}`);
-        if (excludeX !== undefined) {
-            visited.add(`${excludeX},${excludeY},${excludeZ}`);
-        }
-
-        while (queue.length > 0) {
-            if (result.length >= PistonManager._MAX_CONNECTED_COUNT) break;
-            const pos = queue.shift();
-            const blockId = this._getBlock(pos.x, pos.y, pos.z);
-            if (!blockId || blockId === 'air' || PistonManager._NON_CONNECTABLE.has(blockId)) continue;
-
-            const orientation = this._getOrientation(pos.x, pos.y, pos.z);
-            result.push({ x: pos.x, y: pos.y, z: pos.z, blockId, orientation });
-
-            if (result.length >= PistonManager._MAX_CONNECTED_COUNT) break;
-
-            for (const dir of PistonManager._SIX_DIRS) {
-                const nx = pos.x + dir.x;
-                const ny = pos.y + dir.y;
-                const nz = pos.z + dir.z;
-                const key = `${nx},${ny},${nz}`;
-                if (visited.has(key)) continue;
-                visited.add(key);
-                const nb = this._getBlock(nx, ny, nz);
-                if (nb && nb !== 'air' && !PistonManager._NON_CONNECTABLE.has(nb)) {
-                    queue.push({ x: nx, y: ny, z: nz });
-                }
-            }
-        }
-
-        return result;
-    }
-
-    // === 押し出しチェーン解決 ===
-
-    /**
-     * 指定位置から D 方向に連続するブロックの押し出しチェーンを解決
-     * @param {number} startX
-     * @param {number} startY
-     * @param {number} startZ
-     * @param {{x:number,y:number,z:number}} d - 方向ベクトル
-     * @param {Map<string,string>} virtualWorld - 仮想ワールドオーバーライド
-     * @returns {Array|null} 押し出し対象ブロックリスト、失敗時null
-     */
-    _resolvePushChain(startX, startY, startZ, d, virtualWorld) {
-        const chain = [];
-        let x = startX, y = startY, z = startZ;
-        const maxChain = PistonManager._MAX_PUSH_CHAIN;
-
-        while (true) {
-            const key = `${x},${y},${z}`;
-            const block = virtualWorld.has(key) ? virtualWorld.get(key) : this._getBlock(x, y, z);
-            if (!block || block === 'air') break;
-            chain.push({ x, y, z, blockId: block, orientation: this._getOrientation(x, y, z) });
-            if (chain.length > maxChain) return null; // チェーン上限超過
-            x += d.x; y += d.y; z += d.z;
-        }
-
-        // 最終押し出し先がワールド範囲内か
-        if (chain.length > 0) {
-            const lastY = chain[chain.length - 1].y + d.y;
-            if (lastY < 0 || lastY >= 128) return null;
-        }
-
-        return chain;
-    }
-
-    // === 伸長シミュレーション ===
-
-    /**
-     * ステップバイステップで伸長可能距離と押し出しブロックを計算
-     * @returns {{actualDist, connectedBlocks, pushedMoves}} or null
-     */
-    _simulateExtension(wx, wy, wz, d) {
-        const maxDist = PistonManager._MAX_EXTEND_DISTANCE;
-        let connectedBlocks = null;
-        let connectedPositionSet = new Set(); // 連結ブロックの現在位置（スキップ用）
-        let contactStep = -1;
-        let actualDist = 0;
-        const virtualWorld = new Map(); // key → blockId（オーバーライド）
-        const allPushedMoves = []; // {fromX,fromY,fromZ,toX,toY,toZ,blockId,orientation}
-
-        for (let step = 1; step <= maxDist; step++) {
-            const headX = wx + d.x * step;
-            const headY = wy + d.y * step;
-            const headZ = wz + d.z * step;
-
-            // ワールド範囲チェック
-            if (headY < 0 || headY >= 128) break;
-
-            // 移動体の現在位置を計算
-            const entityPositions = new Set();
-            entityPositions.add(`${headX},${headY},${headZ}`);
-
-            if (connectedBlocks) {
-                const moveOffset = step - contactStep;
-                connectedPositionSet = new Set();
-                for (const cb of connectedBlocks) {
-                    const nx = cb.x + d.x * moveOffset;
-                    const ny = cb.y + d.y * moveOffset;
-                    const nz = cb.z + d.z * moveOffset;
-                    const key = `${nx},${ny},${nz}`;
-                    entityPositions.add(key);
-                    connectedPositionSet.add(key);
-                }
-            }
-
-            // 移動体の前ステップ位置（空けられる位置）
-            const vacatedPositions = new Set();
-            if (step > 1) {
-                vacatedPositions.add(`${wx + d.x * (step - 1)},${wy + d.y * (step - 1)},${wz + d.z * (step - 1)}`);
-                if (connectedBlocks) {
-                    const prevOffset = step - 1 - contactStep;
-                    if (prevOffset >= 0) {
-                        for (const cb of connectedBlocks) {
-                            vacatedPositions.add(`${cb.x + d.x * prevOffset},${cb.y + d.y * prevOffset},${cb.z + d.z * prevOffset}`);
-                        }
-                    }
-                }
-            } else {
-                // step=1: ピストン基部位置は空く（piston_baseになるが頭部は通過）
-                vacatedPositions.add(`${wx},${wy},${wz}`);
-            }
-
-            // 各移動体位置で障害ブロックをチェック
-            let stepFailed = false;
-            const stepPushMoves = [];
-
-            // D方向の列ごとに押し出しチェーンを解決
-            // 移動体が占める位置のうち、D方向の最前面を探す
-            const columns = new Map(); // "perpKey" → maxDproject
-            for (const posKey of entityPositions) {
-                const [px, py, pz] = posKey.split(',').map(Number);
-                // D方向の射影値
-                const dProject = px * d.x + py * d.y + pz * d.z;
-                // D直交方向のキー
-                const perpKey = d.x !== 0 ? `${py},${pz}` : d.y !== 0 ? `${px},${pz}` : `${px},${py}`;
-                if (!columns.has(perpKey) || dProject > columns.get(perpKey).dProject) {
-                    columns.set(perpKey, { dProject, x: px, y: py, z: pz });
-                }
-            }
-
-            // 各列の最前面の1ブロック先から押し出しチェーン解決
-            for (const [, front] of columns) {
-                const checkX = front.x + d.x;
-                const checkY = front.y + d.y;
-                const checkZ = front.z + d.z;
-                const checkKey = `${checkX},${checkY},${checkZ}`;
-
-                // 既に移動体の位置なら押す必要なし
-                if (entityPositions.has(checkKey)) continue;
-
-                const blockAtCheck = virtualWorld.has(checkKey) ? virtualWorld.get(checkKey) : this._getBlock(checkX, checkY, checkZ);
-                if (!blockAtCheck || blockAtCheck === 'air') continue;
-
-                // 押し出しチェーン解決
-                const chain = this._resolvePushChain(checkX, checkY, checkZ, d, virtualWorld);
-                if (!chain) { stepFailed = true; break; }
-
-                // チェーンの各ブロックを1つ先へ（遠い側から）
-                for (let i = chain.length - 1; i >= 0; i--) {
-                    const cb = chain[i];
-                    const toX = cb.x + d.x, toY = cb.y + d.y, toZ = cb.z + d.z;
-                    stepPushMoves.push({
-                        fromX: cb.x, fromY: cb.y, fromZ: cb.z,
-                        toX, toY, toZ,
-                        blockId: cb.blockId, orientation: cb.orientation
-                    });
-                    virtualWorld.set(`${toX},${toY},${toZ}`, cb.blockId);
-                    virtualWorld.set(`${cb.x},${cb.y},${cb.z}`, 'air');
-                }
-            }
-
-            if (stepFailed) break;
-
-            // 移動体が占める位置にある非移動体ブロックも押す必要がある
-            // （頭部位置や接触時の連結ブロック位置）
-            for (const posKey of entityPositions) {
-                if (vacatedPositions.has(posKey)) continue;
-                // 連結ブロック位置はスキップ（移動体の一部）
-                if (connectedPositionSet.has(posKey)) continue;
-                const [px, py, pz] = posKey.split(',').map(Number);
-                const blockHere = virtualWorld.has(posKey) ? virtualWorld.get(posKey) : this._getBlock(px, py, pz);
-                if (!blockHere || blockHere === 'air') continue;
-
-                // 最初の接触：BFS検出
-                if (!connectedBlocks && posKey === `${headX},${headY},${headZ}`) {
-                    // この位置のブロックに接触 → BFS
-                    const bfsResult = this._bfsConnectedBlocks(headX, headY, headZ, wx, wy, wz);
-                    connectedBlocks = bfsResult;
-                    contactStep = step;
-
-                    if (bfsResult.length > 0) {
-                        // 連結ブロック位置を記録してentityPositionsに追加
-                        connectedPositionSet = new Set(bfsResult.map(b => `${b.x},${b.y},${b.z}`));
-                        for (const cb of bfsResult) {
-                            entityPositions.add(`${cb.x},${cb.y},${cb.z}`);
-                        }
-
-                        // 連結ブロックの前方も押し出しチェーンチェックが必要
-                        const newColumns = new Map();
-                        for (const posKey2 of entityPositions) {
-                            const [px2, py2, pz2] = posKey2.split(',').map(Number);
-                            const dProject2 = px2 * d.x + py2 * d.y + pz2 * d.z;
-                            const perpKey2 = d.x !== 0 ? `${py2},${pz2}` : d.y !== 0 ? `${px2},${pz2}` : `${px2},${py2}`;
-                            if (!newColumns.has(perpKey2) || dProject2 > newColumns.get(perpKey2).dProject) {
-                                newColumns.set(perpKey2, { dProject: dProject2, x: px2, y: py2, z: pz2 });
-                            }
-                        }
-                        for (const [perpKey2, front2] of newColumns) {
-                            if (columns.has(perpKey2)) continue;
-                            const chkX = front2.x + d.x, chkY = front2.y + d.y, chkZ = front2.z + d.z;
-                            const chkKey = `${chkX},${chkY},${chkZ}`;
-                            if (entityPositions.has(chkKey)) continue;
-                            const blk = virtualWorld.has(chkKey) ? virtualWorld.get(chkKey) : this._getBlock(chkX, chkY, chkZ);
-                            if (!blk || blk === 'air') continue;
-                            const chain2 = this._resolvePushChain(chkX, chkY, chkZ, d, virtualWorld);
-                            if (!chain2) { stepFailed = true; break; }
-                            for (let i = chain2.length - 1; i >= 0; i--) {
-                                const cb2 = chain2[i];
-                                const toX = cb2.x + d.x, toY = cb2.y + d.y, toZ = cb2.z + d.z;
-                                stepPushMoves.push({
-                                    fromX: cb2.x, fromY: cb2.y, fromZ: cb2.z,
-                                    toX, toY, toZ,
-                                    blockId: cb2.blockId, orientation: cb2.orientation
-                                });
-                                virtualWorld.set(`${toX},${toY},${toZ}`, cb2.blockId);
-                                virtualWorld.set(`${cb2.x},${cb2.y},${cb2.z}`, 'air');
-                            }
-                        }
-                        if (stepFailed) break;
-                        continue; // 連結ブロックは移動体の一部
-                    }
-                    // BFS空（非連結ブロック）→ 下の押し出し処理に流れる
-                }
-
-                // 移動体位置に残っているブロック → 押す
-                const chain = this._resolvePushChain(px, py, pz, d, virtualWorld);
-                if (!chain) { stepFailed = true; break; }
-                for (let i = chain.length - 1; i >= 0; i--) {
-                    const cb = chain[i];
-                    const toX = cb.x + d.x, toY = cb.y + d.y, toZ = cb.z + d.z;
-                    stepPushMoves.push({
-                        fromX: cb.x, fromY: cb.y, fromZ: cb.z,
-                        toX, toY, toZ,
-                        blockId: cb.blockId, orientation: cb.orientation
-                    });
-                    virtualWorld.set(`${toX},${toY},${toZ}`, cb.blockId);
-                    virtualWorld.set(`${cb.x},${cb.y},${cb.z}`, 'air');
-                }
-            }
-
-            if (stepFailed) break;
-
-            // 移動体の旧位置をairに
-            for (const posKey of vacatedPositions) {
-                if (!entityPositions.has(posKey)) {
-                    virtualWorld.set(posKey, 'air');
-                }
-            }
-
-            allPushedMoves.push(...stepPushMoves);
-            actualDist = step;
-        }
-
-        if (actualDist === 0) return null;
-
-        return {
-            actualDist,
-            connectedBlocks: connectedBlocks || [],
-            contactStep: contactStep,
-            pushedMoves: allPushedMoves
-        };
-    }
-
-    // === 伸長 ===
-
-    /**
-     * 粘着ピストンを伸長する（アニメーション開始）
+     * 粘着ピストンを作動させる（1往復開始）
+     * @param {number} wx - sticky_piston のワールドX
+     * @param {number} wy - sticky_piston のワールドY
+     * @param {number} wz - sticky_piston のワールドZ
      * @returns {boolean} 成功したか
      */
-    Extend(wx, wy, wz) {
+    Activate(wx, wy, wz) {
         const blockId = this._getBlock(wx, wy, wz);
         if (blockId !== 'sticky_piston') return false;
 
         const bodyKey = `${wx},${wy},${wz}`;
-        if (this._bodies.has(bodyKey)) return false;
+        if (this._bodies.has(bodyKey)) return false; // 動作中
 
         const orientation = this._getOrientation(wx, wy, wz);
         const d = this._getDirection(orientation);
 
-        // ステップバイステップシミュレーション
-        const sim = this._simulateExtension(wx, wy, wz, d);
-        if (!sim) return false;
+        // TOP面の隣のブロックを確認
+        const adjX = wx + d.x, adjY = wy + d.y, adjZ = wz + d.z;
+        const adjBlock = this._getBlock(adjX, adjY, adjZ);
+        const adjHasBlock = adjBlock && adjBlock !== 'air';
 
-        const { actualDist, connectedBlocks, pushedMoves } = sim;
-
-        // === アニメーション開始 ===
-
-        // ピストン基部を即座に変更
-        this._setBlock(wx, wy, wz, 'piston_base', orientation);
-
-        // アニメーション用ブロックリスト（相対座標、origin = P）
-        const bodyBlocks = [];
-
-        // 連結ブロックをワールドから除去 + bodyBlocksに追加
-        for (const block of connectedBlocks) {
-            bodyBlocks.push({
-                rx: block.x - wx, ry: block.y - wy, rz: block.z - wz,
-                blockId: block.blockId, orientation: block.orientation
-            });
-            this._setBlock(block.x, block.y, block.z, 'air');
-            this._updateLight(block.x, block.y, block.z, true);
+        if (adjHasBlock) {
+            return this._startPush(wx, wy, wz, d, orientation, adjX, adjY, adjZ, adjBlock);
+        } else {
+            return this._startPickup(wx, wy, wz, d, orientation);
         }
-
-        // ピストンヘッドをアニメーション体に含める
-        bodyBlocks.push({
-            rx: 0, ry: 0, rz: 0,
-            blockId: 'sticky_piston_head', orientation: orientation
-        });
-
-        // 押し出しブロックの元位置をairにする（アニメーション中に経路を空ける）
-        // 最終位置への配置はdissolve時にまとめて行う
-        const rebuildBlocks = bodyBlocks.slice(); // チャンク再構築用（bodyBlocksとは別）
-        const clearedOrigins = new Set();
-        for (const pm of pushedMoves) {
-            const origKey = `${pm.fromX},${pm.fromY},${pm.fromZ}`;
-            if (!clearedOrigins.has(origKey)) {
-                const realBlock = this._getBlock(pm.fromX, pm.fromY, pm.fromZ);
-                if (realBlock && realBlock !== 'air') {
-                    this._setBlock(pm.fromX, pm.fromY, pm.fromZ, 'air');
-                    this._updateLight(pm.fromX, pm.fromY, pm.fromZ, true);
-                    rebuildBlocks.push({ rx: pm.fromX - wx, ry: pm.fromY - wy, rz: pm.fromZ - wz });
-                }
-                clearedOrigins.add(origKey);
-            }
-        }
-
-        // チャンクメッシュ再構築
-        this._rebuildAffectedChunks(wx, wz, rebuildBlocks);
-
-        // PistonBody 生成
-        const moveVector = { x: d.x * actualDist, y: d.y * actualDist, z: d.z * actualDist };
-        const body = new PistonBody(wx, wy, wz, moveVector, actualDist, bodyBlocks, true, orientation, pushedMoves);
-        this._bodies.set(bodyKey, body);
-
-        // メッシュ生成
-        this._createMesh(bodyKey, body);
-
-        return true;
     }
 
-    // === 収縮 ===
+    // === ピックアップモード ===
 
-    /**
-     * ピストンを収縮する（アニメーション開始）
-     * @returns {boolean} 成功したか
-     */
-    Retract(wx, wy, wz) {
-        const blockId = this._getBlock(wx, wy, wz);
-        if (blockId !== 'piston_base') return false;
+    _startPickup(wx, wy, wz, d, orientation) {
+        const maxDist = PistonManager._MAX_EXTEND_DISTANCE;
 
-        const bodyKey = `${wx},${wy},${wz}`;
-        if (this._bodies.has(bodyKey)) return false;
+        // D方向にスキャンして最初のブロックを探す
+        let targetDist = 0;
+        let targetBlockId = null;
+        let targetOrientation = 0;
 
-        const orientation = this._getOrientation(wx, wy, wz);
-        const d = this._getDirection(orientation);
-
-        // ヘッド位置をスキャンで検出
-        let dist = 0;
-        for (let i = 1; i <= PistonManager._MAX_EXTEND_DISTANCE; i++) {
-            if (this._getBlock(wx + d.x * i, wy + d.y * i, wz + d.z * i) === 'sticky_piston_head') {
-                dist = i;
+        for (let i = 2; i <= maxDist; i++) {
+            const sx = wx + d.x * i, sy = wy + d.y * i, sz = wz + d.z * i;
+            if (sy < 0 || sy >= 128) break;
+            const bid = this._getBlock(sx, sy, sz);
+            if (bid && bid !== 'air') {
+                targetDist = i;
+                targetBlockId = bid;
+                targetOrientation = this._getOrientation(sx, sy, sz);
                 break;
             }
         }
-        if (dist === 0) return false;
 
-        const headX = wx + d.x * dist, headY = wy + d.y * dist, headZ = wz + d.z * dist;
+        if (targetDist === 0) return false; // ブロックが見つからない
 
-        // BFS: ヘッドの粘着面の先（連結ブロックのみ引き戻し）
-        const stickyX = headX + d.x, stickyY = headY + d.y, stickyZ = headZ + d.z;
-        const connectedBlocks = this._bfsConnectedBlocks(stickyX, stickyY, stickyZ, wx, wy, wz);
-
-        // 引き戻し先の空きチェック（連結ブロックのみ）
-        for (const block of connectedBlocks) {
-            const destX = block.x - d.x * dist;
-            const destY = block.y - d.y * dist;
-            const destZ = block.z - d.z * dist;
-            const destBlock = this._getBlock(destX, destY, destZ);
-            if (destBlock && destBlock !== 'air'
-                && destBlock !== 'piston_base' && destBlock !== 'sticky_piston_head') {
-                const isOwnBlock = connectedBlocks.some(
-                    b => b.x === destX && b.y === destY && b.z === destZ
-                );
-                if (!isOwnBlock) return false;
-            }
-            if (destY < 0 || destY >= 128) return false;
+        // 移動不可ブロックの場合: 手前で止まって戻る（何も運ばない）
+        let carriedBlock = null;
+        let extendDist = targetDist;
+        if (PistonManager._IMMOVABLE.has(targetBlockId)) {
+            extendDist = targetDist - 1;
+            if (extendDist < 1) return false;
+        } else {
+            carriedBlock = { blockId: targetBlockId, orientation: targetOrientation };
         }
 
-        // === アニメーション開始 ===
-
-        // ヘッドをワールドから削除
-        this._setBlock(headX, headY, headZ, 'air');
-        this._updateLight(headX, headY, headZ, true);
-
-        // bodyBlocks（連結ブロックのみ、origin = P）
-        const bodyBlocks = [];
-
-        for (const block of connectedBlocks) {
-            bodyBlocks.push({
-                rx: block.x - wx, ry: block.y - wy, rz: block.z - wz,
-                blockId: block.blockId, orientation: block.orientation
-            });
-            this._setBlock(block.x, block.y, block.z, 'air');
-            this._updateLight(block.x, block.y, block.z, true);
-        }
-
-        // ピストンヘッドもアニメーション体に含める
-        bodyBlocks.push({
-            rx: headX - wx, ry: headY - wy, rz: headZ - wz,
-            blockId: 'sticky_piston_head', orientation: orientation
-        });
-
-        // チャンクメッシュ再構築
-        this._rebuildAffectedChunks(wx, wz, bodyBlocks);
-
-        // 移動ベクトルは逆方向
-        const moveVector = { x: -d.x * dist, y: -d.y * dist, z: -d.z * dist };
-        const body = new PistonBody(wx, wy, wz, moveVector, dist, bodyBlocks, false, orientation);
+        // アニメーション開始（ブロック除去はフェーズ1完了時に行う）
+        const body = new PistonBody(wx, wy, wz, d, extendDist, 'pickup', carriedBlock, orientation);
+        const bodyKey = `${wx},${wy},${wz}`;
         this._bodies.set(bodyKey, body);
-
         this._createMesh(bodyKey, body);
 
         return true;
     }
 
-    // === アームメッシュ（ビジュアル専用） ===
+    // === プッシュモード ===
+
+    _startPush(wx, wy, wz, d, orientation, adjX, adjY, adjZ, adjBlockId) {
+        // 移動不可ブロック → 動作失敗
+        if (PistonManager._IMMOVABLE.has(adjBlockId)) return false;
+
+        const maxDist = PistonManager._MAX_EXTEND_DISTANCE;
+        const adjOrientation = this._getOrientation(adjX, adjY, adjZ);
+
+        // P+2D からスキャンして空きの末端を探す
+        let extendDist = maxDist;
+        for (let i = 2; i <= maxDist; i++) {
+            const sx = wx + d.x * i, sy = wy + d.y * i, sz = wz + d.z * i;
+            if (sy < 0 || sy >= 128) {
+                extendDist = i - 1;
+                break;
+            }
+            const bid = this._getBlock(sx, sy, sz);
+            if (bid && bid !== 'air') {
+                extendDist = i - 1;
+                break;
+            }
+        }
+
+        if (extendDist < 2) {
+            // 置く場所がない（すぐ隣に障害物）→ 動作失敗
+            return false;
+        }
+
+        const carriedBlock = { blockId: adjBlockId, orientation: adjOrientation };
+
+        // ブロックBをワールドから即時除去
+        this._setBlock(adjX, adjY, adjZ, 'air');
+        this._updateLight(adjX, adjY, adjZ, true);
+        this._rebuildChunksAround([[adjX, adjY, adjZ]]);
+
+        // アニメーション開始
+        const body = new PistonBody(wx, wy, wz, d, extendDist, 'push', carriedBlock, orientation);
+        const bodyKey = `${wx},${wy},${wz}`;
+        this._bodies.set(bodyKey, body);
+        this._createMesh(bodyKey, body);
+
+        return true;
+    }
+
+    // === アームメッシュ ===
 
     _createArmMesh(key, x1, y1, z1, x2, y2, z2) {
         if (typeof THREE === 'undefined' || !this._scene) return;
@@ -649,16 +298,38 @@ class PistonManager {
         this._armMeshes.delete(key);
     }
 
-    // === メッシュ生成 ===
+    // === アニメーションメッシュ生成 ===
 
     _createMesh(key, body) {
         if (typeof RotationBodyMesh === 'undefined' || !this._scene) return;
 
         try {
+            // ヘッドブロック + 運搬ブロックをメッシュ化
+            const blocks = [];
+            // ピストンヘッド（相対座標 0,0,0）
+            blocks.push({
+                rx: 0, ry: 0, rz: 0,
+                blockId: 'sticky_piston_head', orientation: body._orientation
+            });
+            // 運搬ブロック（ヘッドの先端側 = D方向に1ブロック先）
+            if (body._carriedBlock) {
+                const d = body._direction;
+                if (body._mode === 'push') {
+                    // プッシュ: ブロックはヘッドのD方向先
+                    blocks.push({
+                        rx: d.x, ry: d.y, rz: d.z,
+                        blockId: body._carriedBlock.blockId,
+                        orientation: body._carriedBlock.orientation
+                    });
+                } else {
+                    // ピックアップ: フェーズ1完了後に運搬開始（初期時点ではヘッドのみ）
+                }
+            }
+
             const compatBody = {
                 _axisX: body._pistonX, _axisY: body._pistonY, _axisZ: body._pistonZ,
-                _blocks: body._blocks,
-                _blockSet: new Set(body._blocks.map(b => {
+                _blocks: blocks,
+                _blockSet: new Set(blocks.map(b => {
                     return ((b.rx + 128) << 16) | ((b.ry + 128) << 8) | (b.rz + 128);
                 })),
                 _frontDx: 0, _frontDy: 1, _frontDz: 0,
@@ -675,120 +346,109 @@ class PistonManager {
         }
     }
 
-    // === dissolve ===
-
-    _dissolveExtend(body) {
-        const wx = body._pistonX, wy = body._pistonY, wz = body._pistonZ;
-        const mv = body._moveVector;
-
-        // 押し出しブロックの最終位置を算出
-        const finalPositions = new Map();
-        for (const pm of body._pushedBlocks) {
-            const origKey = `${pm.fromX},${pm.fromY},${pm.fromZ}`;
-            const toKey = `${pm.toX},${pm.toY},${pm.toZ}`;
-            if (finalPositions.has(origKey)) {
-                const prev = finalPositions.get(origKey);
-                finalPositions.delete(origKey);
-                finalPositions.set(toKey, { x: pm.toX, y: pm.toY, z: pm.toZ, blockId: prev.blockId, orientation: prev.orientation });
-            } else {
-                finalPositions.set(toKey, { x: pm.toX, y: pm.toY, z: pm.toZ, blockId: pm.blockId, orientation: pm.orientation });
-            }
-        }
-
-        // 押し出しブロック: 元の位置をairに
-        const clearedPositions = new Set();
-        for (const pm of body._pushedBlocks) {
-            const origKey = `${pm.fromX},${pm.fromY},${pm.fromZ}`;
-            if (!clearedPositions.has(origKey)) {
-                this._setBlock(pm.fromX, pm.fromY, pm.fromZ, 'air');
-                this._updateLight(pm.fromX, pm.fromY, pm.fromZ, true);
-                clearedPositions.add(origKey);
-            }
-        }
-
-        // 押し出しブロック: 最終位置に配置
-        for (const [, fp] of finalPositions) {
-            this._setBlock(fp.x, fp.y, fp.z, fp.blockId, fp.orientation);
-            this._updateLight(fp.x, fp.y, fp.z, false);
-        }
-
-        // 連結ブロック + ヘッドを移動先に書き戻し（押し出しの後に行うことで上書き防止）
-        for (const b of body._blocks) {
-            const bx = wx + b.rx + mv.x;
-            const by = wy + b.ry + mv.y;
-            const bz = wz + b.rz + mv.z;
-            this._setBlock(bx, by, bz, b.blockId, b.orientation);
-            this._updateLight(bx, by, bz, false);
-        }
-
-        // アームメッシュ生成
-        const key = `${wx},${wy},${wz}`;
-        const headX = wx + mv.x, headY = wy + mv.y, headZ = wz + mv.z;
-        this._createArmMesh(key, wx + 0.5, wy + 0.5, wz + 0.5, headX + 0.5, headY + 0.5, headZ + 0.5);
-
-        // チャンクメッシュ再構築
-        const allBlocks = body._blocks.map(b => ({
-            rx: b.rx + mv.x, ry: b.ry + mv.y, rz: b.rz + mv.z
-        }));
-        for (const [, fp] of finalPositions) {
-            allBlocks.push({ rx: fp.x - wx, ry: fp.y - wy, rz: fp.z - wz });
-        }
-        for (const pm of body._pushedBlocks) {
-            allBlocks.push({ rx: pm.fromX - wx, ry: pm.fromY - wy, rz: pm.fromZ - wz });
-        }
-        this._rebuildAffectedChunks(wx, wz, allBlocks);
-    }
-
-    _dissolveRetract(body) {
-        const wx = body._pistonX, wy = body._pistonY, wz = body._pistonZ;
-        const mv = body._moveVector;
-
-        // 連結ブロックを引き戻し先に書き戻し（ヘッド以外）
-        for (const b of body._blocks) {
-            if (b.blockId === 'sticky_piston_head') continue;
-            const bx = wx + b.rx + mv.x;
-            const by = wy + b.ry + mv.y;
-            const bz = wz + b.rz + mv.z;
-            this._setBlock(bx, by, bz, b.blockId, b.orientation);
-            this._updateLight(bx, by, bz, false);
-        }
-
-        // ピストン基部を sticky_piston に戻す
-        this._setBlock(wx, wy, wz, 'sticky_piston', body._orientation);
-
-        // アームメッシュ削除
-        this._removeArmMesh(`${wx},${wy},${wz}`);
-
-        // チャンクメッシュ再構築
-        const destBlocks = body._blocks.map(b => ({
-            rx: b.rx + mv.x, ry: b.ry + mv.y, rz: b.rz + mv.z
-        }));
-        destBlocks.push({ rx: 0, ry: 0, rz: 0 });
-        this._rebuildAffectedChunks(wx, wz, destBlocks);
-    }
-
-    _dissolveBody(key) {
-        const body = this._bodies.get(key);
-        if (!body) return;
-
-        if (body._isExtending) {
-            this._dissolveExtend(body);
-        } else {
-            this._dissolveRetract(body);
-        }
-
-        // メッシュ削除
+    _removeMesh(key) {
         const mesh = this._meshes.get(key);
-        if (mesh) {
-            try {
-                this._scene.remove(mesh.GetGroup());
-                mesh.Dispose();
-            } catch (e) {
-                console.warn('PistonManager: メッシュ削除失敗', e);
+        if (!mesh) return;
+        try {
+            this._scene.remove(mesh.GetGroup());
+            mesh.Dispose();
+        } catch (e) {
+            console.warn('PistonManager: メッシュ削除失敗', e);
+        }
+        this._meshes.delete(key);
+    }
+
+    /**
+     * ピックアップモードのフェーズ1完了後、運搬ブロック付きメッシュに再構築
+     */
+    _rebuildMeshWithCarriedBlock(key, body) {
+        this._removeMesh(key);
+        if (typeof RotationBodyMesh === 'undefined' || !this._scene) return;
+        try {
+            const d = body._direction;
+            const blocks = [
+                { rx: 0, ry: 0, rz: 0, blockId: 'sticky_piston_head', orientation: body._orientation },
+                { rx: d.x, ry: d.y, rz: d.z, blockId: body._carriedBlock.blockId, orientation: body._carriedBlock.orientation }
+            ];
+            const compatBody = {
+                _axisX: body._pistonX, _axisY: body._pistonY, _axisZ: body._pistonZ,
+                _blocks: blocks,
+                _blockSet: new Set(blocks.map(b => ((b.rx + 128) << 16) | ((b.ry + 128) << 8) | (b.rz + 128))),
+                _frontDx: 0, _frontDy: 1, _frontDz: 0,
+                _centerX: body._pistonX + 0.5,
+                _centerY: body._pistonY + 0.5,
+                _centerZ: body._pistonZ + 0.5
+            };
+            const mesh = new RotationBodyMesh(compatBody, this._textureLoader, this._chunkManager);
+            mesh.Build();
+            // 収縮開始位置に配置
+            const group = mesh.GetGroup();
+            group.position.x = body._pistonX + 0.5 + body._direction.x * body._totalDistance;
+            group.position.y = body._pistonY + 0.5 + body._direction.y * body._totalDistance;
+            group.position.z = body._pistonZ + 0.5 + body._direction.z * body._totalDistance;
+            this._scene.add(group);
+            this._meshes.set(key, mesh);
+        } catch (e) {
+            console.warn('PistonManager: メッシュ再構築失敗', e);
+        }
+    }
+
+    // === フェーズ切り替え・完了処理 ===
+
+    _onExtendComplete(key, body) {
+        const d = body._direction;
+        const n = body._totalDistance;
+        const wx = body._pistonX, wy = body._pistonY, wz = body._pistonZ;
+
+        if (body._mode === 'pickup' && body._carriedBlock) {
+            // ターゲットブロックをワールドから除去
+            const tx = wx + d.x * n, ty = wy + d.y * n, tz = wz + d.z * n;
+            this._setBlock(tx, ty, tz, 'air');
+            this._updateLight(tx, ty, tz, true);
+            this._rebuildChunksAround([[tx, ty, tz]]);
+            // メッシュを運搬ブロック付きに再構築
+            this._rebuildMeshWithCarriedBlock(key, body);
+        } else if (body._mode === 'push' && body._carriedBlock) {
+            // ブロックを伸びた先に設置
+            const px = wx + d.x * n, py = wy + d.y * n, pz = wz + d.z * n;
+            this._setBlock(px, py, pz, body._carriedBlock.blockId, body._carriedBlock.orientation);
+            this._updateLight(px, py, pz, false);
+            this._rebuildChunksAround([[px, py, pz]]);
+            // プッシュ後、運搬ブロックを解放
+            body._carriedBlock = null;
+            // メッシュ再構築（ヘッドのみ）
+            this._removeMesh(key);
+            this._createMesh(key, body);
+            // メッシュ位置を伸長先に合わせる
+            const mesh = this._meshes.get(key);
+            if (mesh) {
+                const group = mesh.GetGroup();
+                group.position.x = wx + 0.5 + d.x * n;
+                group.position.y = wy + 0.5 + d.y * n;
+                group.position.z = wz + 0.5 + d.z * n;
             }
-            this._meshes.delete(key);
         }
 
+        // フェーズ切り替え
+        body._phase = 'retracting';
+        body._displacement = 0;
+    }
+
+    _onRetractComplete(key, body) {
+        const d = body._direction;
+        const wx = body._pistonX, wy = body._pistonY, wz = body._pistonZ;
+
+        if (body._mode === 'pickup' && body._carriedBlock) {
+            // ブロックをピストンのTOP面隣に設置
+            const px = wx + d.x, py = wy + d.y, pz = wz + d.z;
+            this._setBlock(px, py, pz, body._carriedBlock.blockId, body._carriedBlock.orientation);
+            this._updateLight(px, py, pz, false);
+            this._rebuildChunksAround([[px, py, pz]]);
+        }
+
+        // メッシュ・アーム削除
+        this._removeMesh(key);
+        this._removeArmMesh(key);
         this._bodies.delete(key);
     }
 
@@ -801,51 +461,57 @@ class PistonManager {
     Update(deltaTime) {
         if (this._bodies.size === 0) return;
 
-        const keysToDissolve = [];
+        const keysToComplete = [];
 
         for (const [key, body] of this._bodies) {
             body._displacement += body._speed * deltaTime;
 
             if (body._displacement >= body._totalDistance) {
                 body._displacement = body._totalDistance;
-                keysToDissolve.push(key);
-                continue;
+                keysToComplete.push(key);
             }
 
             // メッシュ位置更新
-            const mesh = this._meshes.get(key);
             const progress = body._displacement / body._totalDistance;
-            if (mesh) {
-                const group = mesh.GetGroup();
-                group.position.x = body._pistonX + 0.5 + body._moveVector.x * progress;
-                group.position.y = body._pistonY + 0.5 + body._moveVector.y * progress;
-                group.position.z = body._pistonZ + 0.5 + body._moveVector.z * progress;
-            }
-
-            // アームメッシュ更新
+            const d = body._direction;
+            const n = body._totalDistance;
             const baseX = body._pistonX + 0.5;
             const baseY = body._pistonY + 0.5;
             const baseZ = body._pistonZ + 0.5;
-            if (body._isExtending) {
-                const headX = baseX + body._moveVector.x * progress;
-                const headY = baseY + body._moveVector.y * progress;
-                const headZ = baseZ + body._moveVector.z * progress;
-                this._updateArmMesh(key, baseX, baseY, baseZ, headX, headY, headZ);
+
+            let headX, headY, headZ;
+            if (body._phase === 'extending') {
+                headX = baseX + d.x * n * progress;
+                headY = baseY + d.y * n * progress;
+                headZ = baseZ + d.z * n * progress;
             } else {
-                const d = this._getDirection(body._orientation);
-                const dist = body._totalDistance;
-                const origHeadX = body._pistonX + d.x * dist + 0.5;
-                const origHeadY = body._pistonY + d.y * dist + 0.5;
-                const origHeadZ = body._pistonZ + d.z * dist + 0.5;
-                const curHeadX = origHeadX + body._moveVector.x * progress;
-                const curHeadY = origHeadY + body._moveVector.y * progress;
-                const curHeadZ = origHeadZ + body._moveVector.z * progress;
-                this._updateArmMesh(key, baseX, baseY, baseZ, curHeadX, curHeadY, curHeadZ);
+                // 収縮: 伸びた先から戻る
+                headX = baseX + d.x * n * (1 - progress);
+                headY = baseY + d.y * n * (1 - progress);
+                headZ = baseZ + d.z * n * (1 - progress);
             }
+
+            const mesh = this._meshes.get(key);
+            if (mesh) {
+                const group = mesh.GetGroup();
+                group.position.x = headX;
+                group.position.y = headY;
+                group.position.z = headZ;
+            }
+
+            // アーム更新
+            this._updateArmMesh(key, baseX, baseY, baseZ, headX, headY, headZ);
         }
 
-        for (const key of keysToDissolve) {
-            this._dissolveBody(key);
+        for (const key of keysToComplete) {
+            const body = this._bodies.get(key);
+            if (!body) continue;
+
+            if (body._phase === 'extending') {
+                this._onExtendComplete(key, body);
+            } else {
+                this._onRetractComplete(key, body);
+            }
         }
     }
 }

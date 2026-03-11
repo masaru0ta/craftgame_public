@@ -240,11 +240,7 @@ class BlockInteraction {
 
         // 粘着ピストンチェック
         if (targetBlockId === 'sticky_piston' && this.pistonManager) {
-            this.pistonManager.Extend(target.blockX, target.blockY, target.blockZ);
-            return true;
-        }
-        if (targetBlockId === 'piston_base' && this.pistonManager) {
-            this.pistonManager.Retract(target.blockX, target.blockY, target.blockZ);
+            this.pistonManager.Activate(target.blockX, target.blockY, target.blockZ);
             return true;
         }
 
@@ -657,7 +653,7 @@ class BlockInteraction {
         }
         if (blockId === 'direction' && this.directionBlockManager) return '移動';
         if (blockId === 'rope_way' && this.ropeWayManager) return 'ロープウェイ';
-        if ((blockId === 'sticky_piston' || blockId === 'piston_base') && this.pistonManager) return 'ピストン';
+        if (blockId === 'sticky_piston' && this.pistonManager) return 'ピストン';
         return null;
     }
 
@@ -832,7 +828,7 @@ class BlockInteraction {
             }
         }
 
-        // マンハッタン距離5以内のsticky_piston / piston_baseを検索して操作
+        // マンハッタン距離5以内のsticky_pistonを検索して作動
         const psm = this.pistonManager;
         if (psm) {
             for (let dx = -range; dx <= range; dx++) {
@@ -841,10 +837,8 @@ class BlockInteraction {
                         if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > range) continue;
                         const rx = wx + dx, ry = wy + dy, rz = wz + dz;
                         const bid = this.physicsWorld.getBlockAt(rx, ry, rz);
-                        if (turningOn && bid === 'sticky_piston') {
-                            psm.Extend(rx, ry, rz);
-                        } else if (!turningOn && bid === 'piston_base') {
-                            psm.Retract(rx, ry, rz);
+                        if (bid === 'sticky_piston') {
+                            psm.Activate(rx, ry, rz);
                         }
                     }
                 }
