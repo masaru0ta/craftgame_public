@@ -278,7 +278,9 @@ class GameTestApp {
 
         // 粘着ピストン管理初期化
         if (typeof PistonManager !== 'undefined') {
-            this.pistonManager = new PistonManager(this.chunkManager);
+            this.pistonManager = new PistonManager(
+                this.chunkManager, this.worldContainer, this.textureLoader
+            );
             this.blockInteraction.pistonManager = this.pistonManager;
         }
 
@@ -1273,6 +1275,11 @@ class GameTestApp {
         // ロープウェイ更新
         if (this.ropeWayManager) {
             this.ropeWayManager.Update(this.deltaTime);
+        }
+
+        // ピストン更新
+        if (this.pistonManager) {
+            this.pistonManager.Update(this.deltaTime);
         }
 
         // 雨粒パーティクル

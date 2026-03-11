@@ -1,7 +1,33 @@
 /**
  * Piston.js
- * 粘着ピストン管理クラス - 伸長・収縮ロジック
+ * 粘着ピストン管理クラス - アニメーション付き伸長・収縮ロジック
  */
+
+class PistonBody {
+    /**
+     * @param {number} pistonX - ピストン基部のワールドX
+     * @param {number} pistonY - ピストン基部のワールドY
+     * @param {number} pistonZ - ピストン基部のワールドZ
+     * @param {{x:number,y:number,z:number}} moveVector - 移動ベクトル（D * 5）
+     * @param {number} totalDistance - 移動距離（5）
+     * @param {Array<{rx:number,ry:number,rz:number,blockId:string,orientation:number}>} blocks
+     * @param {boolean} isExtending - 伸長中か収縮中か
+     * @param {number} orientation - ピストンの orientation
+     */
+    constructor(pistonX, pistonY, pistonZ, moveVector, totalDistance, blocks, isExtending, orientation) {
+        this._pistonX = pistonX;
+        this._pistonY = pistonY;
+        this._pistonZ = pistonZ;
+        this._moveVector = moveVector;
+        this._totalDistance = totalDistance;
+        this._blocks = blocks;
+        this._displacement = 0;
+        this._speed = 10.0; // 10ブロック/秒
+        this._isExtending = isExtending;
+        this._orientation = orientation;
+    }
+}
+
 class PistonManager {
     /** 伸長距離（固定5ブロック） */
     static _EXTEND_DISTANCE = 5;
@@ -31,97 +57,98 @@ class PistonManager {
     ];
 
     /**
-     * @param {ChunkManager} chunkManager
+     * @param {object} chunkManager
+     * @param {THREE.Group} worldContainer - シーンコンテナ
+     * @param {object} textureLoader - テクスチャローダー
      */
-    constructor(chunkManager) {
+    constructor(chunkManager, worldContainer, textureLoader) {
         this._chunkManager = chunkManager;
+        this._scene = worldContainer;
+        this._textureLoader = textureLoader;
+        /** @type {Map<string, PistonBody>} */
+        this._bodies = new Map();
+        /** @type {Map<string, object>} */
+        this._meshes = new Map();
     }
 
-    /**
-     * 指定座標のブロックIDを取得
-     */
-    _getBlock(wx, wy, wz) {
+    // === ヘルパー ===
+
+    _resolve(wx, wy, wz) {
         const cx = Math.floor(wx / 16);
         const cz = Math.floor(wz / 16);
         const chunk = this._chunkManager.chunks.get(`${cx},${cz}`);
         if (!chunk || !chunk.chunkData) return null;
-        const lx = ((wx % 16) + 16) % 16;
-        const lz = ((wz % 16) + 16) % 16;
         const ly = wy - chunk.chunkData.baseY;
         if (ly < 0 || ly >= 128) return null;
-        return chunk.chunkData.getBlock(lx, ly, lz);
+        return { cd: chunk.chunkData, lx: ((wx % 16) + 16) % 16, ly, lz: ((wz % 16) + 16) % 16 };
     }
 
-    /**
-     * 指定座標のorientationを取得
-     */
+    _getBlock(wx, wy, wz) {
+        const r = this._resolve(wx, wy, wz);
+        return r ? r.cd.getBlock(r.lx, r.ly, r.lz) : null;
+    }
+
     _getOrientation(wx, wy, wz) {
-        const cx = Math.floor(wx / 16);
-        const cz = Math.floor(wz / 16);
-        const chunk = this._chunkManager.chunks.get(`${cx},${cz}`);
-        if (!chunk || !chunk.chunkData) return 0;
-        const lx = ((wx % 16) + 16) % 16;
-        const lz = ((wz % 16) + 16) % 16;
-        const ly = wy - chunk.chunkData.baseY;
-        if (ly < 0 || ly >= 128) return 0;
-        return chunk.chunkData.getOrientation(lx, ly, lz);
+        const r = this._resolve(wx, wy, wz);
+        return r ? r.cd.getOrientation(r.lx, r.ly, r.lz) : 0;
     }
 
-    /**
-     * 指定座標にブロックを設置
-     */
     _setBlock(wx, wy, wz, blockId, orientation = 0) {
-        const cx = Math.floor(wx / 16);
-        const cz = Math.floor(wz / 16);
-        const chunk = this._chunkManager.chunks.get(`${cx},${cz}`);
-        if (!chunk || !chunk.chunkData) return false;
-        const lx = ((wx % 16) + 16) % 16;
-        const lz = ((wz % 16) + 16) % 16;
-        const ly = wy - chunk.chunkData.baseY;
-        if (ly < 0 || ly >= 128) return false;
-        chunk.chunkData.setBlock(lx, ly, lz, blockId, orientation);
-        return true;
+        const r = this._resolve(wx, wy, wz);
+        if (r) r.cd.setBlock(r.lx, r.ly, r.lz, blockId, orientation);
     }
 
-    /**
-     * チャンクメッシュを再構築
-     */
-    _rebuildMesh(wx, wz) {
-        const cx = Math.floor(wx / 16);
-        const cz = Math.floor(wz / 16);
-        this._chunkManager.rebuildChunkMesh(cx, cz);
-    }
-
-    /**
-     * 影響範囲のチャンクメッシュをすべて再構築
-     */
-    _rebuildAffectedChunks(positions) {
-        const rebuilt = new Set();
-        for (const p of positions) {
-            const key = `${Math.floor(p.x / 16)},${Math.floor(p.z / 16)}`;
-            if (!rebuilt.has(key)) {
-                rebuilt.add(key);
-                this._rebuildMesh(p.x, p.z);
-            }
-        }
-    }
-
-    /**
-     * orientation から方向ベクトルを取得
-     */
     _getDirection(orientation) {
         const topDir = Math.floor(orientation / 4);
         return PistonManager._DIRECTION_FROM_TOPDIR[topDir] || PistonManager._DIRECTION_FROM_TOPDIR[0];
     }
 
+    _updateLight(wx, wy, wz, removed) {
+        const lc = this._chunkManager.lightCalculator;
+        if (!lc) return;
+        const r = this._resolve(wx, wy, wz);
+        if (!r) return;
+        const cx = Math.floor(wx / 16);
+        const cz = Math.floor(wz / 16);
+        const neighbors = this._chunkManager._getNeighborChunks(cx, cz);
+        if (removed) {
+            lc.onBlockRemoved(r.cd, r.lx, r.ly, r.lz, neighbors);
+        } else {
+            lc.onBlockPlaced(r.cd, r.lx, r.ly, r.lz, neighbors);
+        }
+    }
+
+    _rebuildAffectedChunks(baseX, baseZ, blocks) {
+        const affected = new Set();
+        for (const b of blocks) {
+            const bwx = baseX + b.rx, bwz = baseZ + b.rz;
+            const cx = Math.floor(bwx / 16), cz = Math.floor(bwz / 16);
+            affected.add(`${cx},${cz}`);
+            const lx = ((bwx % 16) + 16) % 16;
+            const lz = ((bwz % 16) + 16) % 16;
+            if (lx === 0)  affected.add(`${cx - 1},${cz}`);
+            if (lx === 15) affected.add(`${cx + 1},${cz}`);
+            if (lz === 0)  affected.add(`${cx},${cz - 1}`);
+            if (lz === 15) affected.add(`${cx},${cz + 1}`);
+        }
+        affected.add(`${Math.floor(baseX / 16)},${Math.floor(baseZ / 16)}`);
+        for (const chunkKey of affected) {
+            const [cx, cz] = chunkKey.split(',').map(Number);
+            this._chunkManager.rebuildChunkMesh(cx, cz);
+        }
+    }
+
+    // === BFS ===
+
     /**
-     * BFS で粘着面に接続されたブロック群を検出
-     * @param {number} startX - 起点X
-     * @param {number} startY - 起点Y
-     * @param {number} startZ - 起点Z
-     * @returns {Array<{x:number, y:number, z:number, blockId:string, orientation:number}>}
+     * @param {number} startX - BFS起点X
+     * @param {number} startY - BFS起点Y
+     * @param {number} startZ - BFS起点Z
+     * @param {number} [excludeX] - 除外座標X（ピストン自身）
+     * @param {number} [excludeY] - 除外座標Y
+     * @param {number} [excludeZ] - 除外座標Z
      */
-    _bfsConnectedBlocks(startX, startY, startZ) {
+    _bfsConnectedBlocks(startX, startY, startZ, excludeX, excludeY, excludeZ) {
         const startBlock = this._getBlock(startX, startY, startZ);
         if (!startBlock || startBlock === 'air' || PistonManager._NON_PUSHABLE.has(startBlock)) {
             return [];
@@ -131,6 +158,10 @@ class PistonManager {
         const visited = new Set();
         const queue = [{ x: startX, y: startY, z: startZ }];
         visited.add(`${startX},${startY},${startZ}`);
+        // ピストン自身の位置を除外
+        if (excludeX !== undefined) {
+            visited.add(`${excludeX},${excludeY},${excludeZ}`);
+        }
 
         while (queue.length > 0) {
             if (result.length >= PistonManager._MAX_PUSH_COUNT) break;
@@ -160,8 +191,10 @@ class PistonManager {
         return result;
     }
 
+    // === 伸長 ===
+
     /**
-     * 粘着ピストンを伸長する
+     * 粘着ピストンを伸長する（アニメーション開始）
      * @param {number} wx - sticky_piston のワールドX
      * @param {number} wy - sticky_piston のワールドY
      * @param {number} wz - sticky_piston のワールドZ
@@ -171,47 +204,42 @@ class PistonManager {
         const blockId = this._getBlock(wx, wy, wz);
         if (blockId !== 'sticky_piston') return false;
 
+        // 既にアニメーション中なら拒否
+        const bodyKey = `${wx},${wy},${wz}`;
+        if (this._bodies.has(bodyKey)) return false;
+
         const orientation = this._getOrientation(wx, wy, wz);
         const d = this._getDirection(orientation);
         const dist = PistonManager._EXTEND_DISTANCE;
 
-        // 経路上（P+D 〜 P+5*D）のブロックチェック
+        // 経路上チェック（非可動ブロック）
         for (let i = 1; i <= dist; i++) {
-            const bx = wx + d.x * i;
-            const by = wy + d.y * i;
-            const bz = wz + d.z * i;
-            const b = this._getBlock(bx, by, bz);
+            const b = this._getBlock(wx + d.x * i, wy + d.y * i, wz + d.z * i);
             if (b && b !== 'air' && PistonManager._NON_PUSHABLE.has(b)) {
-                return false; // 非可動ブロックが経路上にある
+                return false;
             }
         }
 
-        // 粘着面のブロック群を検出（BFS）
-        const stickyX = wx + d.x;
-        const stickyY = wy + d.y;
-        const stickyZ = wz + d.z;
-        const connectedBlocks = this._bfsConnectedBlocks(stickyX, stickyY, stickyZ);
+        // BFS連結検出
+        const stickyX = wx + d.x, stickyY = wy + d.y, stickyZ = wz + d.z;
+        const connectedBlocks = this._bfsConnectedBlocks(stickyX, stickyY, stickyZ, wx, wy, wz);
 
         // 経路上のブロックも押し出し対象に追加
         const allBlocks = [...connectedBlocks];
         const connectedSet = new Set(connectedBlocks.map(b => `${b.x},${b.y},${b.z}`));
 
         for (let i = 1; i <= dist; i++) {
-            const bx = wx + d.x * i;
-            const by = wy + d.y * i;
-            const bz = wz + d.z * i;
+            const bx = wx + d.x * i, by = wy + d.y * i, bz = wz + d.z * i;
             const key = `${bx},${by},${bz}`;
             if (connectedSet.has(key)) continue;
             const b = this._getBlock(bx, by, bz);
             if (b && b !== 'air') {
                 if (PistonManager._NON_PUSHABLE.has(b)) return false;
-                const ori = this._getOrientation(bx, by, bz);
-                allBlocks.push({ x: bx, y: by, z: bz, blockId: b, orientation: ori });
+                allBlocks.push({ x: bx, y: by, z: bz, blockId: b, orientation: this._getOrientation(bx, by, bz) });
                 connectedSet.add(key);
             }
         }
 
-        // 総数チェック
         if (allBlocks.length > PistonManager._MAX_PUSH_COUNT) return false;
 
         // 移動先の空きチェック
@@ -219,59 +247,56 @@ class PistonManager {
             const destX = block.x + d.x * dist;
             const destY = block.y + d.y * dist;
             const destZ = block.z + d.z * dist;
-            const destKey = `${destX},${destY},${destZ}`;
-
-            // 移動先が他の移動ブロックの移動先でない限り空きか確認
             const destBlock = this._getBlock(destX, destY, destZ);
             if (destBlock && destBlock !== 'air') {
-                // 移動先にあるブロックが移動対象に含まれていれば OK
-                if (!connectedSet.has(`${destX},${destY},${destZ}`)) {
-                    return false;
-                }
+                if (!connectedSet.has(`${destX},${destY},${destZ}`)) return false;
             }
-            // ワールド範囲チェック
             if (destY < 0 || destY >= 128) return false;
         }
 
-        // ブロック移動を実行（遠い側から順に）
-        // D方向のドット積でソート（遠い方が先）
-        allBlocks.sort((a, b) => {
-            const dotA = a.x * d.x + a.y * d.y + a.z * d.z;
-            const dotB = b.x * d.x + b.y * d.y + b.z * d.z;
-            return dotB - dotA; // 遠い方を先に
+        // === 検証OK: アニメーション開始 ===
+
+        // ピストン基部を即座に変更
+        this._setBlock(wx, wy, wz, 'piston_base', orientation);
+
+        // アニメーション用ブロックリスト（相対座標）
+        // origin = ピストン位置 P
+        const bodyBlocks = [];
+
+        // 連結ブロックをワールドから除去 + bodyBlocksに追加
+        for (const block of allBlocks) {
+            bodyBlocks.push({
+                rx: block.x - wx, ry: block.y - wy, rz: block.z - wz,
+                blockId: block.blockId, orientation: block.orientation
+            });
+            this._setBlock(block.x, block.y, block.z, 'air');
+            this._updateLight(block.x, block.y, block.z, true);
+        }
+
+        // ピストンヘッドをアニメーション体に含める（P+0 = 起点に配置、D*5先に移動）
+        bodyBlocks.push({
+            rx: 0, ry: 0, rz: 0,
+            blockId: 'sticky_piston_head', orientation: orientation
         });
 
-        // 移動先にコピー
-        for (const block of allBlocks) {
-            const destX = block.x + d.x * dist;
-            const destY = block.y + d.y * dist;
-            const destZ = block.z + d.z * dist;
-            this._setBlock(destX, destY, destZ, block.blockId, block.orientation);
-        }
-
-        // 元の位置を air に
-        for (const block of allBlocks) {
-            this._setBlock(block.x, block.y, block.z, 'air', 0);
-        }
-
-        // ピストン状態変更
-        this._setBlock(wx, wy, wz, 'piston_base', orientation);
-        this._setBlock(wx + d.x * dist, wy + d.y * dist, wz + d.z * dist, 'sticky_piston_head', orientation);
-
         // チャンクメッシュ再構築
-        const positions = [{ x: wx, z: wz }];
-        for (const block of allBlocks) {
-            positions.push({ x: block.x, z: block.z });
-            positions.push({ x: block.x + d.x * dist, z: block.z + d.z * dist });
-        }
-        positions.push({ x: wx + d.x * dist, z: wz + d.z * dist });
-        this._rebuildAffectedChunks(positions);
+        this._rebuildAffectedChunks(wx, wz, bodyBlocks);
+
+        // PistonBody 生成
+        const moveVector = { x: d.x * dist, y: d.y * dist, z: d.z * dist };
+        const body = new PistonBody(wx, wy, wz, moveVector, dist, bodyBlocks, true, orientation);
+        this._bodies.set(bodyKey, body);
+
+        // メッシュ生成
+        this._createMesh(bodyKey, body);
 
         return true;
     }
 
+    // === 収縮 ===
+
     /**
-     * ピストンを収縮する
+     * ピストンを収縮する（アニメーション開始）
      * @param {number} wx - piston_base のワールドX
      * @param {number} wy - piston_base のワールドY
      * @param {number} wz - piston_base のワールドZ
@@ -281,22 +306,20 @@ class PistonManager {
         const blockId = this._getBlock(wx, wy, wz);
         if (blockId !== 'piston_base') return false;
 
+        const bodyKey = `${wx},${wy},${wz}`;
+        if (this._bodies.has(bodyKey)) return false;
+
         const orientation = this._getOrientation(wx, wy, wz);
         const d = this._getDirection(orientation);
         const dist = PistonManager._EXTEND_DISTANCE;
 
-        // sticky_piston_head の位置確認
-        const headX = wx + d.x * dist;
-        const headY = wy + d.y * dist;
-        const headZ = wz + d.z * dist;
-        const headBlock = this._getBlock(headX, headY, headZ);
-        if (headBlock !== 'sticky_piston_head') return false;
+        // ヘッド位置確認
+        const headX = wx + d.x * dist, headY = wy + d.y * dist, headZ = wz + d.z * dist;
+        if (this._getBlock(headX, headY, headZ) !== 'sticky_piston_head') return false;
 
-        // 粘着面のブロック群を検出（BFS）: ヘッドの先（P + 6*D）
-        const stickyX = headX + d.x;
-        const stickyY = headY + d.y;
-        const stickyZ = headZ + d.z;
-        const connectedBlocks = this._bfsConnectedBlocks(stickyX, stickyY, stickyZ);
+        // BFS: ヘッドの先（P + 6*D）
+        const stickyX = headX + d.x, stickyY = headY + d.y, stickyZ = headZ + d.z;
+        const connectedBlocks = this._bfsConnectedBlocks(stickyX, stickyY, stickyZ, wx, wy, wz);
 
         // 引き戻し先の空きチェック
         for (const block of connectedBlocks) {
@@ -304,11 +327,8 @@ class PistonManager {
             const destY = block.y - d.y * dist;
             const destZ = block.z - d.z * dist;
             const destBlock = this._getBlock(destX, destY, destZ);
-            // 引き戻し先がピストンの経路上（P+1〜P+5）はヘッド削除後に空くのでOK
-            // ただしそれ以外に別のブロックがある場合は失敗
             if (destBlock && destBlock !== 'air'
                 && destBlock !== 'piston_base' && destBlock !== 'sticky_piston_head') {
-                // 自分自身の移動元でない限り失敗
                 const isOwnBlock = connectedBlocks.some(
                     b => b.x === destX && b.y === destY && b.z === destZ
                 );
@@ -317,43 +337,181 @@ class PistonManager {
             if (destY < 0 || destY >= 128) return false;
         }
 
-        // ブロック移動を実行（近い側から順に）
-        connectedBlocks.sort((a, b) => {
-            const dotA = a.x * d.x + a.y * d.y + a.z * d.z;
-            const dotB = b.x * d.x + b.y * d.y + b.z * d.z;
-            return dotA - dotB; // 近い方を先に
+        // === 検証OK: アニメーション開始 ===
+
+        // ヘッドをワールドから削除
+        this._setBlock(headX, headY, headZ, 'air');
+        this._updateLight(headX, headY, headZ, true);
+
+        // bodyBlocks（現在位置を基準、origin = P）
+        const bodyBlocks = [];
+
+        // 連結ブロックをワールドから除去
+        for (const block of connectedBlocks) {
+            bodyBlocks.push({
+                rx: block.x - wx, ry: block.y - wy, rz: block.z - wz,
+                blockId: block.blockId, orientation: block.orientation
+            });
+            this._setBlock(block.x, block.y, block.z, 'air');
+            this._updateLight(block.x, block.y, block.z, true);
+        }
+
+        // ピストンヘッドもアニメーション体に含める
+        bodyBlocks.push({
+            rx: headX - wx, ry: headY - wy, rz: headZ - wz,
+            blockId: 'sticky_piston_head', orientation: orientation
         });
 
-        // 移動先にコピー
-        for (const block of connectedBlocks) {
-            const destX = block.x - d.x * dist;
-            const destY = block.y - d.y * dist;
-            const destZ = block.z - d.z * dist;
-            this._setBlock(destX, destY, destZ, block.blockId, block.orientation);
-        }
-
-        // 元の位置を air に
-        for (const block of connectedBlocks) {
-            this._setBlock(block.x, block.y, block.z, 'air', 0);
-        }
-
-        // ピストン状態変更
-        this._setBlock(headX, headY, headZ, 'air', 0); // ヘッド削除
-        this._setBlock(wx, wy, wz, 'sticky_piston', orientation); // ベース → ピストンに戻す
-
         // チャンクメッシュ再構築
-        const positions = [{ x: wx, z: wz }, { x: headX, z: headZ }];
-        for (const block of connectedBlocks) {
-            positions.push({ x: block.x, z: block.z });
-            positions.push({ x: block.x - d.x * dist, z: block.z - d.z * dist });
-        }
-        this._rebuildAffectedChunks(positions);
+        this._rebuildAffectedChunks(wx, wz, bodyBlocks);
+
+        // 移動ベクトルは逆方向（-D * dist）
+        const moveVector = { x: -d.x * dist, y: -d.y * dist, z: -d.z * dist };
+        const body = new PistonBody(wx, wy, wz, moveVector, dist, bodyBlocks, false, orientation);
+        this._bodies.set(bodyKey, body);
+
+        this._createMesh(bodyKey, body);
 
         return true;
+    }
+
+    // === メッシュ生成 ===
+
+    _createMesh(key, body) {
+        if (typeof RotationBodyMesh === 'undefined' || !this._scene) return;
+
+        try {
+            const compatBody = {
+                _axisX: body._pistonX, _axisY: body._pistonY, _axisZ: body._pistonZ,
+                _blocks: body._blocks,
+                _blockSet: new Set(body._blocks.map(b => {
+                    return ((b.rx + 128) << 16) | ((b.ry + 128) << 8) | (b.rz + 128);
+                })),
+                _frontDx: 0, _frontDy: 1, _frontDz: 0,
+                _centerX: body._pistonX + 0.5,
+                _centerY: body._pistonY + 0.5,
+                _centerZ: body._pistonZ + 0.5
+            };
+            const mesh = new RotationBodyMesh(compatBody, this._textureLoader, this._chunkManager);
+            mesh.Build();
+            this._scene.add(mesh.GetGroup());
+            this._meshes.set(key, mesh);
+        } catch (e) {
+            console.warn('PistonManager: メッシュ生成失敗', e);
+        }
+    }
+
+    // === dissolve ===
+
+    _dissolveExtend(body) {
+        const wx = body._pistonX, wy = body._pistonY, wz = body._pistonZ;
+        const mv = body._moveVector;
+
+        // ブロックを移動先に書き戻し（ヘッド以外）
+        for (const b of body._blocks) {
+            const bx = wx + b.rx + mv.x;
+            const by = wy + b.ry + mv.y;
+            const bz = wz + b.rz + mv.z;
+            this._setBlock(bx, by, bz, b.blockId, b.orientation);
+            this._updateLight(bx, by, bz, false);
+        }
+
+        // 移動先チャンクメッシュ再構築
+        const destBlocks = body._blocks.map(b => ({
+            rx: b.rx + mv.x, ry: b.ry + mv.y, rz: b.rz + mv.z
+        }));
+        this._rebuildAffectedChunks(wx, wz, destBlocks);
+    }
+
+    _dissolveRetract(body) {
+        const wx = body._pistonX, wy = body._pistonY, wz = body._pistonZ;
+        const mv = body._moveVector;
+
+        // ブロックを引き戻し先に書き戻し（ヘッド以外）
+        for (const b of body._blocks) {
+            if (b.blockId === 'sticky_piston_head') continue; // ヘッドは消える
+            const bx = wx + b.rx + mv.x;
+            const by = wy + b.ry + mv.y;
+            const bz = wz + b.rz + mv.z;
+            this._setBlock(bx, by, bz, b.blockId, b.orientation);
+            this._updateLight(bx, by, bz, false);
+        }
+
+        // ピストン基部を sticky_piston に戻す
+        this._setBlock(wx, wy, wz, 'sticky_piston', body._orientation);
+
+        // 引き戻し先チャンクメッシュ再構築
+        const destBlocks = body._blocks.map(b => ({
+            rx: b.rx + mv.x, ry: b.ry + mv.y, rz: b.rz + mv.z
+        }));
+        destBlocks.push({ rx: 0, ry: 0, rz: 0 }); // ピストン本体
+        this._rebuildAffectedChunks(wx, wz, destBlocks);
+    }
+
+    _dissolveBody(key) {
+        const body = this._bodies.get(key);
+        if (!body) return;
+
+        if (body._isExtending) {
+            this._dissolveExtend(body);
+        } else {
+            this._dissolveRetract(body);
+        }
+
+        // メッシュ削除
+        const mesh = this._meshes.get(key);
+        if (mesh) {
+            try {
+                this._scene.remove(mesh.GetGroup());
+                mesh.Dispose();
+            } catch (e) {
+                console.warn('PistonManager: メッシュ削除失敗', e);
+            }
+            this._meshes.delete(key);
+        }
+
+        this._bodies.delete(key);
+    }
+
+    // === 毎フレーム更新 ===
+
+    /**
+     * アニメーション更新
+     * @param {number} deltaTime - 秒
+     */
+    Update(deltaTime) {
+        if (this._bodies.size === 0) return;
+
+        const keysToDissolve = [];
+
+        for (const [key, body] of this._bodies) {
+            body._displacement += body._speed * deltaTime;
+
+            if (body._displacement >= body._totalDistance) {
+                body._displacement = body._totalDistance;
+                keysToDissolve.push(key);
+                continue;
+            }
+
+            // メッシュ位置更新
+            const mesh = this._meshes.get(key);
+            if (mesh) {
+                const progress = body._displacement / body._totalDistance;
+                const group = mesh.GetGroup();
+                group.position.x = body._pistonX + 0.5 + body._moveVector.x * progress;
+                group.position.y = body._pistonY + 0.5 + body._moveVector.y * progress;
+                group.position.z = body._pistonZ + 0.5 + body._moveVector.z * progress;
+            }
+        }
+
+        for (const key of keysToDissolve) {
+            this._dissolveBody(key);
+        }
     }
 }
 
 // グローバルに公開
 if (typeof window !== 'undefined') {
+    window.PistonBody = PistonBody;
     window.PistonManager = PistonManager;
 }
