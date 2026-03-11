@@ -486,12 +486,25 @@ class PistonManager {
             blockId: 'sticky_piston_head', orientation: orientation
         });
 
-        // 押し出しブロックを実際にワールドに適用（元位置をair、移動先に配置）
-        // dissolve時に最終位置に配置するため、ここでは元位置のairだけ
-        // 実際の押し出しはdissolve時にまとめて行う
+        // 押し出しブロックの元位置をairにする（アニメーション中に経路を空ける）
+        // 最終位置への配置はdissolve時にまとめて行う
+        const rebuildBlocks = bodyBlocks.slice(); // チャンク再構築用（bodyBlocksとは別）
+        const clearedOrigins = new Set();
+        for (const pm of pushedMoves) {
+            const origKey = `${pm.fromX},${pm.fromY},${pm.fromZ}`;
+            if (!clearedOrigins.has(origKey)) {
+                const realBlock = this._getBlock(pm.fromX, pm.fromY, pm.fromZ);
+                if (realBlock && realBlock !== 'air') {
+                    this._setBlock(pm.fromX, pm.fromY, pm.fromZ, 'air');
+                    this._updateLight(pm.fromX, pm.fromY, pm.fromZ, true);
+                    rebuildBlocks.push({ rx: pm.fromX - wx, ry: pm.fromY - wy, rz: pm.fromZ - wz });
+                }
+                clearedOrigins.add(origKey);
+            }
+        }
 
         // チャンクメッシュ再構築
-        this._rebuildAffectedChunks(wx, wz, bodyBlocks);
+        this._rebuildAffectedChunks(wx, wz, rebuildBlocks);
 
         // PistonBody 生成
         const moveVector = { x: d.x * actualDist, y: d.y * actualDist, z: d.z * actualDist };
