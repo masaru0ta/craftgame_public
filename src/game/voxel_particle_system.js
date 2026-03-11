@@ -35,7 +35,7 @@ class VoxelParticleSystem {
    * @param {number} x - シーンX座標
    * @param {number} y - シーンY座標
    * @param {number} z - シーンZ座標
-   * @param {number} color - パーティクルの色（16進数）
+   * @param {number|number[]} color - パーティクルの色（16進数1色、または6面分の配列）
    */
   emit(x, y, z, color = 0xffffff) {
     if (this.particleGroups.length >= VoxelParticleSystem.MAX_PARTICLE_GROUPS) {
@@ -43,8 +43,11 @@ class VoxelParticleSystem {
       this.particleGroups.shift();
     }
 
+    const colors = Array.isArray(color) ? color : [color];
+    const colorCount = colors.length;
     const count = VoxelParticleSystem.PARTICLE_COUNT;
     const positions = new Float32Array(count * 3);
+    const vertexColors = new Float32Array(count * 3);
     const velocities = [];
 
     for (let i = 0; i < count; i++) {
@@ -55,6 +58,12 @@ class VoxelParticleSystem {
       positions[i * 3] = x + ox;
       positions[i * 3 + 1] = y + oy;
       positions[i * 3 + 2] = z + oz;
+
+      // 面ごとの色からランダム選択
+      const c = colors[(Math.random() * colorCount) | 0];
+      vertexColors[i * 3] = ((c >> 16) & 0xff) / 255;
+      vertexColors[i * 3 + 1] = ((c >> 8) & 0xff) / 255;
+      vertexColors[i * 3 + 2] = (c & 0xff) / 255;
 
       // 初速度（中心から外向き、速度はランダム）
       const upSpeed = -1.0 + Math.random() * 6.0;
@@ -70,10 +79,11 @@ class VoxelParticleSystem {
 
     const geometry = new this.THREE.BufferGeometry();
     geometry.setAttribute('position', new this.THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new this.THREE.BufferAttribute(vertexColors, 3));
 
     const material = new this.THREE.PointsMaterial({
       size: VoxelParticleSystem.PARTICLE_SIZE,
-      color: color,
+      vertexColors: true,
       transparent: true,
       opacity: 1.0,
       sizeAttenuation: true,

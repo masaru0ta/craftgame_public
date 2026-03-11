@@ -129,7 +129,12 @@ class GameTestApp {
                 if (block.is_transparent) {
                     lightTransparentIds.push(block.block_str_id);
                 }
-                this._blockColorMap[block.block_str_id] = parseInt(defaultColor.replace('#', ''), 16);
+                // 6面分の色配列を構築（重複を除去）
+                const colorSet = new Set();
+                for (const fn of faceNames) {
+                    colorSet.add(parseInt((faceColors[fn] || defaultColor).replace('#', ''), 16));
+                }
+                this._blockColorMap[block.block_str_id] = [...colorSet];
             }
         }
 
@@ -312,8 +317,8 @@ class GameTestApp {
         this.blockInteraction.onBlockDestroyed((blockStrId, x, y, z) => {
             this.inventory.addItem(blockStrId, 1);
             if (x !== undefined && this.particleSystem) {
-                const color = this._blockColorMap[blockStrId] || 0x808080;
-                this.particleSystem.emit(x + 0.5, y + 0.5, -(z + 0.5), color);
+                const colors = this._blockColorMap[blockStrId] || [0x808080];
+                this.particleSystem.emit(x + 0.5, y + 0.5, -(z + 0.5), colors);
             }
         });
 
@@ -436,8 +441,8 @@ class GameTestApp {
         this.randomTickEngine.register('leaf_block', leavesTickHandler);
         this.randomTickEngine.onBlockDecayed((wx, wy, wz, blockStrId) => {
             if (this.particleSystem) {
-                const color = this._blockColorMap[blockStrId] || 0x808080;
-                this.particleSystem.emit(wx + 0.5, wy + 0.5, -(wz + 0.5), color);
+                const colors = this._blockColorMap[blockStrId] || [0x808080];
+                this.particleSystem.emit(wx + 0.5, wy + 0.5, -(wz + 0.5), colors);
             }
         });
 

@@ -87,8 +87,12 @@ class BlockBreakEffectTestApp {
                 }
                 blockColors[block.block_str_id] = faceColors;
                 blockShapes[block.block_str_id] = block.shape_type || 'normal';
-                // パーティクル色用: デフォルト色を16進数で保持
-                this._blockColorMap[block.block_str_id] = parseInt(defaultColor.replace('#', ''), 16);
+                // パーティクル色用: 6面分の色配列（重複除去）
+                const colorSet = new Set();
+                for (const fn of faceNames) {
+                    colorSet.add(parseInt((faceColors[fn] || defaultColor).replace('#', ''), 16));
+                }
+                this._blockColorMap[block.block_str_id] = [...colorSet];
             }
         }
 
@@ -699,10 +703,10 @@ class BlockBreakEffectTestApp {
     }
 
     /**
-     * ブロックIDからパーティクル色（0xRRGGBB）を取得
+     * ブロックIDからパーティクル色配列を取得
      */
     _getBlockColor(blockStrId) {
-        return this._blockColorMap[blockStrId] || 0x808080;
+        return this._blockColorMap[blockStrId] || [0x808080];
     }
 
     _updateStats() {
