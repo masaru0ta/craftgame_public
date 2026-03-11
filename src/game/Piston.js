@@ -321,6 +321,12 @@ class PistonManager {
         const stickyX = headX + d.x, stickyY = headY + d.y, stickyZ = headZ + d.z;
         const connectedBlocks = this._bfsConnectedBlocks(stickyX, stickyY, stickyZ, wx, wy, wz);
 
+        // ピストンアーム位置のセット（引き戻し先チェックで許容する）
+        const armPositions = new Set();
+        for (let i = 1; i < dist; i++) {
+            armPositions.add(`${wx + d.x * i},${wy + d.y * i},${wz + d.z * i}`);
+        }
+
         // 引き戻し先の空きチェック
         for (const block of connectedBlocks) {
             const destX = block.x - d.x * dist;
@@ -329,6 +335,8 @@ class PistonManager {
             const destBlock = this._getBlock(destX, destY, destZ);
             if (destBlock && destBlock !== 'air'
                 && destBlock !== 'piston_base' && destBlock !== 'sticky_piston_head') {
+                // ピストンアーム上の pole は収縮時に除去されるのでOK
+                if (armPositions.has(`${destX},${destY},${destZ}`)) continue;
                 const isOwnBlock = connectedBlocks.some(
                     b => b.x === destX && b.y === destY && b.z === destZ
                 );
@@ -339,9 +347,14 @@ class PistonManager {
 
         // === 検証OK: アニメーション開始 ===
 
-        // ヘッドをワールドから削除
+        // ヘッド + ピストンアーム（pole）をワールドから削除
         this._setBlock(headX, headY, headZ, 'air');
         this._updateLight(headX, headY, headZ, true);
+        for (let i = 1; i < dist; i++) {
+            const px = wx + d.x * i, py = wy + d.y * i, pz = wz + d.z * i;
+            this._setBlock(px, py, pz, 'air');
+            this._updateLight(px, py, pz, true);
+        }
 
         // bodyBlocks（現在位置を基準、origin = P）
         const bodyBlocks = [];
@@ -406,8 +419,10 @@ class PistonManager {
     _dissolveExtend(body) {
         const wx = body._pistonX, wy = body._pistonY, wz = body._pistonZ;
         const mv = body._moveVector;
+        const d = this._getDirection(body._orientation);
+        const dist = PistonManager._EXTEND_DISTANCE;
 
-        // ブロックを移動先に書き戻し（ヘッド以外）
+        // ブロックを移動先に書き戻し
         for (const b of body._blocks) {
             const bx = wx + b.rx + mv.x;
             const by = wy + b.ry + mv.y;
@@ -416,10 +431,20 @@ class PistonManager {
             this._updateLight(bx, by, bz, false);
         }
 
-        // 移動先チャンクメッシュ再構築
+        // ピストンアーム: P+1*D 〜 P+4*D に pole を配置
+        for (let i = 1; i < dist; i++) {
+            const px = wx + d.x * i, py = wy + d.y * i, pz = wz + d.z * i;
+            this._setBlock(px, py, pz, 'pole', 0);
+            this._updateLight(px, py, pz, false);
+        }
+
+        // 移動先 + ポール位置のチャンクメッシュ再構築
         const destBlocks = body._blocks.map(b => ({
             rx: b.rx + mv.x, ry: b.ry + mv.y, rz: b.rz + mv.z
         }));
+        for (let i = 1; i < dist; i++) {
+            destBlocks.push({ rx: d.x * i, ry: d.y * i, rz: d.z * i });
+        }
         this._rebuildAffectedChunks(wx, wz, destBlocks);
     }
 
