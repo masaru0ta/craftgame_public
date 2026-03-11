@@ -698,9 +698,30 @@ class BlockInteraction {
         const orientation = chunk.chunkData.getOrientation(localX, localY, localZ);
         chunk.chunkData.setBlock(localX, localY, localZ, newBlockId, orientation);
 
+        const range = 5;
+
+        // ピストン作動ヘルパー（前後2回呼ぶ。重複はActivate内で弾かれる）
+        const psm = this.pistonManager;
+        const activatePistons = () => {
+            if (!psm) return;
+            for (let dx = -range; dx <= range; dx++) {
+                for (let dy = -range; dy <= range; dy++) {
+                    for (let dz = -range; dz <= range; dz++) {
+                        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > range) continue;
+                        const rx = wx + dx, ry = wy + dy, rz = wz + dz;
+                        if (this.physicsWorld.getBlockAt(rx, ry, rz) === 'sticky_piston') {
+                            psm.Activate(rx, ry, rz);
+                        }
+                    }
+                }
+            }
+        };
+
+        // 回転体より先にピストンを作動（ON時: ワールド上のsticky_pistonを先に処理）
+        activatePistons();
+
         // マンハッタン距離5以内のrotorを検索して操作
         const ram = this.rotationAxisManager;
-        const range = 5;
         // チャンクデータ上のrotorを検索
         const rotorPositions = [];
         for (let dx = -range; dx <= range; dx++) {
@@ -828,22 +849,8 @@ class BlockInteraction {
             }
         }
 
-        // マンハッタン距離5以内のsticky_pistonを検索して作動
-        const psm = this.pistonManager;
-        if (psm) {
-            for (let dx = -range; dx <= range; dx++) {
-                for (let dy = -range; dy <= range; dy++) {
-                    for (let dz = -range; dz <= range; dz++) {
-                        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > range) continue;
-                        const rx = wx + dx, ry = wy + dy, rz = wz + dz;
-                        const bid = this.physicsWorld.getBlockAt(rx, ry, rz);
-                        if (bid === 'sticky_piston') {
-                            psm.Activate(rx, ry, rz);
-                        }
-                    }
-                }
-            }
-        }
+        // 回転体・ロープウェイ停止後にピストンを再検索（OFF時: ブロック書き戻し後のsticky_pistonを処理）
+        activatePistons();
 
         // メッシュ再構築
         this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
