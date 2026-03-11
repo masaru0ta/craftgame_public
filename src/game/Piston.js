@@ -292,11 +292,6 @@ class PistonManager {
         // メッシュ生成
         this._createMesh(bodyKey, body);
 
-        // アームメッシュ初期生成（基部位置、長さ0→アニメ中に伸びる）
-        this._createArmMesh(bodyKey,
-            wx + 0.5, wy + 0.5, wz + 0.5,
-            wx + 0.5, wy + 0.5, wz + 0.5);
-
         return true;
     }
 
@@ -403,11 +398,14 @@ class PistonManager {
     }
 
     _updateArmMesh(key, x1, y1, z1, x2, y2, z2) {
-        const mesh = this._armMeshes.get(key);
-        if (!mesh) return;
         const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
         const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (length < 0.01) return;
+        const mesh = this._armMeshes.get(key);
+        if (!mesh) {
+            this._createArmMesh(key, x1, y1, z1, x2, y2, z2);
+            return;
+        }
         mesh.position.set((x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
         const dir = new THREE.Vector3(dx, dy, dz).normalize();
         const up = new THREE.Vector3(0, 1, 0);
