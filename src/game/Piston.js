@@ -69,6 +69,8 @@ class PistonManager {
         this._bodies = new Map();
         /** @type {Map<string, object>} */
         this._meshes = new Map();
+        /** @type {Map<string, THREE.Mesh>} アーム（棒）メッシュ */
+        this._armMeshes = new Map();
     }
 
     // === ヘルパー ===
@@ -290,6 +292,11 @@ class PistonManager {
         // メッシュ生成
         this._createMesh(bodyKey, body);
 
+        // アームメッシュ初期生成（基部位置、長さ0→アニメ中に伸びる）
+        this._createArmMesh(bodyKey,
+            wx + 0.5, wy + 0.5, wz + 0.5,
+            wx + 0.5, wy + 0.5, wz + 0.5);
+
         return true;
     }
 
@@ -321,12 +328,6 @@ class PistonManager {
         const stickyX = headX + d.x, stickyY = headY + d.y, stickyZ = headZ + d.z;
         const connectedBlocks = this._bfsConnectedBlocks(stickyX, stickyY, stickyZ, wx, wy, wz);
 
-        // ピストンアーム位置のセット（引き戻し先チェックで許容する）
-        const armPositions = new Set();
-        for (let i = 1; i < dist; i++) {
-            armPositions.add(`${wx + d.x * i},${wy + d.y * i},${wz + d.z * i}`);
-        }
-
         // 引き戻し先の空きチェック
         for (const block of connectedBlocks) {
             const destX = block.x - d.x * dist;
@@ -335,8 +336,6 @@ class PistonManager {
             const destBlock = this._getBlock(destX, destY, destZ);
             if (destBlock && destBlock !== 'air'
                 && destBlock !== 'piston_base' && destBlock !== 'sticky_piston_head') {
-                // ピストンアーム上の pole は収縮時に除去されるのでOK
-                if (armPositions.has(`${destX},${destY},${destZ}`)) continue;
                 const isOwnBlock = connectedBlocks.some(
                     b => b.x === destX && b.y === destY && b.z === destZ
                 );
@@ -347,14 +346,9 @@ class PistonManager {
 
         // === 検証OK: アニメーション開始 ===
 
-        // ヘッド + ピストンアーム（pole）をワールドから削除
+        // ヘッドをワールドから削除
         this._setBlock(headX, headY, headZ, 'air');
         this._updateLight(headX, headY, headZ, true);
-        for (let i = 1; i < dist; i++) {
-            const px = wx + d.x * i, py = wy + d.y * i, pz = wz + d.z * i;
-            this._setBlock(px, py, pz, 'air');
-            this._updateLight(px, py, pz, true);
-        }
 
         // bodyBlocks（現在位置を基準、origin = P）
         const bodyBlocks = [];
@@ -388,6 +382,50 @@ class PistonManager {
         return true;
     }
 
+    // === アームメッシュ（ビジュアル専用） ===
+
+    _createArmMesh(key, x1, y1, z1, x2, y2, z2) {
+        if (typeof THREE === 'undefined' || !this._scene) return;
+        this._removeArmMesh(key);
+        const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+        const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (length < 0.01) return;
+        const geometry = new THREE.CylinderGeometry(0.1, 0.1, length, 6);
+        const material = new THREE.MeshBasicMaterial({ color: 0x888888 });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set((x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
+        const dir = new THREE.Vector3(dx, dy, dz).normalize();
+        const up = new THREE.Vector3(0, 1, 0);
+        const quat = new THREE.Quaternion().setFromUnitVectors(up, dir);
+        mesh.quaternion.copy(quat);
+        this._scene.add(mesh);
+        this._armMeshes.set(key, mesh);
+    }
+
+    _updateArmMesh(key, x1, y1, z1, x2, y2, z2) {
+        const mesh = this._armMeshes.get(key);
+        if (!mesh) return;
+        const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+        const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (length < 0.01) return;
+        mesh.position.set((x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
+        const dir = new THREE.Vector3(dx, dy, dz).normalize();
+        const up = new THREE.Vector3(0, 1, 0);
+        const quat = new THREE.Quaternion().setFromUnitVectors(up, dir);
+        mesh.quaternion.copy(quat);
+        if (mesh.geometry) mesh.geometry.dispose();
+        mesh.geometry = new THREE.CylinderGeometry(0.1, 0.1, length, 6);
+    }
+
+    _removeArmMesh(key) {
+        const mesh = this._armMeshes.get(key);
+        if (!mesh) return;
+        this._scene.remove(mesh);
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) mesh.material.dispose();
+        this._armMeshes.delete(key);
+    }
+
     // === メッシュ生成 ===
 
     _createMesh(key, body) {
@@ -419,8 +457,6 @@ class PistonManager {
     _dissolveExtend(body) {
         const wx = body._pistonX, wy = body._pistonY, wz = body._pistonZ;
         const mv = body._moveVector;
-        const d = this._getDirection(body._orientation);
-        const dist = PistonManager._EXTEND_DISTANCE;
 
         // ブロックを移動先に書き戻し
         for (const b of body._blocks) {
@@ -431,20 +467,15 @@ class PistonManager {
             this._updateLight(bx, by, bz, false);
         }
 
-        // ピストンアーム: P+1*D 〜 P+4*D に pole を配置
-        for (let i = 1; i < dist; i++) {
-            const px = wx + d.x * i, py = wy + d.y * i, pz = wz + d.z * i;
-            this._setBlock(px, py, pz, 'pole', 0);
-            this._updateLight(px, py, pz, false);
-        }
+        // アームメッシュ生成（ピストン基部中心 → ヘッド中心）
+        const key = `${wx},${wy},${wz}`;
+        const headX = wx + mv.x, headY = wy + mv.y, headZ = wz + mv.z;
+        this._createArmMesh(key, wx + 0.5, wy + 0.5, wz + 0.5, headX + 0.5, headY + 0.5, headZ + 0.5);
 
-        // 移動先 + ポール位置のチャンクメッシュ再構築
+        // 移動先チャンクメッシュ再構築
         const destBlocks = body._blocks.map(b => ({
             rx: b.rx + mv.x, ry: b.ry + mv.y, rz: b.rz + mv.z
         }));
-        for (let i = 1; i < dist; i++) {
-            destBlocks.push({ rx: d.x * i, ry: d.y * i, rz: d.z * i });
-        }
         this._rebuildAffectedChunks(wx, wz, destBlocks);
     }
 
@@ -464,6 +495,9 @@ class PistonManager {
 
         // ピストン基部を sticky_piston に戻す
         this._setBlock(wx, wy, wz, 'sticky_piston', body._orientation);
+
+        // アームメッシュ削除
+        this._removeArmMesh(`${wx},${wy},${wz}`);
 
         // 引き戻し先チャンクメッシュ再構築
         const destBlocks = body._blocks.map(b => ({
@@ -520,12 +554,34 @@ class PistonManager {
 
             // メッシュ位置更新
             const mesh = this._meshes.get(key);
+            const progress = body._displacement / body._totalDistance;
             if (mesh) {
-                const progress = body._displacement / body._totalDistance;
                 const group = mesh.GetGroup();
                 group.position.x = body._pistonX + 0.5 + body._moveVector.x * progress;
                 group.position.y = body._pistonY + 0.5 + body._moveVector.y * progress;
                 group.position.z = body._pistonZ + 0.5 + body._moveVector.z * progress;
+            }
+
+            // アームメッシュ更新（基部中心 → 現在のヘッド位置中心）
+            const baseX = body._pistonX + 0.5;
+            const baseY = body._pistonY + 0.5;
+            const baseZ = body._pistonZ + 0.5;
+            const headX = baseX + body._moveVector.x * progress;
+            const headY = baseY + body._moveVector.y * progress;
+            const headZ = baseZ + body._moveVector.z * progress;
+            if (body._isExtending) {
+                this._updateArmMesh(key, baseX, baseY, baseZ, headX, headY, headZ);
+            } else {
+                // 収縮時: 伸長状態のヘッド位置から現在位置へ
+                const d = this._getDirection(body._orientation);
+                const dist = PistonManager._EXTEND_DISTANCE;
+                const origHeadX = body._pistonX + d.x * dist + 0.5;
+                const origHeadY = body._pistonY + d.y * dist + 0.5;
+                const origHeadZ = body._pistonZ + d.z * dist + 0.5;
+                const curHeadX = origHeadX + body._moveVector.x * progress;
+                const curHeadY = origHeadY + body._moveVector.y * progress;
+                const curHeadZ = origHeadZ + body._moveVector.z * progress;
+                this._updateArmMesh(key, baseX, baseY, baseZ, curHeadX, curHeadY, curHeadZ);
             }
         }
 
