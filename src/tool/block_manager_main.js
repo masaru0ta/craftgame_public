@@ -1579,52 +1579,142 @@ async function updateItemPreview(item) {
       container.innerHTML = '<div style="color:#999;font-size:12px;">テクスチャ未設定</div>';
     }
   } else if (sourceType === 'structure' && item.source_structure_str_id) {
-    // 構造物の情報プレビュー
+    // 構造物の3Dプレビュー
     const struct = state.structures.find(s => s.structure_str_id === item.source_structure_str_id);
-    if (struct) {
-      const info = document.createElement('div');
-      info.style.cssText = 'padding:8px;font-size:12px;color:#333;';
-      info.innerHTML = `<div style="font-weight:bold;margin-bottom:6px;">${struct.name || struct.structure_str_id}</div>`;
-      if (struct.size_x || struct.size_y || struct.size_z) {
-        info.innerHTML += `<div style="color:#666;margin-bottom:4px;">サイズ: ${struct.size_x||'?'}×${struct.size_y||'?'}×${struct.size_z||'?'}</div>`;
+    if (struct && struct.voxel_data && struct.palette) {
+      try {
+        const dataUrl = await generateStructureThumbnail(struct);
+        if (dataUrl) {
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'contain';
+          img.style.imageRendering = 'pixelated';
+          container.appendChild(img);
+        } else {
+          container.innerHTML = '<div style="color:#999;font-size:12px;">構造物プレビュー生成エラー</div>';
+        }
+      } catch (e) {
+        console.error('構造物プレビュー生成エラー:', e);
+        container.innerHTML = '<div style="color:#999;font-size:12px;">構造物プレビュー生成エラー</div>';
       }
-      if (struct.category) {
-        info.innerHTML += `<div style="color:#666;margin-bottom:8px;">カテゴリ: ${struct.category}</div>`;
-      }
-      // paletteからブロックサムネイルを表示
-      if (struct.palette && state.thumbnailGenerator) {
-        try {
-          const palette = typeof struct.palette === 'string' ? JSON.parse(struct.palette) : struct.palette;
-          // palette は { blocks: [...], offset: [...] } 形式またはブロックIDの配列
-          const blockList = Array.isArray(palette) ? palette : (palette.blocks || []);
-          // "air" を除外
-          const filtered = blockList.filter(id => id !== 'air');
-          if (filtered.length > 0) {
-            info.innerHTML += '<div style="color:#888;margin-bottom:4px;">使用ブロック:</div>';
-            const grid = document.createElement('div');
-            grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,40px);gap:4px;';
-            for (const entry of filtered.slice(0, 9)) {
-              const blockStrId = typeof entry === 'string' ? entry : entry.block_str_id;
-              const block = state.blocks.find(b => b.block_str_id === blockStrId);
-              if (block) {
-                const thumb = document.createElement('div');
-                thumb.style.cssText = 'width:40px;height:40px;border-radius:2px;overflow:hidden;';
-                try {
-                  const url = await state.thumbnailGenerator.generate(block, state.textures);
-                  thumb.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:contain;image-rendering:pixelated;">`;
-                } catch { thumb.style.background = '#ddd'; }
-                grid.appendChild(thumb);
-              }
-            }
-            info.appendChild(grid);
-          }
-        } catch { /* paletteパース失敗 */ }
-      }
-      container.appendChild(info);
+    } else if (struct) {
+      container.innerHTML = `<div style="color:#999;font-size:12px;">${struct.name || struct.structure_str_id}（ボクセルデータなし）</div>`;
     } else {
       container.innerHTML = '<div style="color:#999;font-size:12px;">構造物が見つかりません</div>';
     }
   }
+}
+
+/**
+ * 構造物の3Dサムネイルを生成
+ * @param {Object} struct - 構造物データ
+ * @returns {Promise<string|null>} Data URL (PNG形式)
+ */
+async function generateStructureThumbnail(struct) {
+  const gen = state.thumbnailGenerator;
+  if (!gen) return null;
+
+  // palette をパース
+  const paletteObj = typeof struct.palette === 'string' ? JSON.parse(struct.palette) : struct.palette;
+  const paletteBlocks = paletteObj.blocks || paletteObj;
+
+  // StructureData でデコード
+  const sizeX = Number(struct.size_x) || 1;
+  const sizeY = Number(struct.size_y) || 1;
+  const sizeZ = Number(struct.size_z) || 1;
+  const sd = StructureData.decode(
+    struct.voxel_data, struct.orientation_data || '', paletteBlocks, sizeX, sizeY, sizeZ
+  );
+
+  // テクスチャマップを構築
+  const textureImages = gen._buildTextureImages(state.textures || []);
+
+  // シーンをクリア
+  gen._clearScene();
+
+  // ライティング追加
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(2, 3, 1);
+  gen.scene.add(ambientLight);
+  gen.scene.add(dirLight);
+
+  // 構造物の中心を計算
+  const centerX = sizeX / 2;
+  const centerY = sizeY / 2;
+  const centerZ = sizeZ / 2;
+
+  // 各ブロックをキューブとして配置
+  const group = new THREE.Group();
+  sd.forEachBlock((x, y, z, blockStrId) => {
+    const blockData = state.blocks.find(b => b.block_str_id === blockStrId);
+    if (!blockData) return;
+
+    // テクスチャ名を取得
+    const slots = ['default', 'front', 'top', 'bottom', 'left', 'right', 'back'];
+    const texNames = {};
+    for (const slot of slots) {
+      const key = slot === 'default' ? 'tex_default' : `tex_${slot}`;
+      if (blockData[key]) texNames[slot] = blockData[key];
+    }
+
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const faceOrder = ['right', 'left', 'top', 'bottom', 'front', 'back'];
+    const materials = faceOrder.map(face => {
+      const texName = texNames[face] || texNames.default;
+      if (texName && textureImages[texName]) {
+        // 同期的にテクスチャ作成（base64 → Image → Texture）
+        const img = new Image();
+        img.src = textureImages[texName];
+        const texture = new THREE.Texture(img);
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        texture.needsUpdate = true;
+        return new THREE.MeshLambertMaterial({ map: texture });
+      }
+      return new THREE.MeshLambertMaterial({ color: 0x808080 });
+    });
+
+    const mesh = new THREE.Mesh(geometry, materials);
+    mesh.position.set(x - centerX + 0.5, y + 0.5, z - centerZ + 0.5);
+    group.add(mesh);
+  });
+
+  gen.scene.add(group);
+
+  // カメラをフィットさせる
+  const maxDim = Math.max(sizeX, sizeY, sizeZ);
+  const distance = maxDim * 1.6;
+  const hRad = THREE.MathUtils.degToRad(gen.horizontalAngle);
+  const vRad = THREE.MathUtils.degToRad(gen.verticalAngle);
+  gen.camera.position.set(
+    distance * Math.cos(vRad) * Math.sin(hRad),
+    distance * Math.sin(vRad) + centerY,
+    distance * Math.cos(vRad) * Math.cos(hRad)
+  );
+  gen.camera.lookAt(0, centerY, 0);
+
+  // テクスチャ画像の読み込みを待つ
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  // レンダリング
+  gen.renderer.render(gen.scene, gen.camera);
+  const dataUrl = gen.renderer.domElement.toDataURL('image/png');
+
+  // クリーンアップ
+  gen.scene.remove(group);
+  gen.scene.remove(ambientLight);
+  gen.scene.remove(dirLight);
+  group.children.forEach(child => gen._disposeMesh(child));
+  ambientLight.dispose && ambientLight.dispose();
+  dirLight.dispose && dirLight.dispose();
+
+  // カメラ位置を元に戻す
+  gen._updateCameraPosition();
+
+  return dataUrl;
 }
 
 /**
