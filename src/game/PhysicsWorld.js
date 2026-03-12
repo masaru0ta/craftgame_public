@@ -909,8 +909,8 @@ class PhysicsWorld {
             }];
         }
 
-        // ハーフブロック対応（shape='half'）— CustomCollisionベースのAABB生成
-        if (blockDef.half_placeable && blockDef.shape_type !== 'custom') {
+        // ハーフ/階段ブロック対応（shape='half'/'stair'）— CustomCollisionベースのAABB生成
+        if ((blockDef.half_placeable || blockDef.stair_placeable) && blockDef.shape_type !== 'custom') {
             const localX = ((blockX % 16) + 16) % 16;
             const localZ = ((blockZ % 16) + 16) % 16;
             const shape = typeof chunk.chunkData.getShape === 'function'
@@ -919,6 +919,10 @@ class PhysicsWorld {
             if (shape === 'half') {
                 const rawOrientation = chunk.chunkData.getOrientation(localX, localY, localZ);
                 return this._getHalfBlockAABBs(blockX, blockY, blockZ, rawOrientation);
+            }
+            if (shape === 'stair') {
+                const rawOrientation = chunk.chunkData.getOrientation(localX, localY, localZ);
+                return this._getStairBlockAABBs(blockX, blockY, blockZ, rawOrientation);
             }
         }
 
@@ -1032,68 +1036,95 @@ class PhysicsWorld {
     }
 
     /**
-     * ハーフブロックのAABBリストを取得（CustomCollisionベース）
-     * 固定の下ハーフCustomCollisionをorientation回転で6方向に対応
-     * 個別ボクセルAABBではなく、全solidボクセルの包含AABBを1つ返す
-     * @param {number} blockX
-     * @param {number} blockY
-     * @param {number} blockZ
-     * @param {number} orientation - orient値（topDir * 4）
+     * CustomCollisionベースのAABBリストを生成する共通処理
+     * @param {number} blockX @param {number} blockY @param {number} blockZ
+     * @param {number} orientation - orient値
+     * @param {number[][][]} collisionData - CustomCollisionデータ
+     * @param {boolean} merge - true: 包含AABBを1つ返す, false: 個別ボクセルAABBを返す
      * @returns {Array<Object>} AABBリスト
      */
-    _getHalfBlockAABBs(blockX, blockY, blockZ, orientation) {
-        if (typeof BlockMeshGeometry === 'undefined' || typeof CustomCollision === 'undefined') {
-            return [{ minX: blockX, minY: blockY, minZ: blockZ, maxX: blockX + 1, maxY: blockY + 0.5, maxZ: blockZ + 1 }];
-        }
-
-        const collisionData = BlockMeshGeometry.GetHalfCollisionData();
+    _getCollisionAABBs(blockX, blockY, blockZ, orientation, collisionData, merge) {
         const gs = 4;
         const voxelSize = 1 / gs;
-
-        // orientation回転行列を取得
         const m = (orientation !== 0 && typeof BlockOrientation !== 'undefined') ? BlockOrientation.Matrices[orientation] : null;
 
-        let minX = Infinity, minY = Infinity, minZ = Infinity;
-        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        const aabbs = [];
+        let gMinX = Infinity, gMinY = Infinity, gMinZ = Infinity;
+        let gMaxX = -Infinity, gMaxY = -Infinity, gMaxZ = -Infinity;
 
         for (let vy = 0; vy < gs; vy++) {
             for (let vz = 0; vz < gs; vz++) {
                 for (let vx = 0; vx < gs; vx++) {
                     if (CustomCollision.getVoxel(collisionData, vx, vy, vz) !== 1) continue;
-                    let x0 = vx * voxelSize, y0 = vy * voxelSize, z0 = vz * voxelSize;
-                    let x1 = x0 + voxelSize, y1 = y0 + voxelSize, z1 = z0 + voxelSize;
+                    const x0 = vx * voxelSize, y0 = vy * voxelSize, z0 = vz * voxelSize;
+                    const x1 = x0 + voxelSize, y1 = y0 + voxelSize, z1 = z0 + voxelSize;
+
                     if (m) {
-                        // ボクセルの8頂点を回転して包含AABBを求める
                         const corners = [[x0,y0,z0],[x1,y0,z0],[x0,y1,z0],[x1,y1,z0],[x0,y0,z1],[x1,y0,z1],[x0,y1,z1],[x1,y1,z1]];
+                        let rMinX = Infinity, rMinY = Infinity, rMinZ = Infinity;
+                        let rMaxX = -Infinity, rMaxY = -Infinity, rMaxZ = -Infinity;
                         for (const [cx, cy, cz] of corners) {
                             const rx = m[0]*(cx-0.5) + m[1]*(cy-0.5) + m[2]*(cz-0.5) + 0.5;
                             const ry = m[3]*(cx-0.5) + m[4]*(cy-0.5) + m[5]*(cz-0.5) + 0.5;
                             const rz = m[6]*(cx-0.5) + m[7]*(cy-0.5) + m[8]*(cz-0.5) + 0.5;
-                            if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
-                            if (ry < minY) minY = ry; if (ry > maxY) maxY = ry;
-                            if (rz < minZ) minZ = rz; if (rz > maxZ) maxZ = rz;
+                            if (rx < rMinX) rMinX = rx; if (rx > rMaxX) rMaxX = rx;
+                            if (ry < rMinY) rMinY = ry; if (ry > rMaxY) rMaxY = ry;
+                            if (rz < rMinZ) rMinZ = rz; if (rz > rMaxZ) rMaxZ = rz;
+                        }
+                        if (merge) {
+                            if (rMinX < gMinX) gMinX = rMinX; if (rMaxX > gMaxX) gMaxX = rMaxX;
+                            if (rMinY < gMinY) gMinY = rMinY; if (rMaxY > gMaxY) gMaxY = rMaxY;
+                            if (rMinZ < gMinZ) gMinZ = rMinZ; if (rMaxZ > gMaxZ) gMaxZ = rMaxZ;
+                        } else {
+                            aabbs.push({
+                                minX: blockX + rMinX, minY: blockY + rMinY, minZ: blockZ + rMinZ,
+                                maxX: blockX + rMaxX, maxY: blockY + rMaxY, maxZ: blockZ + rMaxZ
+                            });
                         }
                     } else {
-                        if (x0 < minX) minX = x0; if (x1 > maxX) maxX = x1;
-                        if (y0 < minY) minY = y0; if (y1 > maxY) maxY = y1;
-                        if (z0 < minZ) minZ = z0; if (z1 > maxZ) maxZ = z1;
+                        if (merge) {
+                            if (x0 < gMinX) gMinX = x0; if (x1 > gMaxX) gMaxX = x1;
+                            if (y0 < gMinY) gMinY = y0; if (y1 > gMaxY) gMaxY = y1;
+                            if (z0 < gMinZ) gMinZ = z0; if (z1 > gMaxZ) gMaxZ = z1;
+                        } else {
+                            aabbs.push({
+                                minX: blockX + x0, minY: blockY + y0, minZ: blockZ + z0,
+                                maxX: blockX + x1, maxY: blockY + y1, maxZ: blockZ + z1
+                            });
+                        }
                     }
                 }
             }
         }
 
-        if (minX === Infinity) {
+        if (merge) {
+            if (gMinX === Infinity) {
+                return [{ minX: blockX, minY: blockY, minZ: blockZ, maxX: blockX + 1, maxY: blockY + 1, maxZ: blockZ + 1 }];
+            }
+            return [{ minX: blockX + gMinX, minY: blockY + gMinY, minZ: blockZ + gMinZ,
+                       maxX: blockX + gMaxX, maxY: blockY + gMaxY, maxZ: blockZ + gMaxZ }];
+        }
+        return aabbs;
+    }
+
+    /**
+     * ハーフブロックのAABBリストを取得（包含AABB 1つ）
+     */
+    _getHalfBlockAABBs(blockX, blockY, blockZ, orientation) {
+        if (typeof BlockMeshGeometry === 'undefined' || typeof CustomCollision === 'undefined') {
+            return [{ minX: blockX, minY: blockY, minZ: blockZ, maxX: blockX + 1, maxY: blockY + 0.5, maxZ: blockZ + 1 }];
+        }
+        return this._getCollisionAABBs(blockX, blockY, blockZ, orientation, BlockMeshGeometry.GetHalfCollisionData(), true);
+    }
+
+    /**
+     * 階段ブロックのAABBリストを取得（個別ボクセルAABB）
+     */
+    _getStairBlockAABBs(blockX, blockY, blockZ, orientation) {
+        if (typeof BlockMeshGeometry === 'undefined' || typeof CustomCollision === 'undefined') {
             return [{ minX: blockX, minY: blockY, minZ: blockZ, maxX: blockX + 1, maxY: blockY + 1, maxZ: blockZ + 1 }];
         }
-
-        return [{
-            minX: blockX + minX,
-            minY: blockY + minY,
-            minZ: blockZ + minZ,
-            maxX: blockX + maxX,
-            maxY: blockY + maxY,
-            maxZ: blockZ + maxZ
-        }];
+        return this._getCollisionAABBs(blockX, blockY, blockZ, orientation, BlockMeshGeometry.GetStairCollisionData(), false);
     }
 
     /**

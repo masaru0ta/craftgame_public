@@ -102,6 +102,8 @@ function cacheElements() {
   elements.isTransparent = document.getElementById('isTransparent');
   elements.halfPlaceable = document.getElementById('halfPlaceable');
   elements.halfPlaceableGroup = document.getElementById('halfPlaceableGroup');
+  elements.stairPlaceable = document.getElementById('stairPlaceable');
+  elements.stairPlaceableGroup = document.getElementById('stairPlaceableGroup');
   elements.rotatable = document.getElementById('rotatable');
   elements.rotatableGroup = document.getElementById('rotatableGroup');
   elements.sidePlaceable = document.getElementById('sidePlaceable');
@@ -164,6 +166,7 @@ function setupEventListeners() {
   });
   elements.isTransparent.addEventListener('change', () => { state.isModified = true; });
   elements.halfPlaceable.addEventListener('change', () => { state.isModified = true; });
+  elements.stairPlaceable.addEventListener('change', () => { state.isModified = true; });
   elements.rotatable.addEventListener('change', () => { state.isModified = true; });
   elements.sidePlaceable.addEventListener('change', () => { state.isModified = true; });
 
@@ -451,6 +454,7 @@ function selectBlock(blockId) {
     elements.lightLevel.value = block.light_level || 0;
     elements.isTransparent.checked = block.is_transparent || false;
     elements.halfPlaceable.checked = block.half_placeable || false;
+    elements.stairPlaceable.checked = block.stair_placeable || false;
     elements.rotatable.checked = block.rotatable || false;
     elements.sidePlaceable.checked = block.sidePlaceable || false;
 
@@ -458,6 +462,7 @@ function selectBlock(blockId) {
     const isNormal = (block.shape_type || 'normal') === 'normal';
     const isCustom = (block.shape_type || 'normal') === 'custom';
     elements.halfPlaceableGroup.style.display = isNormal ? '' : 'none';
+    elements.stairPlaceableGroup.style.display = isNormal ? '' : 'none';
     elements.rotatableGroup.style.display = isCustom ? 'none' : '';
     elements.sidePlaceableGroup.style.display = isCustom ? 'none' : '';
 
@@ -486,6 +491,7 @@ function handleBlockTypeChange(e) {
 
     // チェックボックスの表示切り替え
     elements.halfPlaceableGroup.style.display = newType === 'normal' ? '' : 'none';
+    elements.stairPlaceableGroup.style.display = newType === 'normal' ? '' : 'none';
     elements.rotatableGroup.style.display = newType === 'custom' ? 'none' : '';
     elements.sidePlaceableGroup.style.display = newType === 'custom' ? 'none' : '';
 
@@ -514,6 +520,7 @@ async function saveBlock() {
     light_level: parseInt(elements.lightLevel.value) || 0,
     is_transparent: elements.isTransparent.checked,
     ...(elements.blockTypeSelect.value === 'normal' && { half_placeable: elements.halfPlaceable.checked }),
+    ...(elements.blockTypeSelect.value === 'normal' && { stair_placeable: elements.stairPlaceable.checked }),
     ...(elements.blockTypeSelect.value !== 'custom' && { rotatable: elements.rotatable.checked }),
     ...(elements.blockTypeSelect.value !== 'custom' && { sidePlaceable: elements.sidePlaceable.checked }),
   };

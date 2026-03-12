@@ -88,8 +88,9 @@ class PlacementPreview {
      * @param {number} orientation - orientation値
      * @param {boolean} canPlace - 設置可能か
      * @param {boolean} [isHalfMode=false] - ハーフブロックモードか
+     * @param {boolean} [isStairMode=false] - 階段ブロックモードか
      */
-    update(raycastResult, selectedBlock, orientation, canPlace, isHalfMode = false) {
+    update(raycastResult, selectedBlock, orientation, canPlace, isHalfMode = false, isStairMode = false) {
         if (!raycastResult || !raycastResult.hit || !selectedBlock) {
             this.hide();
             this._lastAdjacentKey = '';
@@ -111,12 +112,13 @@ class PlacementPreview {
             return;
         }
 
-        const newKey = `${selectedBlock.block_str_id}:${orientation}:${isHalfMode ? 'half' : 'full'}`;
+        const modeStr = isStairMode ? 'stair' : isHalfMode ? 'half' : 'full';
+        const newKey = `${selectedBlock.block_str_id}:${orientation}:${modeStr}`;
 
         // キャッシュキーが異なる場合のみメッシュ再生成
         if (newKey !== this._cacheKey) {
             this._removeMesh();
-            this._currentMesh = this._buildMesh(selectedBlock, orientation, isHalfMode);
+            this._currentMesh = this._buildMesh(selectedBlock, orientation, isHalfMode, isStairMode);
             this._scene.add(this._currentMesh);
             this._cacheKey = newKey;
         }
@@ -162,9 +164,10 @@ class PlacementPreview {
      * @param {Object} blockDef - ブロック定義
      * @param {number} orientation - orientation値
      * @param {boolean} [isHalfMode=false] - ハーフブロックモードか
+     * @param {boolean} [isStairMode=false] - 階段ブロックモードか
      * @returns {THREE.Group}
      */
-    _buildMesh(blockDef, orientation, isHalfMode = false) {
+    _buildMesh(blockDef, orientation, isHalfMode = false, isStairMode = false) {
         const positions = [];
         const normals = [];
         const uvs = [];
@@ -174,6 +177,8 @@ class PlacementPreview {
 
         if (blockDef.shape_type === 'custom' && blockDef.voxel_look) {
             vertexOffset = this._buildCustomMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+        } else if (blockDef.stair_placeable && isStairMode) {
+            vertexOffset = this._buildStairMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         } else if (blockDef.half_placeable && isHalfMode) {
             vertexOffset = this._buildHalfMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         } else {
@@ -249,6 +254,39 @@ class PlacementPreview {
         }
 
         // 回転 + Z反転を適用（Three.js座標系変換）
+        const endVertexCount = positions.length / 3;
+        BlockMeshGeometry.ApplyOrientationWithZFlip(
+            positions, normals, startVertexCount, endVertexCount,
+            0.5, 0.5, 0.5, orientation
+        );
+
+        return vertexOffset;
+    }
+
+    /**
+     * 階段ブロックのジオメトリを生成（ボクセルパイプライン）
+     * @param {number} orientation - orient値（topDir * 4 + rotation）
+     */
+    _buildStairMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+        const voxelData = BlockMeshGeometry.GetStairVoxelData();
+        const gs = 8;
+        const blockBase = [0, 0, 0];
+        const startVertexCount = positions.length / 3;
+
+        const lightLevels = [];
+        const aoLevels = [];
+        const out = { positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices };
+
+        for (const config of BlockMeshGeometry.VoxelFaceConfigs) {
+            const matAtlasUVs = BlockMeshGeometry.GetFaceAtlasUV(blockDef.block_str_id, config.faceName, this._textureLoader, orientation);
+            for (let d = 0; d < gs; d++) {
+                const mask = BlockMeshGeometry.BuildVoxelFaceMask(voxelData, config, d, gs);
+                vertexOffset = BlockMeshGeometry.EmitVoxelGreedyQuads(
+                    out, mask, gs, matAtlasUVs, config, d, blockBase, vertexOffset
+                );
+            }
+        }
+
         const endVertexCount = positions.length / 3;
         BlockMeshGeometry.ApplyOrientationWithZFlip(
             positions, normals, startVertexCount, endVertexCount,

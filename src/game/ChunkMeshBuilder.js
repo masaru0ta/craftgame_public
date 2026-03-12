@@ -317,14 +317,14 @@ class ChunkMeshBuilder {
                 return;
             }
 
-            // ハーフブロック: shape='half' ならボクセルパイプラインで個別描画
-            if (blockDef && blockDef.half_placeable) {
+            // ハーフ/階段ブロック: shape='half'/'stair' ならボクセルパイプラインで個別描画
+            if (blockDef && (blockDef.half_placeable || blockDef.stair_placeable)) {
                 const shape = typeof chunkData.getShape === 'function'
                     ? chunkData.getShape(x, y, z)
                     : 'normal';
-                if (shape === 'half') {
+                if (shape === 'half' || shape === 'stair') {
                     const orient = chunkData.getOrientation(x, y, z);
-                    halfBlocks.push({ blockStrId, x, y, z, orientation: orient });
+                    halfBlocks.push({ blockStrId, x, y, z, orientation: orient, shape });
                     return;
                 }
             }
@@ -399,12 +399,12 @@ class ChunkMeshBuilder {
             );
         }
 
-        // ハーフブロックのボクセルメッシュ生成
-        for (const { blockStrId, x, y, z, orientation } of halfBlocks) {
+        // ハーフ/階段ブロックのボクセルメッシュ生成
+        for (const hb of halfBlocks) {
             vertexOffset = this._buildHalfBlockVoxels(
-                blockStrId, x, y, z, orientation, chunkData,
+                hb.blockStrId, hb.x, hb.y, hb.z, hb.orientation, chunkData,
                 positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices,
-                vertexOffset, neighborChunks
+                vertexOffset, neighborChunks, hb.shape
             );
         }
 
@@ -665,23 +665,24 @@ class ChunkMeshBuilder {
         // 水ブロック・カスタムブロックは透過扱い（面をカリングしない）
         if (neighbor === 'air' || neighbor === 'water' || neighbor === null) return false;
         if (this._isCustomBlock(neighbor)) return false;
-        // ハーフブロック（shape='half'）は面を隠しきれないのでカリングしない
+        // ハーフ/階段ブロック（shape='half'/'stair'）は面を隠しきれないのでカリングしない
         if (typeof loc.chunk.getShape === 'function') {
             const nShape = loc.chunk.getShape(loc.localX, loc.localY, loc.localZ);
-            if (nShape === 'half') {
+            if (nShape === 'half' || nShape === 'stair') {
                 const neighborDef = this.textureLoader.getBlockDef(neighbor);
-                if (neighborDef && neighborDef.half_placeable) return false;
+                if (neighborDef && (neighborDef.half_placeable || neighborDef.stair_placeable)) return false;
             }
         }
         return true;
     }
 
     /**
-     * ハーフブロックのボクセルメッシュ生成（カスタムブロックと同じパイプライン）
-     * 固定の下ハーフVoxelDataを orientation 回転で6方向に対応
+     * ハーフ/階段ブロックのボクセルメッシュ生成（カスタムブロックと同じパイプライン）
+     * 固定VoxelDataを orientation 回転で対応
+     * @param {string} [shape='half'] - 'half' または 'stair'
      */
-    _buildHalfBlockVoxels(blockStrId, bx, by, bz, orientation, chunkData, positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset, neighborChunks) {
-        const voxelData = BlockMeshGeometry.GetHalfVoxelData();
+    _buildHalfBlockVoxels(blockStrId, bx, by, bz, orientation, chunkData, positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset, neighborChunks, shape = 'half') {
+        const voxelData = shape === 'stair' ? BlockMeshGeometry.GetStairVoxelData() : BlockMeshGeometry.GetHalfVoxelData();
 
         // 各面方向のライト・カリング情報を取得
         const faceLightFactors = {};
@@ -1254,14 +1255,14 @@ class ChunkMeshBuilder {
         if (!loc) return 15;
         const light = loc.chunk.getLight(loc.localX, loc.localY, loc.localZ);
 
-        // ハーフブロック（shape='half'）は固体扱いで光レベルが 0 になるため、
+        // ハーフ/階段ブロック（shape='half'/'stair'）は固体扱いで光レベルが 0 になるため、
         // 上のブロックの光レベルとの最大値を使って面が真っ黒になるのを防ぐ。
         if (typeof loc.chunk.getShape === 'function' && ny + 1 < ChunkData.SIZE_Y) {
             const nShape = loc.chunk.getShape(loc.localX, loc.localY, loc.localZ);
-            if (nShape === 'half') {
+            if (nShape === 'half' || nShape === 'stair') {
                 const block = loc.chunk.getBlock(loc.localX, loc.localY, loc.localZ);
                 const blockDef = block ? this.textureLoader.getBlockDef(block) : null;
-                if (blockDef && blockDef.half_placeable) {
+                if (blockDef && (blockDef.half_placeable || blockDef.stair_placeable)) {
                     const aboveLoc = ChunkMeshBuilder._resolveBlockLocation(chunkData, nx, ny + 1, nz, neighborChunks);
                     if (aboveLoc) {
                         return Math.max(light, aboveLoc.chunk.getLight(aboveLoc.localX, aboveLoc.localY, aboveLoc.localZ));

@@ -42,6 +42,58 @@ class BlockMeshGeometry {
     /** 標準面UV（フラット配列: u,v × 4頂点） */
     static FaceUV = [1, 0, 0, 0, 0, 1, 1, 1];
 
+    // ===== 階段ブロック用固定VoxelData =====
+
+    /** 底面階段の8×8×8 VoxelData（キャッシュ） */
+    static _stairVoxelData = null;
+
+    /**
+     * 階段ブロック用の固定VoxelData（8×8×8）を取得
+     * 下半分（Y=0〜3）全充填 + 上半分の奥側（Y=4〜7, Z=4〜7）充填のL字型パターン。
+     * 他の方向は orientation 回転で対応する。
+     * @returns {Uint8Array} VoxelDataフォーマット（128バイト）
+     */
+    static GetStairVoxelData() {
+        if (BlockMeshGeometry._stairVoxelData) return BlockMeshGeometry._stairVoxelData;
+        const data = VoxelData.createEmpty();
+        for (let y = 0; y < 8; y++) {
+            for (let z = 0; z < 8; z++) {
+                for (let x = 0; x < 8; x++) {
+                    // 下半分は全充填、上半分はZ=4〜7のみ充填
+                    if (y < 4 || z >= 4) {
+                        VoxelData.setVoxel(data, x, y, z, 1);
+                    }
+                }
+            }
+        }
+        BlockMeshGeometry._stairVoxelData = data;
+        return data;
+    }
+
+    /** 底面階段の4×4×4 CustomCollision（キャッシュ） */
+    static _stairCollisionData = null;
+
+    /**
+     * 階段ブロック用の固定CustomCollision（4×4×4）を取得
+     * 下半分（Y=0〜1）全充填 + 上半分の奥側（Y=2〜3, Z=2〜3）充填のL字型パターン。
+     * @returns {number[][][]} CustomCollisionフォーマット
+     */
+    static GetStairCollisionData() {
+        if (BlockMeshGeometry._stairCollisionData) return BlockMeshGeometry._stairCollisionData;
+        const data = CustomCollision.createEmpty();
+        for (let y = 0; y < 4; y++) {
+            for (let z = 0; z < 4; z++) {
+                for (let x = 0; x < 4; x++) {
+                    if (y < 2 || z >= 2) {
+                        CustomCollision.setVoxel(data, x, y, z, 1);
+                    }
+                }
+            }
+        }
+        BlockMeshGeometry._stairCollisionData = data;
+        return data;
+    }
+
     // ===== ボクセル面設定 =====
 
     static VoxelFaceConfigs = [

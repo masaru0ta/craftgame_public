@@ -47,8 +47,16 @@ class BlockInteraction {
         this._onBlockPlacedAt = null;
         this._onWorkbenchInteract = null;
 
-        // ハーフブロック設置モード（スロットごとに管理）
-        this._halfPlacementModes = new Map(); // Map<slotIndex, boolean>
+        // 設置モード（スロットごとに管理: 'normal'/'half'/'stair'）
+        this._placementModes = new Map(); // Map<slotIndex, string>
+        // 後方互換用ラッパー
+        this._halfPlacementModes = new Proxy(this._placementModes, {
+            get: (target, prop) => {
+                if (prop === 'get') return (key) => target.get(key) === 'half';
+                if (prop === 'set') return (key, val) => { target.set(key, val ? 'half' : 'normal'); return target; };
+                return target[prop];
+            }
+        });
         this._longPressTimer = null;          // 長押し検出タイマー
     }
 
@@ -146,14 +154,9 @@ class BlockInteraction {
         }
 
         // orientation 事前計算
-        let orientation = 0;
-        const isHalfMode = selectedBlock.half_placeable &&
-            (this._halfPlacementModes.get(this.hotbar ? this.hotbar.selectedSlot : 0) || false);
-        if (isHalfMode) {
-            orientation = this._calculateHalfOrientation(this.currentTarget.face);
-        } else {
-            orientation = this._calculateBlockOrientation(selectedBlock, this.currentTarget, this.player.getYaw());
-        }
+        const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
+        const currentMode = this._getPlacementMode(slotIndex, selectedBlock);
+        const orientation = this._calculateOrientationForMode(currentMode, selectedBlock, this.currentTarget, this.player.getYaw());
 
         // 設置可否判定
         const ax = this.currentTarget.adjacentX;
@@ -164,7 +167,7 @@ class BlockInteraction {
             && !this._intersectsPlayer(ax, ay, az)
             && ay >= 0 && ay < 128;
 
-        this.placementPreview.update(this.currentTarget, selectedBlock, orientation, canPlace, isHalfMode);
+        this.placementPreview.update(this.currentTarget, selectedBlock, orientation, canPlace, currentMode === 'half', currentMode === 'stair');
     }
 
     /**
@@ -308,17 +311,12 @@ class BlockInteraction {
         }
 
         // orientation 計算
-        let orientation = 0;
-        const isHalfMode = selectedBlock.half_placeable &&
-            (this._halfPlacementModes.get(this.hotbar ? this.hotbar.selectedSlot : 0) || false);
-        if (isHalfMode) {
-            orientation = this._calculateHalfOrientation(target.face);
-        } else {
-            orientation = this._calculateBlockOrientation(selectedBlock, target, this.player.getYaw());
-        }
+        const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
+        const currentMode = this._getPlacementMode(slotIndex, selectedBlock);
+        const orientation = this._calculateOrientationForMode(currentMode, selectedBlock, target, this.player.getYaw());
 
-        // ハーフモード時は placeBlock（メッシュ再構築含む）の前に shape を設定
-        if (isHalfMode) {
+        // ハーフ/階段モード時は placeBlock（メッシュ再構築含む）の前に shape を設定
+        if (currentMode === 'half' || currentMode === 'stair') {
             const cx = Math.floor(target.adjacentX / 16);
             const cz = Math.floor(target.adjacentZ / 16);
             const chunk = this.chunkManager.chunks.get(`${cx},${cz}`);
@@ -326,7 +324,7 @@ class BlockInteraction {
                 const lx = ((target.adjacentX % 16) + 16) % 16;
                 const lz = ((target.adjacentZ % 16) + 16) % 16;
                 const ly = target.adjacentY - chunk.chunkData.baseY;
-                chunk.chunkData.setShape(lx, ly, lz, 'half');
+                chunk.chunkData.setShape(lx, ly, lz, currentMode);
             }
         }
         const placed = this.placeBlock(target.adjacentX, target.adjacentY, target.adjacentZ, selectedBlock.block_str_id, orientation);
@@ -346,7 +344,7 @@ class BlockInteraction {
 
     /**
      * マウスダウンイベント処理
-     * 右クリック長押し（300ms）で half_placeable ブロックの設置モードを切り替える
+     * 右クリック長押し（300ms）で形状切替可能ブロックの設置モードを切り替える
      * @param {MouseEvent} event
      * @returns {boolean} 処理が実行されたか
      */
@@ -356,22 +354,22 @@ class BlockInteraction {
         if (event.button === 2) {
             const selectedBlock = this.hotbar ? this.hotbar.getSelectedBlock() : null;
 
-            if (selectedBlock && selectedBlock.half_placeable) {
-                // half_placeable=true: 長押しタイマー開始（設置は mouseup 時に行う）
+            if (selectedBlock && (selectedBlock.half_placeable || selectedBlock.stair_placeable)) {
+                // 形状切替可能ブロック: 長押しタイマー開始（設置は mouseup 時に行う）
                 const slotIndex = this.hotbar.selectedSlot;
                 clearTimeout(this._longPressTimer);
                 this._longPressTimer = setTimeout(() => {
                     this._longPressTimer = null;
                     // 300ms 経過 → モード切り替え（設置しない）
-                    const current = this._halfPlacementModes.get(slotIndex) || false;
-                    const next = !current;
-                    this._halfPlacementModes.set(slotIndex, next);
-                    this.hotbar.setHalfMode(slotIndex, next);
+                    const current = this._placementModes.get(slotIndex) || 'normal';
+                    const next = this._getNextPlacementMode(selectedBlock, current);
+                    this._placementModes.set(slotIndex, next);
+                    this.hotbar.setPlacementMode(slotIndex, next);
                 }, 300);
                 return true;
             }
 
-            // half_placeable=false: 従来通り即時設置
+            // 形状切替不可: 従来通り即時設置
             if (this.currentTarget) {
                 return this.placeBlockAt(this.currentTarget);
             }
@@ -1096,6 +1094,60 @@ class BlockInteraction {
     _calculateHalfOrientation(face) {
         const topDir = BlockInteraction._FACE_TO_INT[face] || 0;
         return topDir * 4;
+    }
+
+    /**
+     * 設置モードに応じた orientation を計算する共通メソッド
+     * @param {string} mode - 'normal'/'half'/'stair'
+     * @param {Object} blockDef - ブロック定義
+     * @param {Object} target - レイキャスト結果
+     * @param {number} playerYaw - プレイヤーの yaw 角
+     * @returns {number} orient値 (0〜23)
+     */
+    _calculateOrientationForMode(mode, blockDef, target, playerYaw) {
+        if (mode === 'half') return this._calculateHalfOrientation(target.face);
+        if (mode === 'stair') return this._calculateStairOrientation(target.face, playerYaw);
+        return this._calculateBlockOrientation(blockDef, target, playerYaw);
+    }
+
+    /**
+     * 階段ブロックの orientation を決定する
+     * topDir はクリック面から、rotation はプレイヤーの yaw から決定する
+     * @param {string} face - クリック面
+     * @param {number} playerYaw - プレイヤーの yaw 角
+     * @returns {number} topDir * 4 + rotation (0〜23)
+     */
+    _calculateStairOrientation(face, playerYaw) {
+        const topDir = BlockInteraction._FACE_TO_INT[face] || 0;
+        const rotation = BlockOrientation.RotationFromYaw(playerYaw, topDir);
+        return BlockOrientation.Encode(topDir, rotation);
+    }
+
+    /**
+     * 現在のスロットの設置モードを取得（ブロックのフラグを考慮）
+     * @param {number} slotIndex - スロットインデックス
+     * @param {Object} block - ブロック定義
+     * @returns {string} 'normal'/'half'/'stair'
+     */
+    _getPlacementMode(slotIndex, block) {
+        const mode = this._placementModes.get(slotIndex) || 'normal';
+        if (mode === 'half' && block && block.half_placeable) return 'half';
+        if (mode === 'stair' && block && block.stair_placeable) return 'stair';
+        return 'normal';
+    }
+
+    /**
+     * 次の設置モードを計算（サイクル切り替え）
+     * @param {Object} block - ブロック定義
+     * @param {string} currentMode - 現在のモード
+     * @returns {string} 次のモード
+     */
+    _getNextPlacementMode(block, currentMode) {
+        const modes = ['normal'];
+        if (block.half_placeable) modes.push('half');
+        if (block.stair_placeable) modes.push('stair');
+        const idx = modes.indexOf(currentMode);
+        return modes[(idx + 1) % modes.length];
     }
 
     /**
