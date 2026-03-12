@@ -1659,16 +1659,14 @@ function showItemPreview3d(item) {
   } else if (sourceType === 'structure' && item.source_structure_str_id) {
     // ブロックエディタを非表示にして構造物エディタを表示
     hideBlockPreview();
-    showStructurePreview(container);
     const struct = state.structures.find(s => s.structure_str_id === item.source_structure_str_id);
-    if (struct) {
-      requestAnimationFrame(() => {
-        if (itemPreviewState.structureEditor.resize) {
-          itemPreviewState.structureEditor.resize();
-        }
+    // レイアウト確定後にStructureEditorを作成・ロード
+    requestAnimationFrame(() => {
+      showStructurePreview(container);
+      if (struct) {
         itemPreviewState.structureEditor.loadStructure(struct);
-      });
-    }
+      }
+    });
     itemPreviewState.activeType = 'structure';
   }
 }
@@ -1715,7 +1713,9 @@ function showStructurePreview(container) {
     itemPreviewState.structureEditor = null;
   }
   const editorContainer = document.createElement('div');
-  editorContainer.style.cssText = 'width:100%;height:100%;';
+  // 高さをコンテナ幅に合わせて明示的に設定（height:100%は親に高さがないと0になる）
+  const containerWidth = container.offsetWidth || 600;
+  editorContainer.style.cssText = `width:100%;height:${containerWidth}px;`;
   container.appendChild(editorContainer);
   itemPreviewState.structureEditor = new StructureEditor({
     container: editorContainer,
