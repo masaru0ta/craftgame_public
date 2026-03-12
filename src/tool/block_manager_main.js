@@ -1532,6 +1532,55 @@ function selectItem(itemStrId) {
 
   // レシピ更新
   loadRecipe(item.recipe);
+
+  // プレビュー更新
+  updateItemPreview(item);
+}
+
+/**
+ * アイテムプレビューを更新
+ */
+async function updateItemPreview(item) {
+  const container = elements.itemPreview;
+  if (!container) return;
+  container.innerHTML = '';
+
+  const sourceType = item.source_type || 'block';
+
+  if (sourceType === 'block' && item.source_block_str_id) {
+    // ブロックの3Dサムネイルを生成
+    const block = state.blocks.find(b => b.block_str_id === item.source_block_str_id);
+    if (block && state.thumbnailGenerator) {
+      try {
+        const dataUrl = await state.thumbnailGenerator.generate(block, state.textures);
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'contain';
+        img.style.imageRendering = 'pixelated';
+        container.appendChild(img);
+      } catch (e) {
+        container.innerHTML = '<div style="color:#999;font-size:12px;">プレビュー生成エラー</div>';
+      }
+    }
+  } else if (sourceType === 'texture' && item.source_texture_id) {
+    // テクスチャ画像を表示
+    const tex = state.textures.find(t => t.file_name === item.source_texture_id);
+    if (tex && tex.image_base64) {
+      const img = document.createElement('img');
+      img.src = tex.image_base64;
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.objectFit = 'contain';
+      img.style.imageRendering = 'pixelated';
+      container.appendChild(img);
+    } else {
+      container.innerHTML = '<div style="color:#999;font-size:12px;">テクスチャ未設定</div>';
+    }
+  } else if (sourceType === 'structure') {
+    container.innerHTML = '<div style="color:#999;font-size:12px;">構造物プレビュー（未対応）</div>';
+  }
 }
 
 /**
