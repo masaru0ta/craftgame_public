@@ -1595,11 +1595,15 @@ async function updateItemPreview(item) {
       if (struct.palette && state.thumbnailGenerator) {
         try {
           const palette = typeof struct.palette === 'string' ? JSON.parse(struct.palette) : struct.palette;
-          if (Array.isArray(palette) && palette.length > 0) {
+          // palette は { blocks: [...], offset: [...] } 形式またはブロックIDの配列
+          const blockList = Array.isArray(palette) ? palette : (palette.blocks || []);
+          // "air" を除外
+          const filtered = blockList.filter(id => id !== 'air');
+          if (filtered.length > 0) {
             info.innerHTML += '<div style="color:#888;margin-bottom:4px;">使用ブロック:</div>';
             const grid = document.createElement('div');
             grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,40px);gap:4px;';
-            for (const entry of palette.slice(0, 9)) {
+            for (const entry of filtered.slice(0, 9)) {
               const blockStrId = typeof entry === 'string' ? entry : entry.block_str_id;
               const block = state.blocks.find(b => b.block_str_id === blockStrId);
               if (block) {
