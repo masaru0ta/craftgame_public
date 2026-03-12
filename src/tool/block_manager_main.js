@@ -1649,7 +1649,11 @@ function showItemPreview3d(item) {
     showBlockPreview(container);
     const block = state.blocks.find(b => b.block_str_id === item.source_block_str_id);
     if (block) {
-      itemPreviewState.blockEditorUI.loadBlock(block, state.textures);
+      // レイアウト確定後にリサイズしてからロード
+      requestAnimationFrame(() => {
+        itemPreviewState.blockEditorUI.resize();
+        itemPreviewState.blockEditorUI.loadBlock(block, state.textures);
+      });
     }
     itemPreviewState.activeType = 'block';
   } else if (sourceType === 'structure' && item.source_structure_str_id) {
@@ -1658,7 +1662,12 @@ function showItemPreview3d(item) {
     showStructurePreview(container);
     const struct = state.structures.find(s => s.structure_str_id === item.source_structure_str_id);
     if (struct) {
-      itemPreviewState.structureEditor.loadStructure(struct);
+      requestAnimationFrame(() => {
+        if (itemPreviewState.structureEditor.resize) {
+          itemPreviewState.structureEditor.resize();
+        }
+        itemPreviewState.structureEditor.loadStructure(struct);
+      });
     }
     itemPreviewState.activeType = 'structure';
   }
