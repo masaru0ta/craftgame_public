@@ -22,6 +22,7 @@
       <option value="realmapTest">リアル地形テスト</option>
       <option value="structureEditor">構造物エディタ</option>
       <option value="characterEditor">キャラクターエディタ</option>
+      <option value="items">アイテム一覧</option>
     </select>
   </div>
 
@@ -227,6 +228,146 @@
   <!-- キャラクターエディタ -->
   <div class="main" id="characterEditor">
     <iframe id="characterEditorFrame" data-src="../test/spec_1-9_character_editor.html" style="width:100%; height:calc(100vh - 60px); border:none;"></iframe>
+  </div>
+
+  <!-- アイテム一覧 -->
+  <div class="main" id="itemList">
+    <div class="column col-left">
+      <h3>アイテム一覧</h3>
+      <div class="category-tabs" id="item-category-filter">
+        <div class="category-tab active" data-category="all">すべて</div>
+        <div class="category-tab" data-category="block">ブロック</div>
+        <div class="category-tab" data-category="structure">構造物</div>
+        <div class="category-tab" data-category="tool">道具</div>
+        <div class="category-tab" data-category="mechanism">装置</div>
+        <div class="category-tab" data-category="decoration">装飾</div>
+      </div>
+      <div class="grid" id="item-grid"></div>
+      <div class="tile add-new" id="add-item-tile" style="margin-top:8px;">
+        <div class="tile-img" style="font-size:24px;color:#4285f4;">+</div>
+        <div class="tile-name">新規追加</div>
+      </div>
+    </div>
+    <div class="column col-mid">
+      <h3>アイテム設定</h3>
+      <div class="form-group">
+        <label>アイテムID<span class="required">*</span></label>
+        <input type="text" id="item-str-id" readonly>
+      </div>
+      <div class="form-group">
+        <label>表示名<span class="required">*</span></label>
+        <input type="text" id="item-name">
+      </div>
+      <div class="form-group">
+        <label>カテゴリ<span class="required">*</span></label>
+        <select id="item-category">
+          <option value="block">ブロック</option>
+          <option value="structure">構造物</option>
+          <option value="tool">道具</option>
+          <option value="mechanism">装置</option>
+          <option value="decoration">装飾</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>素材<span class="required">*</span></label>
+        <select id="item-source-type">
+          <option value="block">ブロック</option>
+          <option value="structure">構造物</option>
+          <option value="texture">テクスチャ</option>
+        </select>
+      </div>
+      <div class="form-group" id="source-block-group">
+        <label>ブロック<span class="required">*</span></label>
+        <select id="item-source-block">
+          <option value="">-- 選択 --</option>
+        </select>
+      </div>
+      <div class="form-group" id="source-structure-group" style="display:none;">
+        <label>構造物<span class="required">*</span></label>
+        <select id="item-source-structure">
+          <option value="">-- 選択 --</option>
+        </select>
+      </div>
+      <div class="form-group" id="source-texture-group" style="display:none;">
+        <label>テクスチャ<span class="required">*</span></label>
+        <select id="item-source-texture">
+          <option value="">-- 選択 --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>最大スタック数</label>
+        <input type="number" id="item-max-stack" min="1" max="99" value="99">
+      </div>
+      <div class="form-group">
+        <label class="checkbox-item">
+          <input type="checkbox" id="item-is-hidden">
+          クリエイティブ一覧から非表示
+        </label>
+      </div>
+      <!-- クラフトレシピ -->
+      <div class="recipe-section" id="recipe-section">
+        <h4>クラフトレシピ</h4>
+        <div class="recipe-list" id="recipe-list"></div>
+        <button class="recipe-add" id="add-recipe-btn">+ 素材追加</button>
+        <div class="recipe-output">
+          <label>生産数</label>
+          <input type="number" id="recipe-output-count" min="1" max="99" value="1">
+        </div>
+      </div>
+      <div class="btn-row btn-row-between">
+        <button class="btn-danger" id="delete-item-btn">削除</button>
+        <button class="btn-primary" id="save-item-btn">保存</button>
+      </div>
+    </div>
+    <div class="column col-right">
+      <h3>プレビュー</h3>
+      <div class="preview-box" id="item-preview">
+        <div class="preview-block"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新規アイテム作成モーダル -->
+  <div class="modal-overlay" id="new-item-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h4>新規アイテム作成</h4>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>アイテムID<span class="required">*</span></label>
+          <input type="text" name="item_str_id" placeholder="英数字とアンダースコアのみ">
+        </div>
+        <div class="form-group">
+          <label>表示名<span class="required">*</span></label>
+          <input type="text" name="name" placeholder="アイテム名">
+        </div>
+        <div class="form-group">
+          <label>カテゴリ</label>
+          <select name="category">
+            <option value="block">ブロック</option>
+            <option value="structure">構造物</option>
+            <option value="tool">道具</option>
+            <option value="mechanism">装置</option>
+            <option value="decoration">装飾</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>素材</label>
+          <select name="source_type">
+            <option value="block">ブロック</option>
+            <option value="structure">構造物</option>
+            <option value="texture">テクスチャ</option>
+          </select>
+        </div>
+        <div class="error" id="createItemError"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary modal-cancel">キャンセル</button>
+        <button class="btn-primary" id="createItemSubmit">作成</button>
+      </div>
+    </div>
   </div>
 
   <!-- 新規ブロック作成モーダル -->

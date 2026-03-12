@@ -10,11 +10,14 @@ const GAS_API_URL = window.GAS_API_URL || 'https://script.google.com/macros/s/AK
 const state = {
   blocks: [],
   textures: [],
+  structures: [],
+  items: [],
   dataFiles: [],
   activeDataFileId: null,
   selectedDataFileId: null,
   selectedBlockId: null,
   selectedTextureId: null,
+  selectedItemStrId: null,
   isModified: false,
   api: null,
   editorUI: null, // BlockEditorUI インスタンス
@@ -128,6 +131,33 @@ function cacheElements() {
   elements.pickerGrid = document.getElementById('pickerGrid');
   elements.textureFileInput = document.getElementById('textureFileInput');
 
+  // アイテム一覧画面
+  elements.itemGrid = document.getElementById('item-grid');
+  elements.addItemTile = document.getElementById('add-item-tile');
+  elements.itemCategoryFilter = document.getElementById('item-category-filter');
+  elements.itemStrId = document.getElementById('item-str-id');
+  elements.itemName = document.getElementById('item-name');
+  elements.itemCategory = document.getElementById('item-category');
+  elements.itemSourceType = document.getElementById('item-source-type');
+  elements.itemSourceBlock = document.getElementById('item-source-block');
+  elements.itemSourceStructure = document.getElementById('item-source-structure');
+  elements.itemSourceTexture = document.getElementById('item-source-texture');
+  elements.sourceBlockGroup = document.getElementById('source-block-group');
+  elements.sourceStructureGroup = document.getElementById('source-structure-group');
+  elements.sourceTextureGroup = document.getElementById('source-texture-group');
+  elements.itemMaxStack = document.getElementById('item-max-stack');
+  elements.itemIsHidden = document.getElementById('item-is-hidden');
+  elements.recipeSection = document.getElementById('recipe-section');
+  elements.recipeList = document.getElementById('recipe-list');
+  elements.addRecipeBtn = document.getElementById('add-recipe-btn');
+  elements.recipeOutputCount = document.getElementById('recipe-output-count');
+  elements.saveItemBtn = document.getElementById('save-item-btn');
+  elements.deleteItemBtn = document.getElementById('delete-item-btn');
+  elements.newItemModal = document.getElementById('new-item-modal');
+  elements.createItemError = document.getElementById('createItemError');
+  elements.createItemSubmit = document.getElementById('createItemSubmit');
+  elements.itemPreview = document.getElementById('item-preview');
+
   // データ選択画面
   elements.dataFileList = document.getElementById('dataFileList');
   elements.addDataFileBtn = document.getElementById('addDataFileBtn');
@@ -223,6 +253,30 @@ function setupEventListeners() {
   // テクスチャファイル選択
   elements.textureFileInput.addEventListener('change', handleTextureFileSelect);
 
+  // アイテム一覧
+  elements.saveItemBtn.addEventListener('click', saveItem);
+  elements.deleteItemBtn.addEventListener('click', deleteItem);
+  elements.addItemTile.addEventListener('click', openNewItemModal);
+  elements.addRecipeBtn.addEventListener('click', addRecipeRow);
+  elements.itemSourceType.addEventListener('change', () => updateSourceTypeVisibility(elements.itemSourceType.value));
+
+  // カテゴリフィルタ
+  elements.itemCategoryFilter.querySelectorAll('.category-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      elements.itemCategoryFilter.querySelectorAll('.category-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      filterItemsByCategory(tab.dataset.category);
+    });
+  });
+
+  // 新規アイテムモーダル
+  elements.newItemModal.querySelector('.modal-close').addEventListener('click', closeNewItemModal);
+  elements.newItemModal.querySelector('.modal-cancel').addEventListener('click', closeNewItemModal);
+  elements.createItemSubmit.addEventListener('click', createItem);
+  elements.newItemModal.addEventListener('click', (e) => {
+    if (e.target === elements.newItemModal) closeNewItemModal();
+  });
+
   // データ選択画面
   elements.addDataFileBtn.addEventListener('click', showAddDataFileMode);
   elements.cancelAddBtn.addEventListener('click', cancelAddDataFile);
@@ -244,9 +298,12 @@ async function loadData() {
     const data = await state.api.getAll();
     state.blocks = data.blocks.sort((a, b) => a.block_id - b.block_id);
     state.textures = data.textures.sort((a, b) => a.texture_id - b.texture_id);
+    state.structures = (data.structures || []).sort((a, b) => (a.structure_str_id || '').localeCompare(b.structure_str_id || ''));
+    state.items = (data.items || []).sort((a, b) => a.item_id - b.item_id);
 
     renderBlockGrid();
     renderTextureGrid();
+    renderItemGrid();
 
     // 先頭を選択
     if (state.blocks.length > 0) {
@@ -254,6 +311,9 @@ async function loadData() {
     }
     if (state.textures.length > 0) {
       selectTexture(state.textures[0].texture_id);
+    }
+    if (state.items.length > 0) {
+      selectItem(state.items[0].item_str_id);
     }
   } catch (error) {
     console.error('データ読み込みエラー:', error);
@@ -291,6 +351,7 @@ function switchTab(tabName) {
   document.getElementById('dataSelect').classList.toggle('active', tabName === 'data');
   document.getElementById('blockList').classList.toggle('active', tabName === 'blocks');
   document.getElementById('textureList').classList.toggle('active', tabName === 'textures');
+  document.getElementById('itemList').classList.toggle('active', tabName === 'items');
   document.getElementById('chunkTest').classList.toggle('active', tabName === 'chunkTest');
   document.getElementById('chunkManagerTest').classList.toggle('active', tabName === 'chunkManagerTest');
   document.getElementById('lodTest').classList.toggle('active', tabName === 'lodTest');
@@ -1367,6 +1428,420 @@ function hideDataFileErrors() {
     const el = document.getElementById(id);
     if (el) el.classList.remove('show');
   });
+}
+
+// ========================================
+// アイテム一覧
+// ========================================
+
+/**
+ * カテゴリ表示名マップ
+ */
+const CategoryLabels = {
+  block: 'ブロック',
+  structure: '構造物',
+  tool: '道具',
+  mechanism: '装置',
+  decoration: '装飾',
+};
+
+/**
+ * アイテムグリッド描画
+ */
+function renderItemGrid() {
+  if (!elements.itemGrid) return;
+  elements.itemGrid.innerHTML = '';
+
+  state.items.forEach(item => {
+    const tile = createItemTile(item);
+    elements.itemGrid.appendChild(tile);
+  });
+}
+
+/**
+ * アイテムタイル作成
+ */
+function createItemTile(item) {
+  const tile = document.createElement('div');
+  tile.className = 'tile item-tile';
+  tile.dataset.itemStrId = item.item_str_id;
+  tile.dataset.category = item.category || '';
+
+  if (item.item_str_id === state.selectedItemStrId) {
+    tile.classList.add('selected');
+  }
+
+  // サムネイル色取得
+  let color = '#9e9e9e';
+  if (item.source_type === 'block' && item.source_block_str_id) {
+    const block = state.blocks.find(b => b.block_str_id === item.source_block_str_id);
+    if (block) {
+      const texture = state.textures.find(t => t.texture_id === block.texture_id);
+      if (texture) color = texture.color_hex || color;
+    }
+  }
+
+  const catLabel = CategoryLabels[item.category] || item.category;
+  const catClass = 'cat-' + (item.category || 'block');
+
+  tile.innerHTML = `
+    <div class="tile-img" style="background:${color};"></div>
+    <div class="tile-name">${escapeHtml(item.name)}</div>
+    <div class="tile-category"><span class="cat-badge ${catClass}">${escapeHtml(catLabel)}</span></div>
+  `;
+
+  tile.addEventListener('click', () => selectItem(item.item_str_id));
+  return tile;
+}
+
+/**
+ * アイテム選択
+ */
+function selectItem(itemStrId) {
+  state.selectedItemStrId = itemStrId;
+
+  // タイルの選択状態更新
+  elements.itemGrid.querySelectorAll('.item-tile').forEach(tile => {
+    tile.classList.toggle('selected', tile.dataset.itemStrId === itemStrId);
+  });
+
+  // フォーム更新
+  const item = state.items.find(i => i.item_str_id === itemStrId);
+  if (!item) return;
+
+  elements.itemStrId.value = item.item_str_id || '';
+  elements.itemName.value = item.name || '';
+  elements.itemCategory.value = item.category || 'block';
+  elements.itemSourceType.value = item.source_type || 'block';
+  elements.itemMaxStack.value = item.max_stack || 99;
+  elements.itemIsHidden.checked = item.is_hidden || false;
+
+  // source_type に応じたドロップダウン設定
+  populateSourceDropdowns();
+  updateSourceTypeVisibility(item.source_type || 'block');
+
+  if (item.source_block_str_id) {
+    elements.itemSourceBlock.value = item.source_block_str_id;
+  }
+  if (item.source_structure_str_id) {
+    elements.itemSourceStructure.value = item.source_structure_str_id;
+  }
+  if (item.source_texture_id) {
+    elements.itemSourceTexture.value = item.source_texture_id;
+  }
+
+  // レシピ更新
+  loadRecipe(item.recipe);
+}
+
+/**
+ * source_type に応じてフォームの表示切替
+ */
+function updateSourceTypeVisibility(sourceType) {
+  elements.sourceBlockGroup.style.display = sourceType === 'block' ? '' : 'none';
+  elements.sourceStructureGroup.style.display = sourceType === 'structure' ? '' : 'none';
+  elements.sourceTextureGroup.style.display = sourceType === 'texture' ? '' : 'none';
+}
+
+/**
+ * ソース選択ドロップダウンを構築
+ */
+function populateSourceDropdowns() {
+  // ブロック
+  elements.itemSourceBlock.innerHTML = '<option value="">-- 選択 --</option>';
+  state.blocks.forEach(b => {
+    const opt = document.createElement('option');
+    opt.value = b.block_str_id;
+    opt.textContent = `${b.block_str_id}（${b.name}）`;
+    elements.itemSourceBlock.appendChild(opt);
+  });
+
+  // 構造物
+  elements.itemSourceStructure.innerHTML = '<option value="">-- 選択 --</option>';
+  state.structures.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.structure_str_id;
+    opt.textContent = `${s.structure_str_id}（${s.name}）`;
+    elements.itemSourceStructure.appendChild(opt);
+  });
+
+  // テクスチャ
+  elements.itemSourceTexture.innerHTML = '<option value="">-- 選択 --</option>';
+  state.textures.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.file_name;
+    opt.textContent = t.file_name || `ID:${t.texture_id}`;
+    elements.itemSourceTexture.appendChild(opt);
+  });
+}
+
+/**
+ * カテゴリフィルタ
+ */
+function filterItemsByCategory(category) {
+  elements.itemGrid.querySelectorAll('.item-tile').forEach(tile => {
+    if (category === 'all') {
+      tile.style.display = '';
+    } else {
+      tile.style.display = tile.dataset.category === category ? '' : 'none';
+    }
+  });
+}
+
+/**
+ * レシピをフォームに読み込み
+ */
+function loadRecipe(recipeStr) {
+  elements.recipeList.innerHTML = '';
+  elements.recipeOutputCount.value = 1;
+
+  if (!recipeStr) return;
+
+  try {
+    const recipe = JSON.parse(recipeStr);
+    if (recipe.materials && Array.isArray(recipe.materials)) {
+      recipe.materials.forEach(mat => {
+        addRecipeRow(mat.item_str_id, mat.count);
+      });
+    }
+    if (recipe.output_count) {
+      elements.recipeOutputCount.value = recipe.output_count;
+    }
+  } catch (e) {
+    // JSONパース失敗時は空
+  }
+}
+
+/**
+ * レシピ素材行を追加
+ */
+function addRecipeRow(selectedItemStrId, count) {
+  const row = document.createElement('div');
+  row.className = 'recipe-row';
+
+  const select = document.createElement('select');
+  select.className = 'recipe-item-select';
+  select.innerHTML = '<option value="">-- 素材 --</option>';
+  state.items.forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = item.item_str_id;
+    opt.textContent = `${item.item_str_id}（${item.name}）`;
+    if (item.item_str_id === selectedItemStrId) opt.selected = true;
+    select.appendChild(opt);
+  });
+
+  const times = document.createElement('span');
+  times.className = 'recipe-times';
+  times.innerHTML = '&times;';
+
+  const countInput = document.createElement('input');
+  countInput.type = 'number';
+  countInput.className = 'recipe-count';
+  countInput.min = '1';
+  countInput.max = '99';
+  countInput.value = count || 1;
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'recipe-remove';
+  removeBtn.title = '削除';
+  removeBtn.innerHTML = '&times;';
+  removeBtn.addEventListener('click', () => row.remove());
+
+  row.appendChild(select);
+  row.appendChild(times);
+  row.appendChild(countInput);
+  row.appendChild(removeBtn);
+  elements.recipeList.appendChild(row);
+}
+
+/**
+ * フォームからレシピJSON文字列を生成
+ */
+function buildRecipeJson() {
+  const rows = elements.recipeList.querySelectorAll('.recipe-row');
+  if (rows.length === 0) return '';
+
+  const materials = [];
+  rows.forEach(row => {
+    const itemStrId = row.querySelector('.recipe-item-select').value;
+    const count = parseInt(row.querySelector('.recipe-count').value) || 1;
+    if (itemStrId) {
+      materials.push({ item_str_id: itemStrId, count });
+    }
+  });
+
+  if (materials.length === 0) return '';
+
+  const outputCount = parseInt(elements.recipeOutputCount.value) || 1;
+  return JSON.stringify({ materials, output_count: outputCount });
+}
+
+/**
+ * アイテム保存
+ */
+async function saveItem() {
+  const item = state.items.find(i => i.item_str_id === state.selectedItemStrId);
+  if (!item) return;
+
+  const sourceType = elements.itemSourceType.value;
+  const updatedItem = {
+    item_id: item.item_id,
+    item_str_id: item.item_str_id,
+    name: elements.itemName.value,
+    category: elements.itemCategory.value,
+    source_type: sourceType,
+    source_block_str_id: sourceType === 'block' ? elements.itemSourceBlock.value : '',
+    source_structure_str_id: sourceType === 'structure' ? elements.itemSourceStructure.value : '',
+    source_texture_id: sourceType === 'texture' ? elements.itemSourceTexture.value : '',
+    max_stack: parseInt(elements.itemMaxStack.value) || 99,
+    is_hidden: elements.itemIsHidden.checked,
+    recipe: buildRecipeJson(),
+  };
+
+  try {
+    await state.api.saveItem(updatedItem);
+
+    // ローカル状態を更新
+    Object.assign(item, updatedItem);
+
+    renderItemGrid();
+    selectItem(item.item_str_id);
+
+    // 成功フィードバック
+    showItemSaveResult(true);
+  } catch (error) {
+    console.error('アイテム保存エラー:', error);
+    showItemSaveResult(false);
+  }
+}
+
+/**
+ * アイテム保存結果フィードバック
+ */
+function showItemSaveResult(success) {
+  const btn = elements.saveItemBtn;
+  if (success) {
+    btn.classList.add('save-success');
+    btn.textContent = '保存完了';
+  } else {
+    btn.classList.add('save-error');
+    btn.textContent = '保存失敗';
+  }
+  setTimeout(() => {
+    btn.classList.remove('save-success', 'save-error');
+    btn.textContent = '保存';
+  }, 1500);
+}
+
+/**
+ * アイテム削除
+ */
+async function deleteItem() {
+  const item = state.items.find(i => i.item_str_id === state.selectedItemStrId);
+  if (!item) return;
+
+  const confirmed = confirm(`「${item.name}」を削除してよろしいですか？`);
+  if (!confirmed) return;
+
+  try {
+    await state.api.deleteItem(item.item_str_id);
+
+    // ローカル状態から削除
+    const index = state.items.findIndex(i => i.item_str_id === item.item_str_id);
+    if (index >= 0) {
+      state.items.splice(index, 1);
+    }
+
+    renderItemGrid();
+
+    if (state.items.length > 0) {
+      selectItem(state.items[0].item_str_id);
+    } else {
+      state.selectedItemStrId = null;
+    }
+  } catch (error) {
+    console.error('アイテム削除エラー:', error);
+    alert('削除に失敗しました。');
+  }
+}
+
+/**
+ * 新規アイテムモーダルを開く
+ */
+function openNewItemModal() {
+  elements.newItemModal.classList.add('show');
+  elements.newItemModal.querySelector('input[name="item_str_id"]').value = '';
+  elements.newItemModal.querySelector('input[name="name"]').value = '';
+  elements.newItemModal.querySelector('select[name="category"]').value = 'block';
+  elements.newItemModal.querySelector('select[name="source_type"]').value = 'block';
+  elements.createItemError.classList.remove('show');
+}
+
+/**
+ * 新規アイテムモーダルを閉じる
+ */
+function closeNewItemModal() {
+  elements.newItemModal.classList.remove('show');
+}
+
+/**
+ * アイテム作成
+ */
+async function createItem() {
+  const itemStrId = elements.newItemModal.querySelector('input[name="item_str_id"]').value.trim();
+  const name = elements.newItemModal.querySelector('input[name="name"]').value.trim();
+  const category = elements.newItemModal.querySelector('select[name="category"]').value;
+  const sourceType = elements.newItemModal.querySelector('select[name="source_type"]').value;
+
+  // バリデーション
+  if (!itemStrId) {
+    elements.createItemError.textContent = 'アイテムIDは必須です。';
+    elements.createItemError.classList.add('show');
+    return;
+  }
+  if (!/^[a-zA-Z0-9_]+$/.test(itemStrId)) {
+    elements.createItemError.textContent = 'アイテムIDは英数字とアンダースコアのみ使用できます。';
+    elements.createItemError.classList.add('show');
+    return;
+  }
+  if (state.items.some(i => i.item_str_id === itemStrId)) {
+    elements.createItemError.textContent = 'このアイテムIDは既に使用されています。';
+    elements.createItemError.classList.add('show');
+    return;
+  }
+  if (!name) {
+    elements.createItemError.textContent = '表示名は必須です。';
+    elements.createItemError.classList.add('show');
+    return;
+  }
+
+  const newItem = {
+    item_str_id: itemStrId,
+    name,
+    category,
+    source_type: sourceType,
+    source_block_str_id: '',
+    source_structure_str_id: '',
+    source_texture_id: '',
+    max_stack: 99,
+    is_hidden: false,
+    recipe: '',
+  };
+
+  try {
+    const result = await state.api.saveItem(newItem);
+    newItem.item_id = result.item_id || state.items.length;
+    state.items.push(newItem);
+    state.items.sort((a, b) => a.item_id - b.item_id);
+
+    closeNewItemModal();
+    renderItemGrid();
+    selectItem(newItem.item_str_id);
+  } catch (error) {
+    console.error('アイテム作成エラー:', error);
+    elements.createItemError.textContent = 'アイテムの作成に失敗しました。';
+    elements.createItemError.classList.add('show');
+  }
 }
 
 // ========================================

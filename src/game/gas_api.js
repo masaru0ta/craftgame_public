@@ -191,6 +191,36 @@ class GasApi {
   }
 
   // ========================================
+  // アイテム API
+  // ========================================
+
+  /**
+   * アイテム一覧を取得
+   * @returns {Promise<Array>} アイテム一覧
+   */
+  async getItems() {
+    return this.get('getItems');
+  }
+
+  /**
+   * アイテムを保存（新規/更新）
+   * @param {Object} itemData - アイテムデータ
+   * @returns {Promise<Object>} { item_id }
+   */
+  async saveItem(itemData) {
+    return this.post('saveItem', itemData);
+  }
+
+  /**
+   * アイテムを削除
+   * @param {string} itemStrId - 削除するアイテムの文字列ID
+   * @returns {Promise<Object>} { deleted: true }
+   */
+  async deleteItem(itemStrId) {
+    return this.post('deleteItem', { item_str_id: itemStrId });
+  }
+
+  // ========================================
   // 構造物 API
   // ========================================
 
