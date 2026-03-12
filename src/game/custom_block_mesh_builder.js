@@ -335,14 +335,18 @@ class CustomBlockMeshBuilder {
               colors.push(brightness, brightness, brightness);
             }
 
-            // UV座標（マージされたサイズに対応）
+            // UV座標（面方向に応じた反転 — _setVoxelUV準拠）
             const cellSize = 1 / gs;
-            const uSize = width * cellSize;
-            const vSize = height * cellSize;
-            uvs.push(0, 0);
-            uvs.push(uSize, 0);
-            uvs.push(0, vSize);
-            uvs.push(uSize, vSize);
+            const flipU = name === '+X' || name === '-Z';
+            const flipV = name === '+Y';
+            const u0uv = flipU ? (gs - uPos) * cellSize : uPos * cellSize;
+            const u1uv = flipU ? (gs - uPos - width) * cellSize : (uPos + width) * cellSize;
+            const v0uv = flipV ? (gs - vPos) * cellSize : vPos * cellSize;
+            const v1uv = flipV ? (gs - vPos - height) * cellSize : (vPos + height) * cellSize;
+            uvs.push(u0uv, v0uv);
+            uvs.push(u1uv, v0uv);
+            uvs.push(u0uv, v1uv);
+            uvs.push(u1uv, v1uv);
 
             // インデックス（面の向きによってワインディングを調整）
             // 頂点配置: 0=(u0,v0), 1=(u1,v0), 2=(u0,v1), 3=(u1,v1)
@@ -557,13 +561,18 @@ class CustomBlockMeshBuilder {
                 colors.push(brightness, brightness, brightness);
               }
 
+              // UV座標（面方向に応じた反転 — _setVoxelUV準拠）
               const cellSize = 1 / gs;
-              const uSize = width * cellSize;
-              const vSize = height * cellSize;
-              uvs.push(0, 0);
-              uvs.push(uSize, 0);
-              uvs.push(0, vSize);
-              uvs.push(uSize, vSize);
+              const flipU2 = name === '+X' || name === '-Z';
+              const flipV2 = name === '+Y';
+              const u0uv2 = flipU2 ? (gs - uPos) * cellSize : uPos * cellSize;
+              const u1uv2 = flipU2 ? (gs - uPos - width) * cellSize : (uPos + width) * cellSize;
+              const v0uv2 = flipV2 ? (gs - vPos) * cellSize : vPos * cellSize;
+              const v1uv2 = flipV2 ? (gs - vPos - height) * cellSize : (vPos + height) * cellSize;
+              uvs.push(u0uv2, v0uv2);
+              uvs.push(u1uv2, v0uv2);
+              uvs.push(u0uv2, v1uv2);
+              uvs.push(u1uv2, v1uv2);
 
               // インデックスをグローバルマテリアル配列に追加
               if (name === '+X' || name === '+Y') {

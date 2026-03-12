@@ -1603,11 +1603,15 @@ class ChunkMeshBuilder {
                     aoLevels.push(1.0);
                 }
 
-                // UV座標
+                // UV座標（面方向に応じた反転 — custom_block_mesh_builder._setVoxelUV準拠）
                 const cellSize = 1 / gs;
-                const uSize = width * cellSize;
-                const vSize = height * cellSize;
-                uvs.push(0, 0, uSize, 0, 0, vSize, uSize, vSize);
+                const flipU = faceName === 'right' || faceName === 'front';
+                const flipV = faceName === 'top';
+                const u0uv = flipU ? (gs - uPos) * cellSize : uPos * cellSize;
+                const u1uv = flipU ? (gs - uPos - width) * cellSize : (uPos + width) * cellSize;
+                const v0uv = flipV ? (gs - vPos) * cellSize : vPos * cellSize;
+                const v1uv = flipV ? (gs - vPos - height) * cellSize : (vPos + height) * cellSize;
+                uvs.push(u0uv, v0uv, u1uv, v0uv, u0uv, v1uv, u1uv, v1uv);
 
                 // インデックス（面方向に応じたワインディング）
                 const vb = vertexOffset;

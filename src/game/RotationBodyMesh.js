@@ -277,7 +277,14 @@ class RotationBodyMesh {
                             aoLevels.push(1.0);
                         }
 
-                        uvs.push(0, 0, width * vs, 0, 0, height * vs, width * vs, height * vs);
+                        // UV座標（面方向に応じた反転 — _setVoxelUV準拠）
+                        const flipU = faceName === 'right' || faceName === 'front';
+                        const flipV = faceName === 'top';
+                        const u0uv = flipU ? (gs - uPos) * vs : uPos * vs;
+                        const u1uv = flipU ? (gs - uPos - width) * vs : (uPos + width) * vs;
+                        const v0uv = flipV ? (gs - vPos) * vs : vPos * vs;
+                        const v1uv = flipV ? (gs - vPos - height) * vs : (vPos + height) * vs;
+                        uvs.push(u0uv, v0uv, u1uv, v0uv, u0uv, v1uv, u1uv, v1uv);
 
                         const vb = vertexOffset;
                         if (cwWinding) {
