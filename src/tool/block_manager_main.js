@@ -1457,6 +1457,11 @@ function renderItemGrid() {
     const tile = createItemTile(item);
     elements.itemGrid.appendChild(tile);
   });
+
+  // 新規追加タイルをグリッド末尾に再追加
+  if (elements.addItemTile) {
+    elements.itemGrid.appendChild(elements.addItemTile);
+  }
 }
 
 /**
