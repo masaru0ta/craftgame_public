@@ -909,8 +909,8 @@ class PhysicsWorld {
             }];
         }
 
-        // ハーフ/階段ブロック対応（shape='half'/'stair'）— CustomCollisionベースのAABB生成
-        if ((blockDef.half_placeable || blockDef.stair_placeable) && blockDef.shape_type !== 'custom') {
+        // ハーフ/階段/スロープブロック対応（shape='half'/'stair'/'slope'）— CustomCollisionベースのAABB生成
+        if ((blockDef.half_placeable || blockDef.stair_placeable || blockDef.slope_placeable) && blockDef.shape_type !== 'custom') {
             const localX = ((blockX % 16) + 16) % 16;
             const localZ = ((blockZ % 16) + 16) % 16;
             const shape = typeof chunk.chunkData.getShape === 'function'
@@ -923,6 +923,10 @@ class PhysicsWorld {
             if (shape === 'stair') {
                 const rawOrientation = chunk.chunkData.getOrientation(localX, localY, localZ);
                 return this._getStairBlockAABBs(blockX, blockY, blockZ, rawOrientation);
+            }
+            if (shape === 'slope') {
+                const rawOrientation = chunk.chunkData.getOrientation(localX, localY, localZ);
+                return this._getSlopeBlockAABBs(blockX, blockY, blockZ, rawOrientation);
             }
         }
 
@@ -1125,6 +1129,16 @@ class PhysicsWorld {
             return [{ minX: blockX, minY: blockY, minZ: blockZ, maxX: blockX + 1, maxY: blockY + 1, maxZ: blockZ + 1 }];
         }
         return this._getCollisionAABBs(blockX, blockY, blockZ, orientation, BlockMeshGeometry.GetStairCollisionData(), false);
+    }
+
+    /**
+     * スロープブロックのAABBリストを取得（個別ボクセルAABB）
+     */
+    _getSlopeBlockAABBs(blockX, blockY, blockZ, orientation) {
+        if (typeof BlockMeshGeometry === 'undefined' || typeof CustomCollision === 'undefined') {
+            return [{ minX: blockX, minY: blockY, minZ: blockZ, maxX: blockX + 1, maxY: blockY + 1, maxZ: blockZ + 1 }];
+        }
+        return this._getCollisionAABBs(blockX, blockY, blockZ, orientation, BlockMeshGeometry.GetSlopeCollisionData(), false);
     }
 
     /**

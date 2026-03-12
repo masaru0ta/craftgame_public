@@ -77,6 +77,14 @@ class BlockGroupMesh {
                 continue;
             }
 
+            // スロープブロック
+            if (b.shape === 'slope') {
+                vertexOffset = this._buildHalfBlockVoxels(
+                    b.blockId, b.rx, b.ry, b.rz, b.orientation || 0, blockSet, out, vertexOffset, 'slope'
+                );
+                continue;
+            }
+
             // 通常ブロック: 立方体メッシュ生成
             const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
             const ori = isOrientable ? (b.orientation || 0) : 0;
@@ -175,7 +183,9 @@ class BlockGroupMesh {
      * ハーフ/階段ブロックのボクセルメッシュ生成（カスタムブロックと同じパイプライン）
      */
     _buildHalfBlockVoxels(blockId, rx, ry, rz, orientation, blockSet, out, vertexOffset, shape = 'half') {
-        const voxelData = shape === 'stair' ? BlockMeshGeometry.GetStairVoxelData() : BlockMeshGeometry.GetHalfVoxelData();
+        const voxelData = shape === 'stair' ? BlockMeshGeometry.GetStairVoxelData()
+            : shape === 'slope' ? BlockMeshGeometry.GetSlopeVoxelData()
+            : BlockMeshGeometry.GetHalfVoxelData();
         const gs = 8;
         const blockBase = [rx - 0.5, ry - 0.5, rz - 0.5];
         const startVertexCount = out.positions.length / 3;

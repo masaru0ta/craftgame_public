@@ -318,11 +318,11 @@ class ChunkMeshBuilder {
             }
 
             // ハーフ/階段ブロック: shape='half'/'stair' ならボクセルパイプラインで個別描画
-            if (blockDef && (blockDef.half_placeable || blockDef.stair_placeable)) {
+            if (blockDef && (blockDef.half_placeable || blockDef.stair_placeable || blockDef.slope_placeable)) {
                 const shape = typeof chunkData.getShape === 'function'
                     ? chunkData.getShape(x, y, z)
                     : 'normal';
-                if (shape === 'half' || shape === 'stair') {
+                if (shape === 'half' || shape === 'stair' || shape === 'slope') {
                     const orient = chunkData.getOrientation(x, y, z);
                     halfBlocks.push({ blockStrId, x, y, z, orientation: orient, shape });
                     return;
@@ -682,7 +682,9 @@ class ChunkMeshBuilder {
      * @param {string} [shape='half'] - 'half' または 'stair'
      */
     _buildHalfBlockVoxels(blockStrId, bx, by, bz, orientation, chunkData, positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset, neighborChunks, shape = 'half') {
-        const voxelData = shape === 'stair' ? BlockMeshGeometry.GetStairVoxelData() : BlockMeshGeometry.GetHalfVoxelData();
+        const voxelData = shape === 'stair' ? BlockMeshGeometry.GetStairVoxelData()
+            : shape === 'slope' ? BlockMeshGeometry.GetSlopeVoxelData()
+            : BlockMeshGeometry.GetHalfVoxelData();
 
         // 各面方向のライト・カリング情報を取得
         const faceLightFactors = {};

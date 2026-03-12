@@ -104,6 +104,8 @@ function cacheElements() {
   elements.halfPlaceableGroup = document.getElementById('halfPlaceableGroup');
   elements.stairPlaceable = document.getElementById('stairPlaceable');
   elements.stairPlaceableGroup = document.getElementById('stairPlaceableGroup');
+  elements.slopePlaceable = document.getElementById('slopePlaceable');
+  elements.slopePlaceableGroup = document.getElementById('slopePlaceableGroup');
   elements.rotatable = document.getElementById('rotatable');
   elements.rotatableGroup = document.getElementById('rotatableGroup');
   elements.sidePlaceable = document.getElementById('sidePlaceable');
@@ -455,6 +457,7 @@ function selectBlock(blockId) {
     elements.isTransparent.checked = block.is_transparent || false;
     elements.halfPlaceable.checked = block.half_placeable || false;
     elements.stairPlaceable.checked = block.stair_placeable || false;
+    elements.slopePlaceable.checked = block.slope_placeable || false;
     elements.rotatable.checked = block.rotatable || false;
     elements.sidePlaceable.checked = block.sidePlaceable || false;
 
@@ -463,6 +466,7 @@ function selectBlock(blockId) {
     const isCustom = (block.shape_type || 'normal') === 'custom';
     elements.halfPlaceableGroup.style.display = isNormal ? '' : 'none';
     elements.stairPlaceableGroup.style.display = isNormal ? '' : 'none';
+    elements.slopePlaceableGroup.style.display = isNormal ? '' : 'none';
     elements.rotatableGroup.style.display = isCustom ? 'none' : '';
     elements.sidePlaceableGroup.style.display = isCustom ? 'none' : '';
 
@@ -492,6 +496,7 @@ function handleBlockTypeChange(e) {
     // チェックボックスの表示切り替え
     elements.halfPlaceableGroup.style.display = newType === 'normal' ? '' : 'none';
     elements.stairPlaceableGroup.style.display = newType === 'normal' ? '' : 'none';
+    elements.slopePlaceableGroup.style.display = newType === 'normal' ? '' : 'none';
     elements.rotatableGroup.style.display = newType === 'custom' ? 'none' : '';
     elements.sidePlaceableGroup.style.display = newType === 'custom' ? 'none' : '';
 
@@ -521,6 +526,7 @@ async function saveBlock() {
     is_transparent: elements.isTransparent.checked,
     ...(elements.blockTypeSelect.value === 'normal' && { half_placeable: elements.halfPlaceable.checked }),
     ...(elements.blockTypeSelect.value === 'normal' && { stair_placeable: elements.stairPlaceable.checked }),
+    ...(elements.blockTypeSelect.value === 'normal' && { slope_placeable: elements.slopePlaceable.checked }),
     ...(elements.blockTypeSelect.value !== 'custom' && { rotatable: elements.rotatable.checked }),
     ...(elements.blockTypeSelect.value !== 'custom' && { sidePlaceable: elements.sidePlaceable.checked }),
   };

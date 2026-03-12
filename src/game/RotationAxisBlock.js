@@ -484,8 +484,8 @@ class RotationAxisManager {
             const rotated = this._rotateOrientation(ori, front, steps);
             return BlockOrientation.GetTopDir(rotated) * 4;
         }
-        // 階段ブロック: topDir + rotation をフル回転
-        if (shape === 'stair') return this._rotateOrientation(ori, front, steps);
+        // 階段/スロープブロック: topDir + rotation をフル回転
+        if (shape === 'stair' || shape === 'slope') return this._rotateOrientation(ori, front, steps);
         // カスタム・rotatable・sidePlaceableブロック
         const blockDef = this._textureLoader ? this._textureLoader.getBlockDef(blockData.blockId) : null;
         if (blockDef && (blockDef.shape_type === 'custom' || blockDef.rotatable || blockDef.sidePlaceable)) {

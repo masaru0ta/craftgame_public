@@ -167,7 +167,7 @@ class BlockInteraction {
             && !this._intersectsPlayer(ax, ay, az)
             && ay >= 0 && ay < 128;
 
-        this.placementPreview.update(this.currentTarget, selectedBlock, orientation, canPlace, currentMode === 'half', currentMode === 'stair');
+        this.placementPreview.update(this.currentTarget, selectedBlock, orientation, canPlace, currentMode === 'half', currentMode === 'stair', currentMode === 'slope');
     }
 
     /**
@@ -315,8 +315,8 @@ class BlockInteraction {
         const currentMode = this._getPlacementMode(slotIndex, selectedBlock);
         const orientation = this._calculateOrientationForMode(currentMode, selectedBlock, target, this.player.getYaw());
 
-        // ハーフ/階段モード時は placeBlock（メッシュ再構築含む）の前に shape を設定
-        if (currentMode === 'half' || currentMode === 'stair') {
+        // ハーフ/階段/スロープモード時は placeBlock（メッシュ再構築含む）の前に shape を設定
+        if (currentMode === 'half' || currentMode === 'stair' || currentMode === 'slope') {
             const cx = Math.floor(target.adjacentX / 16);
             const cz = Math.floor(target.adjacentZ / 16);
             const chunk = this.chunkManager.chunks.get(`${cx},${cz}`);
@@ -354,7 +354,7 @@ class BlockInteraction {
         if (event.button === 2) {
             const selectedBlock = this.hotbar ? this.hotbar.getSelectedBlock() : null;
 
-            if (selectedBlock && (selectedBlock.half_placeable || selectedBlock.stair_placeable)) {
+            if (selectedBlock && (selectedBlock.half_placeable || selectedBlock.stair_placeable || selectedBlock.slope_placeable)) {
                 // 形状切替可能ブロック: 長押しタイマー開始（設置は mouseup 時に行う）
                 const slotIndex = this.hotbar.selectedSlot;
                 clearTimeout(this._longPressTimer);
@@ -1085,6 +1085,7 @@ class BlockInteraction {
     _calculateOrientationForMode(mode, blockDef, target, playerYaw) {
         if (mode === 'half') return this._calculateHalfOrientation(target.face);
         if (mode === 'stair') return this._calculateStairOrientation(target.face, playerYaw);
+        if (mode === 'slope') return this._calculateStairOrientation(target.face, playerYaw);
         return this._calculateBlockOrientation(blockDef, target, playerYaw);
     }
 
@@ -1111,6 +1112,7 @@ class BlockInteraction {
         const mode = this._placementModes.get(slotIndex) || 'normal';
         if (mode === 'half' && block && block.half_placeable) return 'half';
         if (mode === 'stair' && block && block.stair_placeable) return 'stair';
+        if (mode === 'slope' && block && block.slope_placeable) return 'slope';
         return 'normal';
     }
 
@@ -1124,6 +1126,7 @@ class BlockInteraction {
         const modes = ['normal'];
         if (block.half_placeable) modes.push('half');
         if (block.stair_placeable) modes.push('stair');
+        if (block.slope_placeable) modes.push('slope');
         const idx = modes.indexOf(currentMode);
         return modes[(idx + 1) % modes.length];
     }

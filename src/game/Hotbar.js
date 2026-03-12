@@ -255,13 +255,14 @@ class Hotbar {
         slot.dataset.halfMode = mode === 'half' ? 'true' : 'false';
         slot.classList.toggle('half-mode', mode === 'half');
         slot.classList.toggle('stair-mode', mode === 'stair');
+        slot.classList.toggle('slope-mode', mode === 'slope');
 
         // 既存インジケータを削除
-        const existingIndicator = slot.querySelector('.half-mode-indicator, .stair-mode-indicator');
+        const existingIndicator = slot.querySelector('.half-mode-indicator, .stair-mode-indicator, .slope-mode-indicator');
         if (existingIndicator) existingIndicator.remove();
 
         // モードに応じたインジケータを追加
-        const indicators = { half: ['half-mode-indicator', '½'], stair: ['stair-mode-indicator', '⌐'] };
+        const indicators = { half: ['half-mode-indicator', '½'], stair: ['stair-mode-indicator', '⌐'], slope: ['slope-mode-indicator', '△'] };
         if (indicators[mode]) {
             const indicator = document.createElement('span');
             indicator.className = indicators[mode][0];

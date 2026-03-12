@@ -94,6 +94,56 @@ class BlockMeshGeometry {
         return data;
     }
 
+    // ===== スロープブロック用固定VoxelData =====
+
+    /** 底面スロープの8×8×8 VoxelData（キャッシュ） */
+    static _slopeVoxelData = null;
+
+    /**
+     * スロープブロック用の固定VoxelData（8×8×8）を取得
+     * y <= z のボクセルを充填した三角くさび型パターン。
+     * @returns {Uint8Array} VoxelDataフォーマット（128バイト）
+     */
+    static GetSlopeVoxelData() {
+        if (BlockMeshGeometry._slopeVoxelData) return BlockMeshGeometry._slopeVoxelData;
+        const data = VoxelData.createEmpty();
+        for (let y = 0; y < 8; y++) {
+            for (let z = 0; z < 8; z++) {
+                for (let x = 0; x < 8; x++) {
+                    if (y <= z) {
+                        VoxelData.setVoxel(data, x, y, z, 1);
+                    }
+                }
+            }
+        }
+        BlockMeshGeometry._slopeVoxelData = data;
+        return data;
+    }
+
+    /** 底面スロープの4×4×4 CustomCollision（キャッシュ） */
+    static _slopeCollisionData = null;
+
+    /**
+     * スロープブロック用の固定CustomCollision（4×4×4）を取得
+     * y <= z のボクセルを solid にした三角くさび型パターン。
+     * @returns {number[][][]} CustomCollisionフォーマット
+     */
+    static GetSlopeCollisionData() {
+        if (BlockMeshGeometry._slopeCollisionData) return BlockMeshGeometry._slopeCollisionData;
+        const data = CustomCollision.createEmpty();
+        for (let y = 0; y < 4; y++) {
+            for (let z = 0; z < 4; z++) {
+                for (let x = 0; x < 4; x++) {
+                    if (y <= z) {
+                        CustomCollision.setVoxel(data, x, y, z, 1);
+                    }
+                }
+            }
+        }
+        BlockMeshGeometry._slopeCollisionData = data;
+        return data;
+    }
+
     // ===== ボクセル面設定 =====
 
     static VoxelFaceConfigs = [
