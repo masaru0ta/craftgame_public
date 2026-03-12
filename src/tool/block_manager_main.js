@@ -1451,17 +1451,20 @@ const CategoryLabels = {
  */
 function renderItemGrid() {
   if (!elements.itemGrid) return;
-  elements.itemGrid.innerHTML = '';
 
+  // 既存のアイテムタイルのみ削除（新規追加タイルは残す）
+  elements.itemGrid.querySelectorAll('.item-tile').forEach(t => t.remove());
+
+  const addTile = elements.addItemTile;
   state.items.forEach(item => {
     const tile = createItemTile(item);
-    elements.itemGrid.appendChild(tile);
+    // 新規追加タイルの前に挿入
+    if (addTile) {
+      elements.itemGrid.insertBefore(tile, addTile);
+    } else {
+      elements.itemGrid.appendChild(tile);
+    }
   });
-
-  // 新規追加タイルをグリッド末尾に再追加
-  if (elements.addItemTile) {
-    elements.itemGrid.appendChild(elements.addItemTile);
-  }
 }
 
 /**
