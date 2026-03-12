@@ -1600,7 +1600,8 @@ async function updateItemPreview(item) {
 
   // テクスチャプレビューの場合
   if (sourceType === 'texture') {
-    disposeItemPreview3d();
+    hideBlockPreview();
+    hideStructurePreview();
     container3d.style.display = 'none';
     containerTex.style.display = '';
     containerTex.innerHTML = '';
@@ -1619,211 +1620,111 @@ async function updateItemPreview(item) {
   // 3Dプレビュー（ブロック/構造物）
   container3d.style.display = '';
   containerTex.style.display = 'none';
-  await setupItemPreview3d(item);
+  showItemPreview3d(item);
 }
 
 // ========================================
-// インタラクティブ3Dプレビュー
+// インタラクティブ3Dプレビュー（既存エディタ再利用）
 // ========================================
 
 /** アイテム3Dプレビュー用の状態 */
-const itemPreview3dState = {
-  scene: null,
-  camera: null,
-  renderer: null,
-  group: null,
-  animId: null,
-  hAngle: 210,
-  vAngle: 20,
-  distance: 2.5,
-  lookAtY: 0.5,
-  isDragging: false,
-  lastX: 0,
-  lastY: 0,
+const itemPreviewState = {
+  blockEditorUI: null,   // ブロック用
+  structureEditor: null, // 構造物用
+  activeType: null,      // 'block' | 'structure' | null
 };
 
 /**
- * アイテム3Dプレビューを破棄
+ * アイテム3Dプレビューを表示
  */
-function disposeItemPreview3d() {
-  const s = itemPreview3dState;
-  if (s.animId) {
-    cancelAnimationFrame(s.animId);
-    s.animId = null;
-  }
-  if (s.group) {
-    s.group.children.forEach(child => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) {
-        if (Array.isArray(child.material)) {
-          child.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
-        } else {
-          if (child.material.map) child.material.map.dispose();
-          child.material.dispose();
-        }
-      }
-    });
-    s.group = null;
-  }
-  if (s.renderer) {
-    s.renderer.dispose();
-    s.renderer = null;
-  }
-  s.scene = null;
-  s.camera = null;
-}
-
-/**
- * アイテム3Dプレビューをセットアップ
- */
-async function setupItemPreview3d(item) {
-  disposeItemPreview3d();
+function showItemPreview3d(item) {
   const container = elements.itemPreview3d;
   if (!container) return;
-  container.innerHTML = '';
 
-  const s = itemPreview3dState;
-  const width = container.clientWidth || 200;
-  const height = container.clientHeight || 200;
-
-  // シーン
-  s.scene = new THREE.Scene();
-  s.scene.background = new THREE.Color('#1a237e');
-
-  // カメラ
-  s.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-
-  // レンダラー
-  s.renderer = new THREE.WebGLRenderer({ antialias: true });
-  s.renderer.setSize(width, height);
-  s.renderer.setPixelRatio(window.devicePixelRatio);
-  container.appendChild(s.renderer.domElement);
-
-  // テクスチャを事前ロード
-  const gen = state.thumbnailGenerator;
-  const textureCache = {};
-  if (gen) {
-    const promises = state.textures.map(async tex => {
-      if (tex.file_name && tex.image_base64) {
-        textureCache[tex.file_name] = await gen._loadTextureAsync(tex.image_base64);
-      }
-    });
-    await Promise.all(promises);
-  }
-
-  // メッシュ構築
-  s.group = new THREE.Group();
   const sourceType = item.source_type || 'block';
 
   if (sourceType === 'block' && item.source_block_str_id) {
+    // 構造物エディタを非表示にしてブロックエディタを表示
+    hideStructurePreview();
+    showBlockPreview(container);
     const block = state.blocks.find(b => b.block_str_id === item.source_block_str_id);
     if (block) {
-      const mesh = createBlockCube(block, textureCache);
-      mesh.position.set(0, 0.5, 0);
-      s.group.add(mesh);
-      s.distance = 3.5;
-      s.lookAtY = 0.5;
+      itemPreviewState.blockEditorUI.loadBlock(block, state.textures);
     }
+    itemPreviewState.activeType = 'block';
   } else if (sourceType === 'structure' && item.source_structure_str_id) {
-    const struct = state.structures.find(st => st.structure_str_id === item.source_structure_str_id);
-    if (struct && struct.voxel_data && struct.palette) {
-      const paletteObj = typeof struct.palette === 'string' ? JSON.parse(struct.palette) : struct.palette;
-      const paletteBlocks = paletteObj.blocks || paletteObj;
-      const sizeX = Number(struct.size_x) || 1;
-      const sizeY = Number(struct.size_y) || 1;
-      const sizeZ = Number(struct.size_z) || 1;
-      const sd = StructureData.decode(struct.voxel_data, struct.orientation_data || '', paletteBlocks, sizeX, sizeY, sizeZ);
-      const centerX = sizeX / 2;
-      const centerZ = sizeZ / 2;
-      sd.forEachBlock((x, y, z, blockStrId) => {
-        const block = state.blocks.find(b => b.block_str_id === blockStrId);
-        if (!block) return;
-        const mesh = createBlockCube(block, textureCache);
-        mesh.position.set(x - centerX + 0.5, y + 0.5, z - centerZ + 0.5);
-        s.group.add(mesh);
-      });
-      s.distance = Math.max(sizeX, sizeY, sizeZ) * 2.2;
-      s.lookAtY = sizeY / 2;
+    // ブロックエディタを非表示にして構造物エディタを表示
+    hideBlockPreview();
+    showStructurePreview(container);
+    const struct = state.structures.find(s => s.structure_str_id === item.source_structure_str_id);
+    if (struct) {
+      itemPreviewState.structureEditor.loadStructure(struct);
     }
+    itemPreviewState.activeType = 'structure';
   }
-
-  s.scene.add(s.group);
-  s.hAngle = 210;
-  s.vAngle = 20;
-  updateItemPreviewCamera();
-
-  // レンダリングループ
-  function render() {
-    if (!s.renderer) return;
-    s.renderer.render(s.scene, s.camera);
-    s.animId = requestAnimationFrame(render);
-  }
-  render();
-
-  // マウスドラッグで回転
-  const canvas = s.renderer.domElement;
-  canvas.addEventListener('mousedown', (e) => {
-    s.isDragging = true;
-    s.lastX = e.clientX;
-    s.lastY = e.clientY;
-    canvas.style.cursor = 'grabbing';
-  });
-  canvas.addEventListener('mousemove', (e) => {
-    if (!s.isDragging) return;
-    const dx = e.clientX - s.lastX;
-    const dy = e.clientY - s.lastY;
-    s.hAngle += dx * 0.5;
-    s.vAngle = Math.max(-60, Math.min(60, s.vAngle + dy * 0.3));
-    s.lastX = e.clientX;
-    s.lastY = e.clientY;
-    updateItemPreviewCamera();
-  });
-  canvas.addEventListener('mouseup', () => { s.isDragging = false; canvas.style.cursor = 'grab'; });
-  canvas.addEventListener('mouseleave', () => { s.isDragging = false; canvas.style.cursor = 'grab'; });
-  // ホイールでズーム
-  canvas.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    s.distance = Math.max(1.5, Math.min(20, s.distance + e.deltaY * 0.005));
-    updateItemPreviewCamera();
-  });
 }
 
 /**
- * アイテム3Dプレビューのカメラ位置を更新
+ * ブロック3Dプレビューを表示
  */
-function updateItemPreviewCamera() {
-  const s = itemPreview3dState;
-  if (!s.camera) return;
-  const hRad = THREE.MathUtils.degToRad(s.hAngle);
-  const vRad = THREE.MathUtils.degToRad(s.vAngle);
-  s.camera.position.set(
-    s.distance * Math.cos(vRad) * Math.sin(hRad),
-    s.distance * Math.sin(vRad) + s.lookAtY,
-    s.distance * Math.cos(vRad) * Math.cos(hRad)
-  );
-  s.camera.lookAt(0, s.lookAtY, 0);
+function showBlockPreview(container) {
+  if (!itemPreviewState.blockEditorUI) {
+    // 初回作成
+    itemPreviewState.blockEditorUI = new BlockEditorUI({
+      container: container,
+      THREE: THREE,
+    });
+    itemPreviewState.blockEditorUI.init();
+  }
+  // BlockEditorUIのコンテナを表示
+  if (itemPreviewState.blockEditorUI.editorContainer) {
+    itemPreviewState.blockEditorUI.editorContainer.style.display = '';
+  }
 }
 
 /**
- * ブロックデータから面テクスチャ付きキューブメッシュを生成
+ * ブロック3Dプレビューを非表示
  */
-function createBlockCube(blockData, textureCache) {
-  const texNames = {};
-  const slots = ['default', 'front', 'top', 'bottom', 'left', 'right', 'back'];
-  for (const slot of slots) {
-    const key = slot === 'default' ? 'tex_default' : `tex_${slot}`;
-    if (blockData[key]) texNames[slot] = blockData[key];
+function hideBlockPreview() {
+  if (itemPreviewState.blockEditorUI && itemPreviewState.blockEditorUI.editorContainer) {
+    itemPreviewState.blockEditorUI.editorContainer.style.display = 'none';
   }
-  const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const faceOrder = ['right', 'left', 'top', 'bottom', 'front', 'back'];
-  const materials = faceOrder.map(face => {
-    const texName = texNames[face] || texNames.default;
-    if (texName && textureCache[texName]) {
-      return new THREE.MeshBasicMaterial({ map: textureCache[texName].clone() });
+}
+
+/**
+ * 構造物3Dプレビューを表示
+ */
+function showStructurePreview(container) {
+  // StructureEditorはblocks/texturesをコンストラクタで受け取り内部キャッシュを構築するため、
+  // データ変更時は再作成する
+  if (itemPreviewState.structureEditor) {
+    // 既存のものを破棄
+    itemPreviewState.structureEditor.dispose();
+    if (itemPreviewState.structureEditor._editorContainer) {
+      itemPreviewState.structureEditor._editorContainer.remove();
     }
-    return new THREE.MeshBasicMaterial({ color: 0x808080 });
+    itemPreviewState.structureEditor = null;
+  }
+  const editorContainer = document.createElement('div');
+  editorContainer.style.cssText = 'width:100%;height:100%;';
+  container.appendChild(editorContainer);
+  itemPreviewState.structureEditor = new StructureEditor({
+    container: editorContainer,
+    THREE: THREE,
+    blocks: state.blocks,
+    textures: state.textures,
   });
-  return new THREE.Mesh(geometry, materials);
+  itemPreviewState.structureEditor.init();
+  itemPreviewState.structureEditor._editorContainer = editorContainer;
+}
+
+/**
+ * 構造物3Dプレビューを非表示
+ */
+function hideStructurePreview() {
+  if (itemPreviewState.structureEditor && itemPreviewState.structureEditor._editorContainer) {
+    itemPreviewState.structureEditor._editorContainer.style.display = 'none';
+  }
 }
 
 /**
