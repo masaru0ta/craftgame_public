@@ -117,9 +117,18 @@ class BlockInteraction {
         if (targetBlockId === 'workbench' ||
             targetBlockId === 'switch_off' || targetBlockId === 'switch' ||
             targetBlockId === 'rope_way' ||
-            targetBlockId === 'sticky_piston' || targetBlockId === 'piston_base') {
+            targetBlockId === 'piston_base') {
             this.placementPreview.hide();
             return;
+        }
+        // sticky_piston: TOP面はブロック設置可、それ以外は特殊操作
+        if (targetBlockId === 'sticky_piston') {
+            const pistonOri = this.physicsWorld.getOrientationAt(
+                this.currentTarget.blockX, this.currentTarget.blockY, this.currentTarget.blockZ);
+            if (!BlockInteraction._isRotorAxisFace(pistonOri, this.currentTarget.face)) {
+                this.placementPreview.hide();
+                return;
+            }
         }
         // ロープ選択時にポールをターゲット → ゴースト非表示
         if (targetBlockId === 'pole' && selectedBlock && selectedBlock.block_str_id === 'rope') {
@@ -238,10 +247,13 @@ class BlockInteraction {
             return true;
         }
 
-        // 粘着ピストンチェック
+        // 粘着ピストンチェック（TOP面クリックは通常設置にフォールスルー）
         if (targetBlockId === 'sticky_piston' && this.pistonManager) {
-            this.pistonManager.Activate(target.blockX, target.blockY, target.blockZ);
-            return true;
+            const pistonOri = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
+            if (!BlockInteraction._isRotorAxisFace(pistonOri, target.face)) {
+                this.pistonManager.Activate(target.blockX, target.blockY, target.blockZ);
+                return true;
+            }
         }
 
         // 回転軸ブロックチェック（軸側の面クリックは通常設置扱い）
@@ -653,7 +665,10 @@ class BlockInteraction {
         }
         if (blockId === 'direction' && this.directionBlockManager) return '移動';
         if (blockId === 'rope_way' && this.ropeWayManager) return 'ロープウェイ';
-        if (blockId === 'sticky_piston' && this.pistonManager) return 'ピストン';
+        if (blockId === 'sticky_piston' && this.pistonManager) {
+            const ori = this.physicsWorld.getOrientationAt(target.blockX, target.blockY, target.blockZ);
+            if (!BlockInteraction._isRotorAxisFace(ori, target.face)) return 'ピストン';
+        }
         return null;
     }
 

@@ -366,7 +366,10 @@ class PlacementPreview {
                             normals.push(cfg.n[0], cfg.n[1], cfg.n[2]);
                             atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
                         }
-                        uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
+                        // 面全体で1枚のテクスチャになるよう、ボクセル位置に応じた部分UVを設定
+                        const u0 = cu * vs, v0 = cv * vs;
+                        const u1 = u0 + vs, v1 = v0 + vs;
+                        uvs.push(u0, v0, u1, v0, u1, v1, u0, v1);
                         this._addQuadIndices(indices, vertexOffset);
                         vertexOffset += 4;
                     }
