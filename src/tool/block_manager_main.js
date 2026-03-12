@@ -1578,8 +1578,48 @@ async function updateItemPreview(item) {
     } else {
       container.innerHTML = '<div style="color:#999;font-size:12px;">テクスチャ未設定</div>';
     }
-  } else if (sourceType === 'structure') {
-    container.innerHTML = '<div style="color:#999;font-size:12px;">構造物プレビュー（未対応）</div>';
+  } else if (sourceType === 'structure' && item.source_structure_str_id) {
+    // 構造物の情報プレビュー
+    const struct = state.structures.find(s => s.structure_str_id === item.source_structure_str_id);
+    if (struct) {
+      const info = document.createElement('div');
+      info.style.cssText = 'padding:8px;font-size:12px;color:#333;';
+      info.innerHTML = `<div style="font-weight:bold;margin-bottom:6px;">${struct.name || struct.structure_str_id}</div>`;
+      if (struct.size_x || struct.size_y || struct.size_z) {
+        info.innerHTML += `<div style="color:#666;margin-bottom:4px;">サイズ: ${struct.size_x||'?'}×${struct.size_y||'?'}×${struct.size_z||'?'}</div>`;
+      }
+      if (struct.category) {
+        info.innerHTML += `<div style="color:#666;margin-bottom:8px;">カテゴリ: ${struct.category}</div>`;
+      }
+      // paletteからブロックサムネイルを表示
+      if (struct.palette && state.thumbnailGenerator) {
+        try {
+          const palette = typeof struct.palette === 'string' ? JSON.parse(struct.palette) : struct.palette;
+          if (Array.isArray(palette) && palette.length > 0) {
+            info.innerHTML += '<div style="color:#888;margin-bottom:4px;">使用ブロック:</div>';
+            const grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,40px);gap:4px;';
+            for (const entry of palette.slice(0, 9)) {
+              const blockStrId = typeof entry === 'string' ? entry : entry.block_str_id;
+              const block = state.blocks.find(b => b.block_str_id === blockStrId);
+              if (block) {
+                const thumb = document.createElement('div');
+                thumb.style.cssText = 'width:40px;height:40px;border-radius:2px;overflow:hidden;';
+                try {
+                  const url = await state.thumbnailGenerator.generate(block, state.textures);
+                  thumb.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:contain;image-rendering:pixelated;">`;
+                } catch { thumb.style.background = '#ddd'; }
+                grid.appendChild(thumb);
+              }
+            }
+            info.appendChild(grid);
+          }
+        } catch { /* paletteパース失敗 */ }
+      }
+      container.appendChild(info);
+    } else {
+      container.innerHTML = '<div style="color:#999;font-size:12px;">構造物が見つかりません</div>';
+    }
   }
 }
 
