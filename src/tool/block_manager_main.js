@@ -1721,7 +1721,7 @@ async function setupItemPreview3d(item) {
       const mesh = createBlockCube(block, textureCache);
       mesh.position.set(0, 0.5, 0);
       s.group.add(mesh);
-      s.distance = 2.2;
+      s.distance = 3.0;
       s.lookAtY = 0.5;
     }
   } else if (sourceType === 'structure' && item.source_structure_str_id) {
@@ -1742,7 +1742,7 @@ async function setupItemPreview3d(item) {
         mesh.position.set(x - centerX + 0.5, y + 0.5, z - centerZ + 0.5);
         s.group.add(mesh);
       });
-      s.distance = Math.max(sizeX, sizeY, sizeZ) * 1.6;
+      s.distance = Math.max(sizeX, sizeY, sizeZ) * 2.0;
       s.lookAtY = sizeY / 2;
     }
   }
