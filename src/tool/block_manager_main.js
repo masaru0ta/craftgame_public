@@ -1631,15 +1631,21 @@ async function generateStructureThumbnail(struct) {
   // テクスチャマップを構築
   const textureImages = gen._buildTextureImages(state.textures || []);
 
+  // 使用されるテクスチャを事前にすべて非同期ロード
+  const textureCache = {};
+  const texturePromises = [];
+  for (const tex of state.textures) {
+    if (tex.file_name && tex.image_base64) {
+      const promise = gen._loadTextureAsync(tex.image_base64).then(t => {
+        textureCache[tex.file_name] = t;
+      });
+      texturePromises.push(promise);
+    }
+  }
+  await Promise.all(texturePromises);
+
   // シーンをクリア
   gen._clearScene();
-
-  // ライティング追加
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(2, 3, 1);
-  gen.scene.add(ambientLight);
-  gen.scene.add(dirLight);
 
   // 構造物の中心を計算
   const centerX = sizeX / 2;
@@ -1652,9 +1658,9 @@ async function generateStructureThumbnail(struct) {
     const blockData = state.blocks.find(b => b.block_str_id === blockStrId);
     if (!blockData) return;
 
-    // テクスチャ名を取得
-    const slots = ['default', 'front', 'top', 'bottom', 'left', 'right', 'back'];
+    // 面ごとのテクスチャ名を取得
     const texNames = {};
+    const slots = ['default', 'front', 'top', 'bottom', 'left', 'right', 'back'];
     for (const slot of slots) {
       const key = slot === 'default' ? 'tex_default' : `tex_${slot}`;
       if (blockData[key]) texNames[slot] = blockData[key];
@@ -1664,17 +1670,10 @@ async function generateStructureThumbnail(struct) {
     const faceOrder = ['right', 'left', 'top', 'bottom', 'front', 'back'];
     const materials = faceOrder.map(face => {
       const texName = texNames[face] || texNames.default;
-      if (texName && textureImages[texName]) {
-        // 同期的にテクスチャ作成（base64 → Image → Texture）
-        const img = new Image();
-        img.src = textureImages[texName];
-        const texture = new THREE.Texture(img);
-        texture.magFilter = THREE.NearestFilter;
-        texture.minFilter = THREE.NearestFilter;
-        texture.needsUpdate = true;
-        return new THREE.MeshLambertMaterial({ map: texture });
+      if (texName && textureCache[texName]) {
+        return new THREE.MeshBasicMaterial({ map: textureCache[texName].clone() });
       }
-      return new THREE.MeshLambertMaterial({ color: 0x808080 });
+      return new THREE.MeshBasicMaterial({ color: 0x808080 });
     });
 
     const mesh = new THREE.Mesh(geometry, materials);
@@ -1696,20 +1695,13 @@ async function generateStructureThumbnail(struct) {
   );
   gen.camera.lookAt(0, centerY, 0);
 
-  // テクスチャ画像の読み込みを待つ
-  await new Promise(resolve => setTimeout(resolve, 100));
-
   // レンダリング
   gen.renderer.render(gen.scene, gen.camera);
   const dataUrl = gen.renderer.domElement.toDataURL('image/png');
 
   // クリーンアップ
   gen.scene.remove(group);
-  gen.scene.remove(ambientLight);
-  gen.scene.remove(dirLight);
   group.children.forEach(child => gen._disposeMesh(child));
-  ambientLight.dispose && ambientLight.dispose();
-  dirLight.dispose && dirLight.dispose();
 
   // カメラ位置を元に戻す
   gen._updateCameraPosition();
