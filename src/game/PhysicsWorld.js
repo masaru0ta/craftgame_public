@@ -909,7 +909,7 @@ class PhysicsWorld {
             }];
         }
 
-        // ハーフブロック対応（shape='half' + topDir）
+        // ハーフブロック対応（shape='half'）— CustomCollisionベースのAABB生成
         if (blockDef.half_placeable && blockDef.shape_type !== 'custom') {
             const localX = ((blockX % 16) + 16) % 16;
             const localZ = ((blockZ % 16) + 16) % 16;
@@ -918,20 +918,7 @@ class PhysicsWorld {
                 : 'normal';
             if (shape === 'half') {
                 const rawOrientation = chunk.chunkData.getOrientation(localX, localY, localZ);
-                const topDir = Math.floor(rawOrientation / 4);
-                const aabb = {
-                    minX: blockX, minY: blockY, minZ: blockZ,
-                    maxX: blockX + 1, maxY: blockY + 1, maxZ: blockZ + 1
-                };
-                switch (topDir) {
-                    case 0: aabb.maxY = blockY + 0.5; break; // top面クリック → 下ハーフ
-                    case 1: aabb.minY = blockY + 0.5; break; // bottom面クリック → 上ハーフ
-                    case 2: aabb.maxZ = blockZ + 0.5; break; // north面クリック → 手前(-Z)側
-                    case 3: aabb.minZ = blockZ + 0.5; break; // south面クリック → 奥(+Z)側
-                    case 4: aabb.maxX = blockX + 0.5; break; // east面クリック → 手前(-X)側
-                    case 5: aabb.minX = blockX + 0.5; break; // west面クリック → 奥(+X)側
-                }
-                return [aabb];
+                return this._getHalfBlockAABBs(blockX, blockY, blockZ, rawOrientation);
             }
         }
 
@@ -1042,6 +1029,71 @@ class PhysicsWorld {
         if (!this.textureLoader || !this.textureLoader.blocks) return null;
 
         return this.textureLoader.blocks.find(b => b.block_str_id === blockStrId) || null;
+    }
+
+    /**
+     * ハーフブロックのAABBリストを取得（CustomCollisionベース）
+     * 固定の下ハーフCustomCollisionをorientation回転で6方向に対応
+     * 個別ボクセルAABBではなく、全solidボクセルの包含AABBを1つ返す
+     * @param {number} blockX
+     * @param {number} blockY
+     * @param {number} blockZ
+     * @param {number} orientation - orient値（topDir * 4）
+     * @returns {Array<Object>} AABBリスト
+     */
+    _getHalfBlockAABBs(blockX, blockY, blockZ, orientation) {
+        if (typeof BlockMeshGeometry === 'undefined' || typeof CustomCollision === 'undefined') {
+            return [{ minX: blockX, minY: blockY, minZ: blockZ, maxX: blockX + 1, maxY: blockY + 0.5, maxZ: blockZ + 1 }];
+        }
+
+        const collisionData = BlockMeshGeometry.GetHalfCollisionData();
+        const gs = 4;
+        const voxelSize = 1 / gs;
+
+        // orientation回転行列を取得
+        const m = (orientation !== 0 && typeof BlockOrientation !== 'undefined') ? BlockOrientation.Matrices[orientation] : null;
+
+        let minX = Infinity, minY = Infinity, minZ = Infinity;
+        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+
+        for (let vy = 0; vy < gs; vy++) {
+            for (let vz = 0; vz < gs; vz++) {
+                for (let vx = 0; vx < gs; vx++) {
+                    if (CustomCollision.getVoxel(collisionData, vx, vy, vz) !== 1) continue;
+                    let x0 = vx * voxelSize, y0 = vy * voxelSize, z0 = vz * voxelSize;
+                    let x1 = x0 + voxelSize, y1 = y0 + voxelSize, z1 = z0 + voxelSize;
+                    if (m) {
+                        // ボクセルの8頂点を回転して包含AABBを求める
+                        const corners = [[x0,y0,z0],[x1,y0,z0],[x0,y1,z0],[x1,y1,z0],[x0,y0,z1],[x1,y0,z1],[x0,y1,z1],[x1,y1,z1]];
+                        for (const [cx, cy, cz] of corners) {
+                            const rx = m[0]*(cx-0.5) + m[1]*(cy-0.5) + m[2]*(cz-0.5) + 0.5;
+                            const ry = m[3]*(cx-0.5) + m[4]*(cy-0.5) + m[5]*(cz-0.5) + 0.5;
+                            const rz = m[6]*(cx-0.5) + m[7]*(cy-0.5) + m[8]*(cz-0.5) + 0.5;
+                            if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
+                            if (ry < minY) minY = ry; if (ry > maxY) maxY = ry;
+                            if (rz < minZ) minZ = rz; if (rz > maxZ) maxZ = rz;
+                        }
+                    } else {
+                        if (x0 < minX) minX = x0; if (x1 > maxX) maxX = x1;
+                        if (y0 < minY) minY = y0; if (y1 > maxY) maxY = y1;
+                        if (z0 < minZ) minZ = z0; if (z1 > maxZ) maxZ = z1;
+                    }
+                }
+            }
+        }
+
+        if (minX === Infinity) {
+            return [{ minX: blockX, minY: blockY, minZ: blockZ, maxX: blockX + 1, maxY: blockY + 1, maxZ: blockZ + 1 }];
+        }
+
+        return [{
+            minX: blockX + minX,
+            minY: blockY + minY,
+            minZ: blockZ + minZ,
+            maxX: blockX + maxX,
+            maxY: blockY + maxY,
+            maxZ: blockZ + maxZ
+        }];
     }
 
     /**

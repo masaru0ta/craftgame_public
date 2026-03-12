@@ -1,43 +1,11 @@
 /**
- * RotationBodyMesh.js
- * 回転体のメッシュ生成・回転描画
+ * BlockGroupMesh.js (旧 RotationBodyMesh)
+ * ブロック群のメッシュ生成・回転描画
+ * 回転体・ロープウェイ移動体・ピストンヘッドで共用
  */
-class RotationBodyMesh {
-    // 面の頂点オフセット [dx,dy,dz] × 4頂点（ChunkMeshBuilderと同じ座標系）
-    static _FACE_CORNER_OFFSETS = {
-        top:    [[0,1,1],[1,1,1],[1,1,0],[0,1,0]],
-        bottom: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]],
-        front:  [[1,0,0],[0,0,0],[0,1,0],[1,1,0]],
-        back:   [[0,0,1],[1,0,1],[1,1,1],[0,1,1]],
-        right:  [[1,0,1],[1,0,0],[1,1,0],[1,1,1]],
-        left:   [[0,0,0],[0,0,1],[0,1,1],[0,1,0]]
-    };
-
-    static _FACE_NORMALS = {
-        top:    [0, 1, 0],
-        bottom: [0, -1, 0],
-        front:  [0, 0, -1],
-        back:   [0, 0, 1],
-        right:  [1, 0, 0],
-        left:   [-1, 0, 0]
-    };
-
-    // 隣接オフセット（面カリング用）
-    static _FACE_OFFSETS = {
-        top:    { dx: 0, dy: 1, dz: 0 },
-        bottom: { dx: 0, dy: -1, dz: 0 },
-        front:  { dx: 0, dy: 0, dz: -1 },
-        back:   { dx: 0, dy: 0, dz: 1 },
-        right:  { dx: 1, dy: 0, dz: 0 },
-        left:   { dx: -1, dy: 0, dz: 0 }
-    };
-
-    static _UV = [1, 0, 0, 0, 0, 1, 1, 1]; // u,v ペアをフラット配列で保持
-
-    static _FACE_NAMES = ['top', 'bottom', 'front', 'back', 'right', 'left'];
-
+class BlockGroupMesh {
     /**
-     * @param {RotationBody} body
+     * @param {Object} body - ブロック群データ (_blocks, _axisX/Y/Z等)
      * @param {TextureLoader} textureLoader
      * @param {ChunkManager} chunkManager
      */
@@ -54,16 +22,6 @@ class RotationBodyMesh {
         this._group.position.set(ax, ay, az);
     }
 
-    // カスタムブロックのボクセル面設定（ChunkMeshBuilderと同じ）
-    static _VOXEL_FACE_CONFIGS = [
-        { faceName: 'right',  axis: 0, u: 2, v: 1, offset: 1, normal: [1, 0, 0] },
-        { faceName: 'left',   axis: 0, u: 2, v: 1, offset: 0, normal: [-1, 0, 0] },
-        { faceName: 'top',    axis: 1, u: 0, v: 2, offset: 1, normal: [0, 1, 0] },
-        { faceName: 'bottom', axis: 1, u: 0, v: 2, offset: 0, normal: [0, -1, 0] },
-        { faceName: 'back',   axis: 2, u: 0, v: 1, offset: 1, normal: [0, 0, 1] },
-        { faceName: 'front',  axis: 2, u: 0, v: 1, offset: 0, normal: [0, 0, -1] }
-    ];
-
     /**
      * メッシュを構築
      */
@@ -73,7 +31,6 @@ class RotationBodyMesh {
 
         // ブロック座標をセットで管理（面カリング用・整数キー）
         const blockSet = new Set();
-        // カスタムブロック座標セット（隣接面カリング除外用）
         const customBlockSet = new Set();
         for (const b of blocks) {
             blockSet.add(packBlockKey(b.rx, b.ry, b.rz));
@@ -91,48 +48,44 @@ class RotationBodyMesh {
         const aoLevels = [];
         const indices = [];
         let vertexOffset = 0;
+        const out = { positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices };
 
         for (const b of blocks) {
             const blockDef = this._textureLoader.getBlockDef(b.blockId);
 
             if (blockDef && blockDef.shape_type === 'custom') {
-                // カスタムブロック: ボクセルメッシュ生成
                 vertexOffset = this._buildCustomBlockVoxels(
-                    blockDef, b.rx, b.ry, b.rz, b.orientation || 0,
-                    positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset
+                    blockDef, b.rx, b.ry, b.rz, b.orientation || 0, out, vertexOffset
                 );
                 continue;
             }
 
-            // ハーフブロック: orientation 101-106
+            // ハーフブロック: orientation 101-106 → ボクセルパイプライン
             if (blockDef && blockDef.half_placeable && b.orientation >= 101 && b.orientation <= 106) {
-                vertexOffset = this._buildHalfBlock(
-                    b.blockId, b.rx, b.ry, b.rz, b.orientation - 100, blockSet,
-                    positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset
+                // halfOri(1-6) → topDir(0-5) → orient(topDir*4)
+                const topDir = b.orientation - 101;
+                vertexOffset = this._buildHalfBlockVoxels(
+                    b.blockId, b.rx, b.ry, b.rz, topDir * 4, blockSet, out, vertexOffset
                 );
                 continue;
             }
 
             // 通常ブロック: 立方体メッシュ生成
-            // rotatable/sidePlaceable ブロックのorientを配列インデックスで高速取得
             const isOrientable = blockDef && (blockDef.rotatable || blockDef.sidePlaceable);
             const ori = isOrientable ? (b.orientation || 0) : 0;
             const oriBase = ori * 6;
 
-            for (const faceName of RotationBodyMesh._FACE_NAMES) {
-                const off = RotationBodyMesh._FACE_OFFSETS[faceName];
+            for (const faceName of BlockMeshGeometry.FaceNames) {
+                const off = BlockMeshGeometry.FaceOffsets[faceName];
                 const neighborKey = packBlockKey(b.rx + off.dx, b.ry + off.dy, b.rz + off.dz);
-                // 隣接がカスタムブロックの場合はカリングしない（面を完全に覆わないため）
                 if (blockSet.has(neighborKey) && !customBlockSet.has(neighborKey)) continue;
 
-                const cornerOffsets = RotationBodyMesh._FACE_CORNER_OFFSETS[faceName];
-                const normal = RotationBodyMesh._FACE_NORMALS[faceName];
-                // テクスチャリマップ: 配列インデックスで高速に取得
+                const cornerOffsets = BlockMeshGeometry.FaceCornerOffsets[faceName];
+                const normal = BlockMeshGeometry.FaceNormals[faceName];
                 const fi = BlockOrientation.FaceIdx[faceName];
                 const texFace = isOrientable ? BlockOrientation.FaceNames[BlockOrientation.TexRemapIdx[oriBase + fi]] : faceName;
                 const atlasUV = this._textureLoader.getAtlasUV(b.blockId, texFace);
                 const bx = b.rx - 0.5, by = b.ry - 0.5, bz = b.rz - 0.5;
-                // UV回転を面ループの外で一度だけ取得
                 const cmbRot = isOrientable ? BlockOrientation.UVRotIdx[oriBase + fi] : 0;
 
                 for (let vi = 0; vi < 4; vi++) {
@@ -143,25 +96,21 @@ class RotationBodyMesh {
                     lightLevels.push(1.0);
                     aoLevels.push(1.0);
                     // orientationに応じたUV回転
-                    // top/bottom: RM baseUVはCMBと180°異なるため常に+2補正
-                    // side: RM/CMBは同じbaseUV順なので補正不要
+                    // top/bottom: baseUVはCMBと180°異なるため常に+2補正
                     const isTopBottom = (faceName === 'top' || faceName === 'bottom');
                     if (isTopBottom) {
                         const shift = (cmbRot + 2) % 4;
                         const si = ((vi + shift) % 4) * 2;
-                        uvs.push(RotationBodyMesh._UV[si], RotationBodyMesh._UV[si + 1]);
+                        uvs.push(BlockMeshGeometry.FaceUV[si], BlockMeshGeometry.FaceUV[si + 1]);
                     } else if (cmbRot !== 0) {
                         const si = ((vi + cmbRot) % 4) * 2;
-                        uvs.push(RotationBodyMesh._UV[si], RotationBodyMesh._UV[si + 1]);
+                        uvs.push(BlockMeshGeometry.FaceUV[si], BlockMeshGeometry.FaceUV[si + 1]);
                     } else {
-                        uvs.push(RotationBodyMesh._UV[vi * 2], RotationBodyMesh._UV[vi * 2 + 1]);
+                        uvs.push(BlockMeshGeometry.FaceUV[vi * 2], BlockMeshGeometry.FaceUV[vi * 2 + 1]);
                     }
                 }
 
-                indices.push(
-                    vertexOffset, vertexOffset + 1, vertexOffset + 2,
-                    vertexOffset, vertexOffset + 2, vertexOffset + 3
-                );
+                BlockMeshGeometry.AddQuadIndices(indices, vertexOffset);
                 vertexOffset += 4;
             }
         }
@@ -183,159 +132,65 @@ class RotationBodyMesh {
     }
 
     /**
-     * カスタムブロックのボクセルメッシュ生成（回転体用・簡易版）
-     * ChunkMeshBuilder._buildCustomBlockVoxels と同等だがライト固定1.0
+     * カスタムブロックのボクセルメッシュ生成（BlockMeshGeometry共通処理に委譲）
      */
-    _buildCustomBlockVoxels(blockDef, rx, ry, rz, orientation, positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset) {
+    _buildCustomBlockVoxels(blockDef, rx, ry, rz, orientation, out, vertexOffset) {
         const voxelDataBase64 = blockDef.voxel_look;
         if (!voxelDataBase64) return vertexOffset;
 
         const voxelData = VoxelData.decode(voxelDataBase64);
-        const matAtlasUVs = this._prepareCustomBlockMaterials(blockDef);
+        const matAtlasUVs = BlockMeshGeometry.GetCustomBlockMaterials(blockDef, this._textureLoader);
 
         const gs = 8;
-        const vs = 1 / gs;
-        // ブロック基点（軸中心原点からの相対座標）
         const blockBase = [rx - 0.5, ry - 0.5, rz - 0.5];
-        const startVertexCount = positions.length / 3;
+        const startVertexCount = out.positions.length / 3;
 
-        for (const config of RotationBodyMesh._VOXEL_FACE_CONFIGS) {
-            const { faceName, axis, u, v, offset, normal } = config;
-
-            // ワインディング方向（静的に決まる）
-            const cwWinding = (faceName === 'right' || faceName === 'top' || faceName === 'front');
-            const facePosBase = blockBase[axis];
-
+        for (const config of BlockMeshGeometry.VoxelFaceConfigs) {
             for (let d = 0; d < gs; d++) {
-                // 面マスク構築
-                const mask = new Uint8Array(gs * gs);
-                const neighborD = offset === 1 ? d + 1 : d - 1;
-                const checkNeighbor = (neighborD >= 0 && neighborD < gs);
-
-                for (let vPos = 0; vPos < gs; vPos++) {
-                    for (let uPos = 0; uPos < gs; uPos++) {
-                        // 配列生成を回避し、直接座標を計算
-                        let cx = 0, cy = 0, cz = 0;
-                        if (axis === 0) cx = d; else if (axis === 1) cy = d; else cz = d;
-                        if (u === 0) cx = uPos; else if (u === 1) cy = uPos; else cz = uPos;
-                        if (v === 0) cx = vPos; else if (v === 1) cy = vPos; else cz = vPos;
-
-                        const value = VoxelData.getVoxel(voxelData, cx, cy, cz);
-                        if (value === 0) continue;
-
-                        let hasNeighbor = false;
-                        if (checkNeighbor) {
-                            let nx = cx, ny = cy, nz = cz;
-                            if (axis === 0) nx = neighborD; else if (axis === 1) ny = neighborD; else nz = neighborD;
-                            hasNeighbor = VoxelData.getVoxel(voxelData, nx, ny, nz) !== 0;
-                        }
-                        if (!hasNeighbor) mask[vPos * gs + uPos] = value;
-                    }
-                }
-
-                // グリーディマージ＆クアッド出力
-                const facePos = (d + offset) * vs;
-                for (let vPos = 0; vPos < gs; vPos++) {
-                    for (let uPos = 0; uPos < gs; uPos++) {
-                        const matValue = mask[vPos * gs + uPos];
-                        if (matValue === 0) continue;
-                        const atlasUV = matAtlasUVs[matValue - 1];
-
-                        let width = 1;
-                        while (uPos + width < gs && mask[vPos * gs + uPos + width] === matValue) width++;
-                        let height = 1;
-                        let canExpand = true;
-                        while (vPos + height < gs && canExpand) {
-                            for (let i = 0; i < width; i++) {
-                                if (mask[(vPos + height) * gs + uPos + i] !== matValue) { canExpand = false; break; }
-                            }
-                            if (canExpand) height++;
-                        }
-                        for (let dv = 0; dv < height; dv++) {
-                            for (let du = 0; du < width; du++) {
-                                mask[(vPos + dv) * gs + uPos + du] = 0;
-                            }
-                        }
-
-                        // 4頂点を配列生成なしで直接push
-                        const axisVal = facePosBase + facePos;
-                        const uBase = blockBase[u], vBase = blockBase[v];
-                        const u0v = uPos * vs, u1v = (uPos + width) * vs;
-                        const v0v = vPos * vs, v1v = (vPos + height) * vs;
-                        // corners: [u0,v0], [u1,v0], [u0,v1], [u1,v1]
-                        const cornerUVs = [u0v, v0v, u1v, v0v, u0v, v1v, u1v, v1v];
-                        for (let ci = 0; ci < 4; ci++) {
-                            let px = 0, py = 0, pz = 0;
-                            const cuv = cornerUVs[ci * 2], cvv = cornerUVs[ci * 2 + 1];
-                            if (axis === 0) { px = axisVal; } else if (axis === 1) { py = axisVal; } else { pz = axisVal; }
-                            if (u === 0) { px = uBase + cuv; } else if (u === 1) { py = uBase + cuv; } else { pz = uBase + cuv; }
-                            if (v === 0) { px = vBase + cvv; } else if (v === 1) { py = vBase + cvv; } else { pz = vBase + cvv; }
-                            positions.push(px, py, pz);
-                            normals.push(normal[0], normal[1], normal[2]);
-                            atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
-                            lightLevels.push(1.0);
-                            aoLevels.push(1.0);
-                        }
-
-                        // UV座標（面方向に応じた反転 — _setVoxelUV準拠）
-                        const flipU = faceName === 'right' || faceName === 'front';
-                        const flipV = faceName === 'top';
-                        const u0uv = flipU ? (gs - uPos) * vs : uPos * vs;
-                        const u1uv = flipU ? (gs - uPos - width) * vs : (uPos + width) * vs;
-                        const v0uv = flipV ? (gs - vPos) * vs : vPos * vs;
-                        const v1uv = flipV ? (gs - vPos - height) * vs : (vPos + height) * vs;
-                        uvs.push(u0uv, v0uv, u1uv, v0uv, u0uv, v1uv, u1uv, v1uv);
-
-                        const vb = vertexOffset;
-                        if (cwWinding) {
-                            indices.push(vb, vb + 2, vb + 1, vb + 2, vb + 3, vb + 1);
-                        } else {
-                            indices.push(vb, vb + 1, vb + 2, vb + 2, vb + 1, vb + 3);
-                        }
-                        vertexOffset += 4;
-                    }
-                }
+                const mask = BlockMeshGeometry.BuildVoxelFaceMask(voxelData, config, d, gs);
+                vertexOffset = BlockMeshGeometry.EmitVoxelGreedyQuads(
+                    out, mask, gs, matAtlasUVs, config, d, blockBase, vertexOffset
+                );
             }
         }
 
-        // orientation回転適用（0以外の場合のみ）
-        if (orientation !== 0 && typeof BlockOrientation !== 'undefined') {
-            const m = BlockOrientation.Matrices[orientation];
-            if (m) {
-                const cx = rx, cy = ry, cz = rz;
-                const endVertexCount = positions.length / 3;
-                for (let i = startVertexCount; i < endVertexCount; i++) {
-                    const pi = i * 3;
-                    const dx = positions[pi] - cx, dy = positions[pi + 1] - cy, dz = positions[pi + 2] - cz;
-                    positions[pi]     = cx + m[0] * dx + m[1] * dy + m[2] * dz;
-                    positions[pi + 1] = cy + m[3] * dx + m[4] * dy + m[5] * dz;
-                    positions[pi + 2] = cz + m[6] * dx + m[7] * dy + m[8] * dz;
-                    const nx = normals[pi], ny = normals[pi + 1], nz = normals[pi + 2];
-                    normals[pi]     = m[0] * nx + m[1] * ny + m[2] * nz;
-                    normals[pi + 1] = m[3] * nx + m[4] * ny + m[5] * nz;
-                    normals[pi + 2] = m[6] * nx + m[7] * ny + m[8] * nz;
-                }
-            }
+        if (orientation !== 0) {
+            const endVertexCount = out.positions.length / 3;
+            BlockMeshGeometry.ApplyOrientation(
+                out.positions, out.normals, startVertexCount, endVertexCount, rx, ry, rz, orientation
+            );
         }
 
         return vertexOffset;
     }
 
     /**
-     * カスタムブロックのマテリアルアトラスUV準備
+     * ハーフブロックのボクセルメッシュ生成（カスタムブロックと同じパイプライン）
      */
-    _prepareCustomBlockMaterials(blockDef) {
-        const matAtlasUVs = [null, null, null];
-        for (let i = 0; i < 3; i++) {
-            const texName = blockDef[`material_${i + 1}`];
-            if (texName) matAtlasUVs[i] = this._textureLoader.getAtlasUVByTexName(texName);
+    _buildHalfBlockVoxels(blockId, rx, ry, rz, orientation, blockSet, out, vertexOffset) {
+        const voxelData = BlockMeshGeometry.GetHalfVoxelData();
+        const gs = 8;
+        const blockBase = [rx - 0.5, ry - 0.5, rz - 0.5];
+        const startVertexCount = out.positions.length / 3;
+
+        for (const config of BlockMeshGeometry.VoxelFaceConfigs) {
+            const matAtlasUVs = BlockMeshGeometry.GetFaceAtlasUV(blockId, config.faceName, this._textureLoader, orientation);
+            for (let d = 0; d < gs; d++) {
+                const mask = BlockMeshGeometry.BuildVoxelFaceMask(voxelData, config, d, gs);
+                vertexOffset = BlockMeshGeometry.EmitVoxelGreedyQuads(
+                    out, mask, gs, matAtlasUVs, config, d, blockBase, vertexOffset
+                );
+            }
         }
-        const defaultUV = (blockDef.tex_default && this._textureLoader.getAtlasUVByTexName(blockDef.tex_default))
-            || { offsetX: 0, offsetY: 0, scaleX: 1 / (this._textureLoader._atlasSize || 1), scaleY: 1 / (this._textureLoader._atlasSize || 1) };
-        for (let i = 0; i < 3; i++) {
-            if (!matAtlasUVs[i]) matAtlasUVs[i] = defaultUV;
+
+        if (orientation !== 0) {
+            const endVertexCount = out.positions.length / 3;
+            BlockMeshGeometry.ApplyOrientation(
+                out.positions, out.normals, startVertexCount, endVertexCount, rx, ry, rz, orientation
+            );
         }
-        return matAtlasUVs;
+
+        return vertexOffset;
     }
 
     /**
@@ -343,11 +198,7 @@ class RotationBodyMesh {
      * @param {number} angle - ラジアン
      */
     UpdateRotation(angle) {
-        // キャッシュ済みfront方向を直接参照（GetFrontDirection呼び出しとオブジェクト生成を回避）
         const body = this._body;
-        // worldContainer(scale.z=-1)内での回転:
-        // Y軸: scale.z反転で回転方向が反転されるため、そのまま適用
-        // X軸/Z軸: scale.z反転で符号が逆転するため、-1を掛ける
         if (body._frontDy !== 0) {
             this._group.rotation.set(0, angle * body._frontDy, 0);
         } else if (body._frontDz !== 0) {
@@ -357,103 +208,10 @@ class RotationBodyMesh {
         }
     }
 
-    // ハーフブロックのテクスチャ面リマップ（ChunkMeshBuilderと同じ）
-    static _HALF_TEX_REMAP = {
-        3: { top: 'front', bottom: 'back', front: 'bottom', back: 'top', left: 'left', right: 'right' },
-        4: { top: 'back', bottom: 'front', front: 'top', back: 'bottom', left: 'left', right: 'right' },
-        5: { top: 'left', bottom: 'right', front: 'front', back: 'back', left: 'bottom', right: 'top' },
-        6: { top: 'right', bottom: 'left', front: 'front', back: 'back', left: 'top', right: 'bottom' },
-    };
+    /** Three.js Groupを返す */
+    GetGroup() { return this._group; }
 
-    /**
-     * ハーフブロック（orientation 1-6）のメッシュ生成（回転体用・簡易版）
-     */
-    _buildHalfBlock(blockId, rx, ry, rz, orientation, blockSet, positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices, vertexOffset) {
-        // orientationに応じたAABB範囲（軸中心原点からの相対座標）
-        const bx = rx - 0.5, by = ry - 0.5, bz = rz - 0.5;
-        let xMin = bx, xMax = bx + 1, yMin = by, yMax = by + 1, zMin = bz, zMax = bz + 1;
-        switch (orientation) {
-            case 1: yMax = by + 0.5; break;      // 下ハーフ
-            case 2: yMin = by + 0.5; break;      // 上ハーフ
-            case 3: zMax = bz + 0.5; break;      // 南付き(-Z)
-            case 4: zMin = bz + 0.5; break;      // 北付き(+Z)
-            case 5: xMax = bx + 0.5; break;      // 西付き(-X)
-            case 6: xMin = bx + 0.5; break;      // 東付き(+X)
-        }
-
-        const halfFaces = [
-            { name: 'top',    normal: [0,1,0],  corners: [[xMin,yMax,zMax],[xMax,yMax,zMax],[xMax,yMax,zMin],[xMin,yMax,zMin]] },
-            { name: 'bottom', normal: [0,-1,0], corners: [[xMin,yMin,zMin],[xMax,yMin,zMin],[xMax,yMin,zMax],[xMin,yMin,zMax]] },
-            { name: 'front',  normal: [0,0,-1], corners: [[xMax,yMin,zMin],[xMin,yMin,zMin],[xMin,yMax,zMin],[xMax,yMax,zMin]] },
-            { name: 'back',   normal: [0,0,1],  corners: [[xMin,yMin,zMax],[xMax,yMin,zMax],[xMax,yMax,zMax],[xMin,yMax,zMax]] },
-            { name: 'right',  normal: [1,0,0],  corners: [[xMax,yMin,zMax],[xMax,yMin,zMin],[xMax,yMax,zMin],[xMax,yMax,zMax]] },
-            { name: 'left',   normal: [-1,0,0], corners: [[xMin,yMin,zMin],[xMin,yMin,zMax],[xMin,yMax,zMax],[xMin,yMax,zMin]] },
-        ];
-
-        const texRemap = RotationBodyMesh._HALF_TEX_REMAP[orientation];
-
-        for (const face of halfFaces) {
-            // 面カリング: 隣接ブロックが同じ回転体内にある場合のみスキップ（ハーフは基本カリングしない）
-            const off = RotationBodyMesh._FACE_OFFSETS[face.name];
-            if (blockSet.has(packBlockKey(rx + off.dx, ry + off.dy, rz + off.dz))) {
-                // 隣接が通常ブロック（非ハーフ）の場合のみカリング
-                continue;
-            }
-
-            const texFace = texRemap ? texRemap[face.name] : face.name;
-            const atlasUV = this._textureLoader.getAtlasUV(blockId, texFace);
-
-            for (let vi = 0; vi < 4; vi++) {
-                const c = face.corners[vi];
-                positions.push(c[0], c[1], c[2]);
-                normals.push(face.normal[0], face.normal[1], face.normal[2]);
-                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
-                lightLevels.push(1.0);
-                aoLevels.push(1.0);
-            }
-
-            // 薄い面のUV切り出し
-            let isThinFace = false;
-            if (orientation <= 2) {
-                isThinFace = face.name !== 'top' && face.name !== 'bottom';
-            } else if (orientation <= 4) {
-                isThinFace = face.name !== 'front' && face.name !== 'back';
-            } else {
-                isThinFace = face.name !== 'left' && face.name !== 'right';
-            }
-            if (isThinFace) {
-                const vLo = orientation === 2 ? 0.5 : 0.0;
-                const vHi = orientation === 2 ? 1.0 : 0.5;
-                if (face.name === 'top' || face.name === 'bottom') {
-                    uvs.push(0, vHi, 1, vHi, 1, vLo, 0, vLo);
-                } else {
-                    uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
-                }
-            } else {
-                uvs.push(1, 0, 0, 0, 0, 1, 1, 1);
-            }
-
-            indices.push(
-                vertexOffset, vertexOffset + 1, vertexOffset + 2,
-                vertexOffset, vertexOffset + 2, vertexOffset + 3
-            );
-            vertexOffset += 4;
-        }
-
-        return vertexOffset;
-    }
-
-    /**
-     * Three.js Groupを返す
-     * @returns {THREE.Group}
-     */
-    GetGroup() {
-        return this._group;
-    }
-
-    /**
-     * リソース解放
-     */
+    /** リソース解放 */
     Dispose() {
         for (const child of this._group.children) {
             if (child.geometry) child.geometry.dispose();
@@ -462,7 +220,11 @@ class RotationBodyMesh {
     }
 }
 
+// 後方互換エイリアス
+const RotationBodyMesh = BlockGroupMesh;
+
 // グローバルに公開
 if (typeof window !== 'undefined') {
-    window.RotationBodyMesh = RotationBodyMesh;
+    window.BlockGroupMesh = BlockGroupMesh;
+    window.RotationBodyMesh = BlockGroupMesh;
 }

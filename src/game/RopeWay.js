@@ -467,23 +467,9 @@ class RopeWayManager {
     }
 
     _rebuildAffectedChunks(baseX, baseY, baseZ, blocks) {
-        const affected = new Set();
-        for (const b of blocks) {
-            const bwx = baseX + b.rx, bwz = baseZ + b.rz;
-            const cx = Math.floor(bwx / 16), cz = Math.floor(bwz / 16);
-            affected.add(`${cx},${cz}`);
-            const lx = ((bwx % 16) + 16) % 16;
-            const lz = ((bwz % 16) + 16) % 16;
-            if (lx === 0)  affected.add(`${cx - 1},${cz}`);
-            if (lx === 15) affected.add(`${cx + 1},${cz}`);
-            if (lz === 0)  affected.add(`${cx},${cz - 1}`);
-            if (lz === 15) affected.add(`${cx},${cz + 1}`);
-        }
-        affected.add(`${Math.floor(baseX / 16)},${Math.floor(baseZ / 16)}`);
-        for (const chunkKey of affected) {
-            const [cx, cz] = chunkKey.split(',').map(Number);
-            this._chunkManager.rebuildChunkMesh(cx, cz);
-        }
+        const positions = blocks.map(b => [baseX + b.rx, baseY + b.ry, baseZ + b.rz]);
+        positions.push([baseX, baseY, baseZ]);
+        this._chunkManager.rebuildChunksAtPositions(positions);
     }
 }
 

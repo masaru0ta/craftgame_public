@@ -138,7 +138,7 @@ class RotationAxisManager {
         this._textureLoader = textureLoader;
         /** @type {Map<string, RotationBody>} key: "x,y,z" */
         this._bodies = new Map();
-        /** @type {Map<string, RotationBodyMesh>} key: "x,y,z" */
+        /** @type {Map<string, BlockGroupMesh>} key: "x,y,z" */
         this._meshes = new Map();
         /** @type {Map<string, number>} 次の回転方向(1=CW, -1=CCW) key: "x,y,z" */
         this._nextDirection = new Map();
@@ -1077,28 +1077,9 @@ class RotationAxisManager {
      * 影響チャンクのメッシュを再構築
      */
     _rebuildAffectedChunks(axisX, axisY, axisZ, blocks) {
-        const affectedChunks = new Set();
-        for (const b of blocks) {
-            const wx = axisX + b.rx;
-            const wz = axisZ + b.rz;
-            const cx = Math.floor(wx / 16);
-            const cz = Math.floor(wz / 16);
-            affectedChunks.add(`${cx},${cz}`);
-            // チャンク境界のブロックは隣接チャンクにも影響
-            const lx = ((wx % 16) + 16) % 16;
-            const lz = ((wz % 16) + 16) % 16;
-            if (lx === 0)  affectedChunks.add(`${cx - 1},${cz}`);
-            if (lx === 15) affectedChunks.add(`${cx + 1},${cz}`);
-            if (lz === 0)  affectedChunks.add(`${cx},${cz - 1}`);
-            if (lz === 15) affectedChunks.add(`${cx},${cz + 1}`);
-        }
-        // 軸ブロック自体のチャンクも
-        affectedChunks.add(`${Math.floor(axisX / 16)},${Math.floor(axisZ / 16)}`);
-
-        for (const key of affectedChunks) {
-            const [cx, cz] = key.split(',').map(Number);
-            this._chunkManager.rebuildChunkMesh(cx, cz);
-        }
+        const positions = blocks.map(b => [axisX + b.rx, axisY + b.ry, axisZ + b.rz]);
+        positions.push([axisX, axisY, axisZ]);
+        this._chunkManager.rebuildChunksAtPositions(positions);
     }
 }
 

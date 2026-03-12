@@ -12,16 +12,6 @@ class PlacementPreview {
     static WireOpacity = 0.6;
     static BrightnessBoost = 0.15;
 
-    // カスタムブロック6方向面コンフィグ（static定数で毎回の配列生成を回避）
-    static _FaceConfigs = [
-        { n: [1,0,0],  axis: 0, u: 2, v: 1, offset: 1 },  // right  (+X)
-        { n: [-1,0,0], axis: 0, u: 2, v: 1, offset: 0 },  // left   (-X)
-        { n: [0,1,0],  axis: 1, u: 0, v: 2, offset: 1 },  // top    (+Y)
-        { n: [0,-1,0], axis: 1, u: 0, v: 2, offset: 0 },  // bottom (-Y)
-        { n: [0,0,1],  axis: 2, u: 0, v: 1, offset: 1 },  // back   (+Z)
-        { n: [0,0,-1], axis: 2, u: 0, v: 1, offset: 0 },  // front  (-Z)
-    ];
-
     /**
      * @param {THREE.Scene} scene
      * @param {TextureLoader} textureLoader
@@ -84,7 +74,7 @@ class PlacementPreview {
             transparent: true,
             depthWrite: false,
             depthTest: true,
-            side: THREE.DoubleSide,
+            side: THREE.BackSide,
             polygonOffset: true,
             polygonOffsetFactor: -1,
             polygonOffsetUnits: -1,
@@ -185,11 +175,7 @@ class PlacementPreview {
         if (blockDef.shape_type === 'custom' && blockDef.voxel_look) {
             vertexOffset = this._buildCustomMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         } else if (blockDef.half_placeable && isHalfMode) {
-            // topDir → _buildHalfMesh用のorientation(1-6)に変換
-            const topDir = Math.floor(orientation / 4);
-            const topDirToHalfOri = [1, 2, 3, 4, 5, 6];
-            const halfOri = topDirToHalfOri[topDir] || 1;
-            vertexOffset = this._buildHalfMesh(blockDef, halfOri, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+            vertexOffset = this._buildHalfMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         } else {
             vertexOffset = this._buildFullMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         }
@@ -239,45 +225,49 @@ class PlacementPreview {
     }
 
     /**
-     * ハーフブロック のジオメトリを生成
-     * orientation 1-2: Y方向ハーフ, 3-6: 側面ハーフ
+     * ハーフブロックのジオメトリを生成（ボクセルパイプライン）
+     * @param {number} orientation - orient値（topDir * 4）
      */
     _buildHalfMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
-        // orientation ごとの AABB（Three.js座標系: Z反転）
-        const bounds = [
-            null,                        // 0: unused
-            [0, 1, 0, 0.5, -1, 0],       // 1: 下ハーフ
-            [0, 1, 0.5, 1, -1, 0],       // 2: 上ハーフ
-            [0, 1, 0, 1, -0.5, 0],       // 3: 南付き(-Z)
-            [0, 1, 0, 1, -1, -0.5],      // 4: 北付き(+Z)
-            [0, 0.5, 0, 1, -1, 0],       // 5: 西付き(-X)
-            [0.5, 1, 0, 1, -1, 0],       // 6: 東付き(+X)
-        ];
-        const b = bounds[orientation];
-        const faces = PlacementPreview._BoxFaces3D(b[0], b[1], b[2], b[3], b[4], b[5]);
-        const texRemap = (typeof ChunkMeshBuilder !== 'undefined')
-            ? (ChunkMeshBuilder._SideHalfTexRemap[orientation] || null)
-            : null;
-        return this._buildBoxFaces(blockDef, faces, orientation, 0, positions, normals, uvs, atlasInfos, indices, vertexOffset, texRemap);
+        const voxelData = BlockMeshGeometry.GetHalfVoxelData();
+        const gs = 8;
+        const blockBase = [0, 0, 0];
+        const startVertexCount = positions.length / 3;
+
+        const lightLevels = [];
+        const aoLevels = [];
+        const out = { positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices };
+
+        for (const config of BlockMeshGeometry.VoxelFaceConfigs) {
+            const matAtlasUVs = BlockMeshGeometry.GetFaceAtlasUV(blockDef.block_str_id, config.faceName, this._textureLoader, orientation);
+            for (let d = 0; d < gs; d++) {
+                const mask = BlockMeshGeometry.BuildVoxelFaceMask(voxelData, config, d, gs);
+                vertexOffset = BlockMeshGeometry.EmitVoxelGreedyQuads(
+                    out, mask, gs, matAtlasUVs, config, d, blockBase, vertexOffset
+                );
+            }
+        }
+
+        // 回転 + Z反転を適用（Three.js座標系変換）
+        const endVertexCount = positions.length / 3;
+        BlockMeshGeometry.ApplyOrientationWithZFlip(
+            positions, normals, startVertexCount, endVertexCount,
+            0.5, 0.5, 0.5, orientation
+        );
+
+        return vertexOffset;
     }
 
     /**
-     * ボックス面定義配列から頂点を生成する共通処理
+     * ボックス面定義配列から頂点を生成する共通処理（フルブロック用）
+     * @param {number} blockOrient - orient値(0〜23)。テクスチャリマップ・UV回転に使用
      */
-    /**
-     * @param {number|null} halfOrientation - ハーフブロックの向き(1-6)。フルブロック時はnull
-     * @param {number} orient - orient値(0〜23)。配列インデックスベースのテクスチャリマップ・UV回転に使用
-     * @param {Object|null} [overrideTexRemap] - ハーフブロック用の外部テクスチャリマップ（オプション）
-     */
-    _buildBoxFaces(blockDef, faces, halfOrientation, orient, positions, normals, uvs, atlasInfos, indices, vertexOffset, overrideTexRemap) {
-        const oriBase = orient * 6;
+    _buildBoxFaces(blockDef, faces, _unused, blockOrient, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+        const oriBase = blockOrient * 6;
         const hasBo = typeof BlockOrientation !== 'undefined';
         for (const face of faces) {
-            // テクスチャリマップ: overrideTexRemap（ハーフブロック）優先、なければ配列インデックスで取得
             let texFace;
-            if (overrideTexRemap) {
-                texFace = overrideTexRemap[face.name] || face.name;
-            } else if (hasBo && orient > 0) {
+            if (hasBo && blockOrient > 0) {
                 const fi = BlockOrientation.FaceIdx[face.name];
                 texFace = BlockOrientation.FaceNames[BlockOrientation.TexRemapIdx[oriBase + fi]];
             } else {
@@ -289,28 +279,9 @@ class PlacementPreview {
                 normals.push(face.n[0], face.n[1], face.n[2]);
                 atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
             }
-            // 薄い面はテクスチャの対応部分を切り出す（ハーフブロックのみ）
-            let isThinFace = false;
-            if (halfOrientation >= 1 && halfOrientation <= 2) {
-                isThinFace = face.name !== 'top' && face.name !== 'bottom';
-            } else if (halfOrientation >= 3 && halfOrientation <= 4) {
-                isThinFace = face.name !== 'front' && face.name !== 'back';
-            } else if (halfOrientation >= 5 && halfOrientation <= 6) {
-                isThinFace = face.name !== 'left' && face.name !== 'right';
-            }
-            if (isThinFace) {
-                const vLo = halfOrientation === 2 ? 0.5 : 0.0;
-                const vHi = halfOrientation === 2 ? 1.0 : 0.5;
-                if (face.name === 'top' || face.name === 'bottom') {
-                    uvs.push(0, vHi, 1, vHi, 1, vLo, 0, vLo);
-                } else {
-                    uvs.push(1, vLo, 0, vLo, 0, vHi, 1, vHi);
-                }
-            } else {
-                const faceUVRot = hasBo ? BlockOrientation.UVRotIdx[oriBase + BlockOrientation.FaceIdx[face.name]] : 0;
-                this._addFaceUVs(uvs, face.name, faceUVRot);
-            }
-            this._addQuadIndices(indices, vertexOffset);
+            const faceUVRot = hasBo ? BlockOrientation.UVRotIdx[oriBase + BlockOrientation.FaceIdx[face.name]] : 0;
+            this._addFaceUVs(uvs, face.name, faceUVRot);
+            BlockMeshGeometry.AddQuadIndices(indices, vertexOffset);
             vertexOffset += 4;
         }
         return vertexOffset;
@@ -318,106 +289,37 @@ class PlacementPreview {
 
     /**
      * カスタムブロック（8×8×8ボクセル）のジオメトリを生成
+     * BlockMeshGeometry共通処理に委譲
      */
     _buildCustomMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
         const voxelData = VoxelData.decode(blockDef.voxel_look);
-        const matAtlasUVs = this._getCustomMaterials(blockDef);
+        const matAtlasUVs = BlockMeshGeometry.GetCustomBlockMaterials(blockDef, this._textureLoader);
         const gs = 8;
-        const vs = 1.0 / gs;
-
+        const blockBase = [0, 0, 0];
         const startVertexCount = positions.length / 3;
-        // ループ内で再利用する配列（GC削減）
-        const coord = [0, 0, 0];
-        const nc = [0, 0, 0];
-        const pos = [0, 0, 0];
 
-        // ゲーム座標系（Z非反転）で頂点を生成（ChunkMeshBuilderと同じ座標系）
-        for (const cfg of PlacementPreview._FaceConfigs) {
-            const nDir = cfg.offset === 1 ? 1 : -1;
+        // lightLevels/aoLevels はゴーストシェーダーでは不要だが、共通API用にダミー配列を用意
+        const lightLevels = [];
+        const aoLevels = [];
+        const out = { positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices };
+
+        for (const config of BlockMeshGeometry.VoxelFaceConfigs) {
             for (let d = 0; d < gs; d++) {
-                for (let cv = 0; cv < gs; cv++) {
-                    for (let cu = 0; cu < gs; cu++) {
-                        coord[cfg.axis] = d; coord[cfg.u] = cu; coord[cfg.v] = cv;
-                        const matVal = VoxelData.getVoxel(voxelData, coord[0], coord[1], coord[2]);
-                        if (matVal === 0) continue;
-
-                        const nd = d + nDir;
-                        if (nd >= 0 && nd < gs) {
-                            nc[cfg.axis] = nd; nc[cfg.u] = cu; nc[cfg.v] = cv;
-                            if (VoxelData.getVoxel(voxelData, nc[0], nc[1], nc[2]) !== 0) continue;
-                        }
-
-                        const faceD = (d + cfg.offset) * vs;
-                        const atlasUV = matAtlasUVs[matVal - 1];
-                        const cuVs = cu * vs, cvVs = cv * vs;
-                        const cu1Vs = cuVs + vs, cv1Vs = cvVs + vs;
-
-                        // 4コーナーをインライン展開（ゲーム座標系: Z非反転）
-                        pos[cfg.axis] = faceD;
-                        pos[cfg.u] = cuVs;  pos[cfg.v] = cvVs;
-                        positions.push(pos[0], pos[1], pos[2]);
-                        pos[cfg.u] = cu1Vs; pos[cfg.v] = cvVs;
-                        positions.push(pos[0], pos[1], pos[2]);
-                        pos[cfg.u] = cu1Vs; pos[cfg.v] = cv1Vs;
-                        positions.push(pos[0], pos[1], pos[2]);
-                        pos[cfg.u] = cuVs;  pos[cfg.v] = cv1Vs;
-                        positions.push(pos[0], pos[1], pos[2]);
-                        for (let ci = 0; ci < 4; ci++) {
-                            normals.push(cfg.n[0], cfg.n[1], cfg.n[2]);
-                            atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
-                        }
-                        // 面全体で1枚のテクスチャになるよう、ボクセル位置に応じた部分UVを設定
-                        const u0 = cu * vs, v0 = cv * vs;
-                        const u1 = u0 + vs, v1 = v0 + vs;
-                        uvs.push(u0, v0, u1, v0, u1, v1, u0, v1);
-                        this._addQuadIndices(indices, vertexOffset);
-                        vertexOffset += 4;
-                    }
-                }
+                const mask = BlockMeshGeometry.BuildVoxelFaceMask(voxelData, config, d, gs);
+                vertexOffset = BlockMeshGeometry.EmitVoxelGreedyQuads(
+                    out, mask, gs, matAtlasUVs, config, d, blockBase, vertexOffset
+                );
             }
         }
 
-        // 回転 + Three.js座標系変換（Z反転）を1パスで処理
+        // 回転 + Z反転を適用（Three.js座標系変換）
         const endVertexCount = positions.length / 3;
-        const m = (orientation !== 0 && typeof BlockOrientation !== 'undefined')
-            ? BlockOrientation.Matrices[orientation] : null;
-
-        if (m) {
-            const cx = 0.5, cy = 0.5, cz = 0.5;
-            for (let i = startVertexCount; i < endVertexCount; i++) {
-                const pi = i * 3;
-                const dx = positions[pi] - cx, dy = positions[pi + 1] - cy, dz = positions[pi + 2] - cz;
-                positions[pi]     =  (cx + m[0] * dx + m[1] * dy + m[2] * dz);
-                positions[pi + 1] =  (cy + m[3] * dx + m[4] * dy + m[5] * dz);
-                positions[pi + 2] = -(cz + m[6] * dx + m[7] * dy + m[8] * dz);
-                const nx = normals[pi], ny = normals[pi + 1], nz = normals[pi + 2];
-                normals[pi]     =  (m[0] * nx + m[1] * ny + m[2] * nz);
-                normals[pi + 1] =  (m[3] * nx + m[4] * ny + m[5] * nz);
-                normals[pi + 2] = -(m[6] * nx + m[7] * ny + m[8] * nz);
-            }
-        } else {
-            for (let i = startVertexCount; i < endVertexCount; i++) {
-                const pi = i * 3;
-                positions[pi + 2] = -positions[pi + 2];
-                normals[pi + 2] = -normals[pi + 2];
-            }
-        }
+        BlockMeshGeometry.ApplyOrientationWithZFlip(
+            positions, normals, startVertexCount, endVertexCount,
+            0.5, 0.5, 0.5, orientation
+        );
 
         return vertexOffset;
-    }
-
-    /**
-     * カスタムブロックのマテリアルアトラスUV配列を取得
-     * @returns {Array<{offsetX,offsetY,scaleX,scaleY}>} [material_1, material_2, material_3]
-     */
-    _getCustomMaterials(blockDef) {
-        const tl = this._textureLoader;
-        const def = blockDef.tex_default || '';
-        return [
-            tl.getAtlasUVByTexName(blockDef.material_1 || def),
-            tl.getAtlasUVByTexName(blockDef.material_2 || def),
-            tl.getAtlasUVByTexName(blockDef.material_3 || def),
-        ];
     }
 
     /**
@@ -441,16 +343,6 @@ class PlacementPreview {
         } else {
             uvs.push(1, 0, 0, 0, 0, 1, 1, 1);
         }
-    }
-
-    /**
-     * クワッドのインデックスを追加（時計回り2三角形）
-     */
-    _addQuadIndices(indices, offset) {
-        indices.push(
-            offset, offset + 1, offset + 2,
-            offset, offset + 2, offset + 3
-        );
     }
 
     /** 現在のメッシュをシーンから除去して破棄 */

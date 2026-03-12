@@ -362,8 +362,12 @@ class MultiplayerSync {
             this._chunkManager.lightCalculator.calculate(newChunkData, neighborChunks);
         }
 
-        // メッシュ再構築
+        // メッシュ再構築（隣接チャンクの面カリング・AOも更新）
         this._chunkManager.rebuildChunkMesh(chunkX, chunkZ);
+        this._chunkManager.rebuildChunkMesh(chunkX - 1, chunkZ);
+        this._chunkManager.rebuildChunkMesh(chunkX + 1, chunkZ);
+        this._chunkManager.rebuildChunkMesh(chunkX, chunkZ - 1);
+        this._chunkManager.rebuildChunkMesh(chunkX, chunkZ + 1);
 
         // pendingのブロック変更を適用
         this._applyPendingChanges(chunkKey);
@@ -421,12 +425,8 @@ class MultiplayerSync {
             ) || new Set();
         }
 
-        // メッシュ再構築
-        this._chunkManager.rebuildChunkMesh(chunkX, chunkZ);
-        for (const key of affectedNeighbors) {
-            const [nx, nz] = key.split(',').map(Number);
-            this._chunkManager.rebuildChunkMesh(nx, nz);
-        }
+        // メッシュ再構築（チャンク境界の隣接チャンクも含む）
+        this._chunkManager.rebuildChunksAtPositions([[x, y, z]], affectedNeighbors);
     }
 
     /**
@@ -449,12 +449,8 @@ class MultiplayerSync {
             ) || new Set();
         }
 
-        // メッシュ再構築
-        this._chunkManager.rebuildChunkMesh(chunkX, chunkZ);
-        for (const key of affectedNeighbors) {
-            const [nx, nz] = key.split(',').map(Number);
-            this._chunkManager.rebuildChunkMesh(nx, nz);
-        }
+        // メッシュ再構築（チャンク境界の隣接チャンクも含む）
+        this._chunkManager.rebuildChunksAtPositions([[x, y, z]], affectedNeighbors);
     }
 
     // --- Pending変更管理 ---

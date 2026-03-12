@@ -77,7 +77,7 @@ class DirectionBlockManager {
         this._textureLoader = textureLoader;
         /** @type {Map<string, MovementBody>} key: "x,y,z" */
         this._bodies = new Map();
-        /** @type {Map<string, Object>} key: "x,y,z" メッシュ（RotationBodyMesh再利用） */
+        /** @type {Map<string, Object>} key: "x,y,z" メッシュ（BlockGroupMesh使用） */
         this._meshes = new Map();
         /** @type {Map<string, number>} 次の移動方向(1 or -1) key: "x,y,z" */
         this._nextDirections = new Map();
@@ -160,9 +160,9 @@ class DirectionBlockManager {
         // 影響チャンクのメッシュ再構築
         this._rebuildAffectedChunks(wx, wy, wz, blocks);
 
-        // 移動体メッシュ生成（RotationBodyMesh を再利用）
+        // 移動体メッシュ生成（BlockGroupMesh を使用）
         if (typeof RotationBodyMesh !== 'undefined') {
-            // RotationBodyMesh は body._axisX/Y/Z を参照するので互換オブジェクトを作成
+            // BlockGroupMesh は body._axisX/Y/Z を参照するので互換オブジェクトを作成
             const compatBody = {
                 _axisX: wx, _axisY: wy, _axisZ: wz,
                 _blocks: blocks,
@@ -460,26 +460,9 @@ class DirectionBlockManager {
     }
 
     _rebuildAffectedChunks(baseX, baseY, baseZ, blocks) {
-        const affectedChunks = new Set();
-        for (const b of blocks) {
-            const bwx = baseX + b.rx;
-            const bwz = baseZ + b.rz;
-            const cx = Math.floor(bwx / 16);
-            const cz = Math.floor(bwz / 16);
-            affectedChunks.add(`${cx},${cz}`);
-            const lx = ((bwx % 16) + 16) % 16;
-            const lz = ((bwz % 16) + 16) % 16;
-            if (lx === 0)  affectedChunks.add(`${cx - 1},${cz}`);
-            if (lx === 15) affectedChunks.add(`${cx + 1},${cz}`);
-            if (lz === 0)  affectedChunks.add(`${cx},${cz - 1}`);
-            if (lz === 15) affectedChunks.add(`${cx},${cz + 1}`);
-        }
-        affectedChunks.add(`${Math.floor(baseX / 16)},${Math.floor(baseZ / 16)}`);
-
-        for (const chunkKey of affectedChunks) {
-            const [cx, cz] = chunkKey.split(',').map(Number);
-            this._chunkManager.rebuildChunkMesh(cx, cz);
-        }
+        const positions = blocks.map(b => [baseX + b.rx, baseY + b.ry, baseZ + b.rz]);
+        positions.push([baseX, baseY, baseZ]);
+        this._chunkManager.rebuildChunksAtPositions(positions);
     }
 }
 

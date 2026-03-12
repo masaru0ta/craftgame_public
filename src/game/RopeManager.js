@@ -26,7 +26,7 @@ class RopeManager {
     StartConnection(wx, wy, wz) {
         this._setBlockAt(wx, wy, wz, 'pole_with_rope');
         this._pendingRopeStart = { x: wx, y: wy, z: wz };
-        this._rebuildChunkAt(wx, wz);
+        this._rebuildChunksAt(wx, wy, wz);
     }
 
     CompleteConnection(wx, wy, wz) {
@@ -39,14 +39,14 @@ class RopeManager {
         this._connections.set(`${wx},${wy},${wz}`, { x: p1.x, y: p1.y, z: p1.z });
         this._createRopeMesh(p1.x, p1.y, p1.z, wx, wy, wz);
         this._pendingRopeStart = null;
-        this._rebuildChunkAt(wx, wz);
+        this._rebuildChunksAt(wx, wy, wz);
     }
 
     CancelConnection() {
         if (!this._pendingRopeStart) return;
         const p = this._pendingRopeStart;
         this._setBlockAt(p.x, p.y, p.z, 'pole');
-        this._rebuildChunkAt(p.x, p.z);
+        this._rebuildChunksAt(p.x, p.y, p.z);
         this._pendingRopeStart = null;
     }
 
@@ -60,7 +60,7 @@ class RopeManager {
         if (!target) return;
 
         this._setBlockAt(target.x, target.y, target.z, 'pole');
-        this._rebuildChunkAt(target.x, target.z);
+        this._rebuildChunksAt(target.x, target.y, target.z);
 
         this._connections.delete(key);
         this._connections.delete(`${target.x},${target.y},${target.z}`);
@@ -312,10 +312,8 @@ class RopeManager {
         chunk.chunkData.setBlock(lx, ly, lz, blockId, ori);
     }
 
-    _rebuildChunkAt(wx, wz) {
-        const cx = Math.floor(wx / 16);
-        const cz = Math.floor(wz / 16);
-        this._chunkManager.rebuildChunkMesh(cx, cz);
+    _rebuildChunksAt(wx, wy, wz) {
+        this._chunkManager.rebuildChunksAtPositions([[wx, wy, wz]]);
     }
 }
 

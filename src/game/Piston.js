@@ -121,21 +121,7 @@ class PistonManager {
     }
 
     _rebuildChunksAround(positions) {
-        const affected = new Set();
-        for (const [wx, , wz] of positions) {
-            const cx = Math.floor(wx / 16), cz = Math.floor(wz / 16);
-            affected.add(`${cx},${cz}`);
-            const lx = ((wx % 16) + 16) % 16;
-            const lz = ((wz % 16) + 16) % 16;
-            if (lx === 0)  affected.add(`${cx - 1},${cz}`);
-            if (lx === 15) affected.add(`${cx + 1},${cz}`);
-            if (lz === 0)  affected.add(`${cx},${cz - 1}`);
-            if (lz === 15) affected.add(`${cx},${cz + 1}`);
-        }
-        for (const chunkKey of affected) {
-            const [cx, cz] = chunkKey.split(',').map(Number);
-            this._chunkManager.rebuildChunkMesh(cx, cz);
-        }
+        this._chunkManager.rebuildChunksAtPositions(positions);
     }
 
     // === メイン操作 ===
@@ -264,7 +250,7 @@ class PistonManager {
 
     // === アニメーションメッシュ ===
 
-    /** RotationBodyMesh互換オブジェクトを構築 */
+    /** BlockGroupMesh互換オブジェクトを構築 */
     _buildCompatBody(body, blocks) {
         return {
             _axisX: body._pistonX, _axisY: body._pistonY, _axisZ: body._pistonZ,

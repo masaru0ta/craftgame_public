@@ -476,14 +476,8 @@ class BlockInteraction {
             ) || new Set();
         }
 
-        // メッシュを再構築
-        this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
-
-        // 影響のあった隣接チャンクのメッシュも再構築
-        for (const key of affectedNeighbors) {
-            const [nx, nz] = key.split(',').map(Number);
-            this.chunkManager.rebuildChunkMesh(nx, nz);
-        }
+        // メッシュを再構築（チャンク境界の隣接チャンクも含む）
+        this.chunkManager.rebuildChunksAtPositions([[x, y, z]], affectedNeighbors);
 
         // 隣接・真上の水ブロックにフロートリガーをスケジュール（壁・床破壊で水が流れ出す）
         this._scheduleAdjacentWaterFlow(x, y, z);
@@ -558,14 +552,8 @@ class BlockInteraction {
             ) || new Set();
         }
 
-        // メッシュを再構築
-        this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
-
-        // 影響のあった隣接チャンクのメッシュも再構築
-        for (const key of affectedNeighbors) {
-            const [nx, nz] = key.split(',').map(Number);
-            this.chunkManager.rebuildChunkMesh(nx, nz);
-        }
+        // メッシュを再構築（チャンク境界の隣接チャンクも含む）
+        this.chunkManager.rebuildChunksAtPositions([[x, y, z]], affectedNeighbors);
 
         // IndexedDBに保存（非同期）
         this._saveChunk(chunkX, chunkZ, chunk.chunkData);
@@ -860,14 +848,8 @@ class BlockInteraction {
             }
         }
 
-        // メッシュ再構築
-        this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
-
-        // チャンク境界の場合、隣接チャンクも再構築
-        if (localX === 0) this.chunkManager.rebuildChunkMesh(chunkX - 1, chunkZ);
-        if (localX === 15) this.chunkManager.rebuildChunkMesh(chunkX + 1, chunkZ);
-        if (localZ === 0) this.chunkManager.rebuildChunkMesh(chunkX, chunkZ - 1);
-        if (localZ === 15) this.chunkManager.rebuildChunkMesh(chunkX, chunkZ + 1);
+        // メッシュ再構築（チャンク境界の隣接チャンクも含む）
+        this.chunkManager.rebuildChunksAtPositions([[wx, wy, wz]]);
     }
 
     /**
@@ -965,8 +947,8 @@ class BlockInteraction {
             this.hotbar.setSlotBlock(slot, waterBucketDef);
         }
 
-        // メッシュ再構築
-        this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
+        // メッシュ再構築（チャンク境界の隣接チャンクも含む）
+        this.chunkManager.rebuildChunksAtPositions([[x, y, z]]);
 
         // IndexedDBに保存
         this._saveChunk(chunkX, chunkZ, r.cd);
@@ -1027,8 +1009,8 @@ class BlockInteraction {
             this._onBlockPlacedAt(x, y, z, 'water', 0);
         }
 
-        // メッシュ再構築
-        this.chunkManager.rebuildChunkMesh(chunkX, chunkZ);
+        // メッシュ再構築（チャンク境界の隣接チャンクも含む）
+        this.chunkManager.rebuildChunksAtPositions([[x, y, z]]);
 
         // IndexedDBに保存
         this._saveChunk(chunkX, chunkZ, chunk.chunkData);

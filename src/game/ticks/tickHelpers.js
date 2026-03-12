@@ -47,7 +47,14 @@ const TickHelpers = {
         const r = this._resolve(cm, wx, wy, wz);
         if (!r) return false;
         r.cd.setBlock(r.lx, r.ly, r.lz, blockId, orientation);
-        if (dirty) dirty.add(r.key);
+        if (dirty) {
+            dirty.add(r.key);
+            // チャンク境界の場合、隣接チャンクの面カリング・AOも更新が必要
+            if (r.lx === 0)  dirty.add(`${r.cx - 1},${r.cz}`);
+            if (r.lx === 15) dirty.add(`${r.cx + 1},${r.cz}`);
+            if (r.lz === 0)  dirty.add(`${r.cx},${r.cz - 1}`);
+            if (r.lz === 15) dirty.add(`${r.cx},${r.cz + 1}`);
+        }
 
         if (cm.lightCalculator && cm._getNeighborChunks) {
             const neighbors = cm._getNeighborChunks(r.cx, r.cz);

@@ -92,7 +92,7 @@ class ChunkManager {
         // リージョンメッシュ統合（LoD1 draw calls削減）
         this.regionSize = 8;  // リージョンあたりのチャンク数（1辺）
         this.regionMeshes = new Map();   // "rx,rz" → { normalMesh, waterMesh, chunkKeys: Set }
-        this.dirtyRegions = new Set();   // 統合再評価が必要なリージョンキー
+        this.dirtyRegions = new Set();   // 統合(merge)または分解(unmerge)の再評価が必要なリージョンキー
         this._regionNormalMaterial = null;
         this._regionWaterMaterial = null;
 
@@ -253,7 +253,7 @@ class ChunkManager {
                 regionsToInvalidate.add(this._getRegionKey(cx, cz));
             }
             for (const regionKey of regionsToInvalidate) {
-                this._invalidateCachedChunks(regionKey);
+                this._clearCachedChunksForRegeneration(regionKey);
                 this.dirtyRegions.add(regionKey);
             }
 
@@ -386,17 +386,22 @@ class ChunkManager {
     }
 
     /**
+     * 処理すべきキューがあるか判定（新しいキュー追加時はここにも追加すること）
+     */
+    _hasWorkToDo() {
+        return this.lodRebuildQueue.length > 0 ||
+               this.unloadQueue.length > 0 ||
+               this.chunkQueue.length > 0 ||
+               this.dirtyRegions.size > 0;
+    }
+
+    /**
      * 統合キュー処理（優先度順: 再生成 > アンロード > 生成）
      * 1フレームで最大 maxProcessingPerFrame 個の処理を行う
      */
     _processQueuesWithPriority() {
         if (this.isProcessingQueues) return;
-
-        const hasWork = this.lodRebuildQueue.length > 0 ||
-                       this.unloadQueue.length > 0 ||
-                       this.chunkQueue.length > 0;
-
-        if (!hasWork) return;
+        if (!this._hasWorkToDo()) return;
 
         this.isProcessingQueues = true;
 
@@ -495,16 +500,18 @@ class ChunkManager {
         // メッシュ生成
         const chunkGroup = this._buildChunkGroup(chunkData, lodLevel, neighborChunks);
 
-        // シーンに追加（リージョンメッシュがある場合は保留：揃ってから一気に切り替え）
+        // シーンに追加
         if (this.worldContainer) {
             const regionKey = this._getRegionKey(chunkX, chunkZ);
-            if (!this.regionMeshes.has(regionKey)) {
-                if (lodLevel === 0 || this._isBoundaryRegion(
-                    Math.floor(chunkX / this.regionSize),
-                    Math.floor(chunkZ / this.regionSize)
-                )) {
-                    this.worldContainer.add(chunkGroup);
-                }
+            if (this.regionMeshes.has(regionKey)) {
+                // リージョンメッシュ表示中: 個別メッシュはシーンに追加しない（二重表示防止）
+                // チャンクが揃い次第 _processRegionMerges で一括切り替え
+                this.dirtyRegions.add(regionKey);
+            } else if (lodLevel === 0 || this._isBoundaryRegion(
+                Math.floor(chunkX / this.regionSize),
+                Math.floor(chunkZ / this.regionSize)
+            )) {
+                this.worldContainer.add(chunkGroup);
             }
         }
 
@@ -523,6 +530,10 @@ class ChunkManager {
         if (lodLevel === 1) {
             this._recordTime(this.stats.lod1GenerateTimes, elapsed);
         }
+
+        // 隣接チャンクの境界面カリング更新:
+        // このチャンクが生成されたことで4方向の隣接チャンクが全て揃ったチャンクを再構築
+        this._rebuildNeighborsIfComplete(chunkX, chunkZ);
 
         // リージョン統合: LoD1チャンク生成時にdirtyマーク
         if (lodLevel === 1) {
@@ -575,7 +586,7 @@ class ChunkManager {
         const [chunkX, chunkZ] = key.split(',').map(Number);
 
         // リージョン統合: アンロード前にリージョン無効化
-        this._invalidateRegion(this._getRegionKey(chunkX, chunkZ));
+        this._unmergeRegion(this._getRegionKey(chunkX, chunkZ));
 
         // メッシュをシーンから削除
         if (this.worldContainer && chunk.mesh) {
@@ -731,7 +742,7 @@ class ChunkManager {
     rebuildAllMeshes() {
         // 全リージョンメッシュを先に無効化（強制）
         for (const regionKey of [...this.regionMeshes.keys()]) {
-            this._invalidateRegion(regionKey, true);
+            this._unmergeRegion(regionKey, true);
         }
 
         // AOフラグをビルダーに反映
@@ -752,15 +763,14 @@ class ChunkManager {
             const chunkGroup = this._buildChunkGroup(chunk.chunkData, lodLevel, neighborChunks);
 
             if (this.worldContainer) {
-                // リージョンメッシュがある場合は保留（揃ってから一気に切り替え）
                 const regionKey = this._getRegionKey(chunkX, chunkZ);
-                if (!this.regionMeshes.has(regionKey)) {
-                    if (lodLevel === 0 || this._isBoundaryRegion(
-                        Math.floor(chunkX / this.regionSize),
-                        Math.floor(chunkZ / this.regionSize)
-                    )) {
-                        this.worldContainer.add(chunkGroup);
-                    }
+                if (this.regionMeshes.has(regionKey)) {
+                    this.dirtyRegions.add(regionKey);
+                } else if (lodLevel === 0 || this._isBoundaryRegion(
+                    Math.floor(chunkX / this.regionSize),
+                    Math.floor(chunkZ / this.regionSize)
+                )) {
+                    this.worldContainer.add(chunkGroup);
                 }
             }
 
@@ -782,11 +792,65 @@ class ChunkManager {
     rebuildChunkMesh(chunkX, chunkZ) {
         const key = `${chunkX},${chunkZ}`;
         const chunk = this.chunks.get(key);
-        if (!chunk) return;
+        if (!chunk || !chunk.chunkData) return;
 
         // 現在のLoDレベルを取得
         const currentLoD = chunk.mesh ? (chunk.mesh.userData.lodLevel || 0) : 0;
         this._rebuildChunkMeshSync(chunkX, chunkZ, currentLoD);
+    }
+
+    /**
+     * ワールド座標の配列から影響チャンク（境界隣接含む）をまとめて再構築
+     * ブロック設置・破壊・移動など、チャンクデータ変更後に呼ぶ共通メソッド。
+     * 面カリング・AO・ライティングの隣接チャンク更新漏れを防ぐ。
+     * @param {Array<[number, number, number]>} worldPositions - [wx, wy, wz] の配列
+     * @param {Set<string>} [extraChunks] - ライトマップ等で既に判明している追加チャンク ("cx,cz" の Set)
+     */
+    rebuildChunksAtPositions(worldPositions, extraChunks = null) {
+        const affected = new Set();
+        for (const [wx, , wz] of worldPositions) {
+            const cx = Math.floor(wx / 16), cz = Math.floor(wz / 16);
+            affected.add(`${cx},${cz}`);
+            const lx = ((wx % 16) + 16) % 16;
+            const lz = ((wz % 16) + 16) % 16;
+            if (lx === 0)  affected.add(`${cx - 1},${cz}`);
+            if (lx === 15) affected.add(`${cx + 1},${cz}`);
+            if (lz === 0)  affected.add(`${cx},${cz - 1}`);
+            if (lz === 15) affected.add(`${cx},${cz + 1}`);
+        }
+        if (extraChunks) {
+            for (const key of extraChunks) affected.add(key);
+        }
+        for (const key of affected) {
+            const [cx, cz] = key.split(',').map(Number);
+            this.rebuildChunkMesh(cx, cz);
+        }
+    }
+
+    /**
+     * 新チャンク生成時、隣接チャンクのうち4方向全て揃ったものを再構築
+     * チャンク境界の面カリング・AO を正確にするための遅延再構築。
+     * @param {number} newCX - 新しく生成されたチャンクX
+     * @param {number} newCZ - 新しく生成されたチャンクZ
+     */
+    _rebuildNeighborsIfComplete(newCX, newCZ) {
+        const offsets = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (const [dx, dz] of offsets) {
+            const nx = newCX + dx, nz = newCZ + dz;
+            const neighborChunk = this.chunks.get(`${nx},${nz}`);
+            if (!neighborChunk || !neighborChunk.chunkData) continue;
+            // このチャンクの4方向が全て揃っているかチェック
+            let allPresent = true;
+            for (const [dx2, dz2] of offsets) {
+                if (!this.chunks.has(`${nx + dx2},${nz + dz2}`)) {
+                    allPresent = false;
+                    break;
+                }
+            }
+            if (allPresent) {
+                this.rebuildChunkMesh(nx, nz);
+            }
+        }
     }
 
     /**
@@ -884,7 +948,7 @@ class ChunkManager {
         // リージョン統合: LoD変更時の管理
         if (newLoD === 0) {
             // LoD0化 → リージョンを即座に無効化
-            this._invalidateRegion(this._getRegionKey(chunkX, chunkZ));
+            this._unmergeRegion(this._getRegionKey(chunkX, chunkZ));
         }
         // 境界状態変化の再評価のため常にdirtyマーク
         this._markRegionDirty(chunkX, chunkZ);
@@ -954,7 +1018,7 @@ class ChunkManager {
     async clearAllChunks() {
         // 全リージョンメッシュを破棄
         for (const regionKey of [...this.regionMeshes.keys()]) {
-            this._invalidateRegion(regionKey, true);
+            this._unmergeRegion(regionKey, true);
         }
         this.dirtyRegions.clear();
 
@@ -1037,11 +1101,11 @@ class ChunkManager {
     }
 
     /**
-     * 境界リージョン内のシーンに未追加のチャンクメッシュを表示
+     * リージョン内でメッシュを持つがシーン未追加のチャンクをシーンに追加
      * @param {number} rx - リージョンX座標
      * @param {number} rz - リージョンZ座標
      */
-    _ensureBoundaryChunksVisible(rx, rz) {
+    _addChunkMeshesToScene(rx, rz) {
         const minCX = rx * this.regionSize;
         const minCZ = rz * this.regionSize;
         for (let cx = minCX; cx < minCX + this.regionSize; cx++) {
@@ -1056,14 +1120,17 @@ class ChunkManager {
     }
 
     /**
-     * リージョン内の描画範囲内チャンクが全て個別メッシュを持っているか判定
+     * リージョン統合メッシュを分解（unmerge）できるか判定
+     * LoD0範囲: 個別メッシュ必須（分解後に表示するため）
+     * LoD1範囲: チャンクが存在すればOK（cached状態でも再生成キューで回復可能）
      */
-    _areRegionChunksInRangeReady(rx, rz) {
+    _canUnmergeRegion(rx, rz) {
         const minCX = rx * this.regionSize;
         const minCZ = rz * this.regionSize;
         const centerCX = this.lastChunkX;
         const centerCZ = this.lastChunkZ;
         const range = this.chunkRange;
+        const lod0Range = this.lod0Range;
 
         for (let cx = minCX; cx < minCX + this.regionSize; cx++) {
             for (let cz = minCZ; cz < minCZ + this.regionSize; cz++) {
@@ -1073,9 +1140,17 @@ class ChunkManager {
                 }
                 const key = `${cx},${cz}`;
                 const chunk = this.chunks.get(key);
-                // チャンクが未ロードまたは個別メッシュがない場合は未完了
-                if (!chunk || !chunk.mesh) {
-                    return false;
+                const dist = Math.max(Math.abs(cx - centerCX), Math.abs(cz - centerCZ));
+                if (dist <= lod0Range) {
+                    // LoD0範囲: 個別メッシュが必須
+                    if (!chunk || !chunk.mesh) {
+                        return false;
+                    }
+                } else {
+                    // LoD1範囲: 存在すればOK（cached状態でもリージョンメッシュでカバー）
+                    if (!chunk) {
+                        return false;
+                    }
                 }
             }
         }
@@ -1083,11 +1158,13 @@ class ChunkManager {
     }
 
     /**
-     * リージョン統合メッシュを無効化（即座に実行）
-     * 統合メッシュを削除し、個別チャンクメッシュを再表示する
+     * リージョン統合メッシュを分解し、個別チャンクメッシュに戻す
+     * force=false: _canUnmergeRegion()で安全確認後に実行（穴防止）
+     * force=true: 即座に分解（rebuildAllMeshes, clearAllChunks等）
      * @param {string} regionKey - "rx,rz"
+     * @param {boolean} force - trueで安全確認をスキップ
      */
-    _invalidateRegion(regionKey, force = false) {
+    _unmergeRegion(regionKey, force = false) {
         const regionData = this.regionMeshes.get(regionKey);
         if (!regionData) return;
 
@@ -1095,7 +1172,7 @@ class ChunkManager {
         // force=trueの場合は強制無効化（rebuildAllMeshes, clearAllChunks等）
         if (!force) {
             const [rx, rz] = regionKey.split(',').map(Number);
-            if (!this._areRegionChunksInRangeReady(rx, rz)) {
+            if (!this._canUnmergeRegion(rx, rz)) {
                 this.dirtyRegions.add(regionKey);
                 return;
             }
@@ -1123,12 +1200,13 @@ class ChunkManager {
     }
 
     /**
-     * リージョンが統合可能か判定
+     * リージョン内のLoD1チャンクを統合メッシュにまとめられるか判定
+     * 全チャンクがLoD1メッシュを持ち、2個以上ある場合にready=true
      * @param {number} rx - リージョンX座標
      * @param {number} rz - リージョンZ座標
      * @returns {{ ready: boolean, chunkEntries: Array }} 統合可能ならready=true、対象チャンクリスト付き
      */
-    _isRegionReadyToMerge(rx, rz) {
+    _canMergeRegion(rx, rz) {
         const minCX = rx * this.regionSize;
         const minCZ = rz * this.regionSize;
         const result = { ready: false, chunkEntries: [] };
@@ -1418,7 +1496,7 @@ class ChunkManager {
             if (!cacheData) {
                 console.warn(`[RegionCache] キャッシュデータなし: ${regionKey}`);
                 this.cachedRegionKeys.delete(regionKey);
-                this._invalidateCachedChunks(regionKey);
+                this._clearCachedChunksForRegeneration(regionKey);
                 return;
             }
 
@@ -1426,7 +1504,7 @@ class ChunkManager {
             if (cacheData.configHash !== this.getConfigHash()) {
                 console.warn(`[RegionCache] configHash不一致: ${regionKey}`);
                 this.cachedRegionKeys.delete(regionKey);
-                this._invalidateCachedChunks(regionKey);
+                this._clearCachedChunksForRegeneration(regionKey);
                 return;
             }
 
@@ -1485,7 +1563,11 @@ class ChunkManager {
                             this.chunks.delete(key);
                         }
                     } else if (chunk.mesh) {
-                        // 生成済み個別チャンク: メッシュ除去してcached状態に
+                        // 生成済みLoD0チャンクはリージョンメッシュに統合しない
+                        if (chunk.mesh.userData.lodLevel === 0) {
+                            continue;
+                        }
+                        // LoD1個別チャンク: メッシュ除去してcached状態に
                         this.worldContainer.remove(chunk.mesh);
                         this._disposeObject(chunk.mesh);
                         this.chunks.set(key, { chunkData: null, mesh: null, state: 'cached' });
@@ -1499,17 +1581,18 @@ class ChunkManager {
         } catch (e) {
             console.error(`[RegionCache] 復元失敗: ${regionKey}`, e);
             this.cachedRegionKeys.delete(regionKey);
-            this._invalidateCachedChunks(regionKey);
+            this._clearCachedChunksForRegeneration(regionKey);
         } finally {
             this._restoringRegions.delete(regionKey);
         }
     }
 
     /**
-     * cached状態のチャンクを削除してキューに再追加可能にする
+     * リージョン内のcachedチャンクを削除し、通常の生成キューに再投入可能にする
+     * キャッシュ復元失敗時やcached→LoD0変換時に使用
      * @param {string} regionKey - "rx,rz"
      */
-    _invalidateCachedChunks(regionKey) {
+    _clearCachedChunksForRegeneration(regionKey) {
         const [rx, rz] = regionKey.split(',').map(Number);
         const minCX = rx * this.regionSize;
         const maxCX = minCX + this.regionSize - 1;
@@ -1527,9 +1610,17 @@ class ChunkManager {
     }
 
     /**
-     * dirtyリージョンを処理
-     * 境界リージョン: 全て即座に処理（個別メッシュの表示のみ、軽量）
-     * 非境界リージョン: 1フレーム1個まで統合処理
+     * dirtyリージョンを処理（merge/unmerge両方を扱う）
+     *
+     * 境界リージョン（LoD0範囲と重なる）:
+     *   - メッシュあり & unmerge可能 → 分解して個別チャンク表示
+     *   - メッシュあり & unmerge不可 → 次フレームで再チェック
+     *   - メッシュなし → 個別チャンクをシーンに追加
+     *
+     * 非境界リージョン（1フレーム1個まで）:
+     *   - メッシュあり → unmerge試行（失敗なら待機）
+     *   - メッシュなし & merge可能 → 統合メッシュ作成
+     *   - メッシュなし & merge不可 → 次フレームで再チェック（範囲外なら破棄）
      */
     _processRegionMerges() {
         if (this.dirtyRegions.size === 0) return;
@@ -1545,9 +1636,9 @@ class ChunkManager {
                 // 境界リージョン: 全チャンクが揃ってから一気に切り替え
                 if (this.regionMeshes.has(regionKey)) {
                     // リージョンメッシュあり: 全チャンクが個別メッシュを持つまで保持
-                    if (this._areRegionChunksInRangeReady(rx, rz)) {
-                        this._invalidateRegion(regionKey, true);
-                        this._ensureBoundaryChunksVisible(rx, rz);
+                    if (this._canUnmergeRegion(rx, rz)) {
+                        this._unmergeRegion(regionKey, true);
+                        this._addChunkMeshesToScene(rx, rz);
                         processed.push(regionKey);
                     } else {
                         // まだ揃っていない → 次フレームで再チェック
@@ -1556,13 +1647,13 @@ class ChunkManager {
                     }
                 } else {
                     // リージョンメッシュなし: 個別メッシュを表示
-                    this._ensureBoundaryChunksVisible(rx, rz);
+                    this._addChunkMeshesToScene(rx, rz);
                     processed.push(regionKey);
                 }
             } else if (!mergedNonBoundary) {
                 // 非境界リージョン: 1フレーム1個まで統合処理
                 if (this.regionMeshes.has(regionKey)) {
-                    this._invalidateRegion(regionKey);
+                    this._unmergeRegion(regionKey);
                     // ガードでブロックされた場合（チャンク未完了）→ リージョンメッシュ保持して待機
                     if (this.regionMeshes.has(regionKey)) {
                         requeue.push(regionKey);
@@ -1571,12 +1662,14 @@ class ChunkManager {
                         continue;
                     }
                 }
-                const { ready, chunkEntries } = this._isRegionReadyToMerge(rx, rz);
+                const { ready, chunkEntries } = this._canMergeRegion(rx, rz);
                 if (ready) {
                     this._mergeRegion(regionKey, chunkEntries);
                 }
                 processed.push(regionKey);
-                if (!ready) {
+                if (!ready && chunkEntries.length > 0) {
+                    // チャンクはあるが未完成 → 次フレームで再チェック
+                    // チャンク0個（全て範囲外）の場合は再キューしない
                     requeue.push(regionKey);
                 }
                 mergedNonBoundary = true;
