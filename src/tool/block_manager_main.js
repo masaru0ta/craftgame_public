@@ -156,7 +156,8 @@ function cacheElements() {
   elements.newItemModal = document.getElementById('new-item-modal');
   elements.createItemError = document.getElementById('createItemError');
   elements.createItemSubmit = document.getElementById('createItemSubmit');
-  elements.itemPreview = document.getElementById('item-preview');
+  elements.itemPreview3d = document.getElementById('item-preview-3d');
+  elements.itemPreviewTexture = document.getElementById('item-preview-texture');
 
   // データ選択画面
   elements.dataFileList = document.getElementById('dataFileList');
@@ -1491,7 +1492,57 @@ function createItemTile(item) {
   `;
 
   tile.addEventListener('click', () => selectItem(item.item_str_id));
+
+  // サムネイルアイコンを非同期生成
+  generateItemThumbnail(tile, item);
+
   return tile;
+}
+
+/**
+ * アイテムタイルにサムネイルアイコンを生成
+ */
+async function generateItemThumbnail(tile, item) {
+  const tileImg = tile.querySelector('.tile-img');
+  if (!tileImg) return;
+
+  let dataUrl = null;
+  const sourceType = item.source_type || 'block';
+
+  try {
+    if (sourceType === 'block' && item.source_block_str_id) {
+      const block = state.blocks.find(b => b.block_str_id === item.source_block_str_id);
+      if (block && state.thumbnailGenerator) {
+        // キャッシュ利用
+        if (state.thumbnailCache[block.block_id]) {
+          dataUrl = state.thumbnailCache[block.block_id];
+        } else {
+          dataUrl = await state.thumbnailGenerator.generate(block, state.textures);
+          state.thumbnailCache[block.block_id] = dataUrl;
+        }
+      }
+    } else if (sourceType === 'structure' && item.source_structure_str_id) {
+      const struct = state.structures.find(s => s.structure_str_id === item.source_structure_str_id);
+      if (struct && struct.voxel_data && struct.palette) {
+        dataUrl = await generateStructureThumbnail(struct);
+      }
+    } else if (sourceType === 'texture' && item.source_texture_id) {
+      const tex = state.textures.find(t => t.file_name === item.source_texture_id);
+      if (tex && tex.image_base64) {
+        dataUrl = tex.image_base64;
+      }
+    }
+  } catch (e) {
+    console.error('アイテムサムネイル生成エラー:', e);
+  }
+
+  if (dataUrl) {
+    tileImg.style.background = '';
+    tileImg.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    tileImg.appendChild(img);
+  }
 }
 
 /**
@@ -1541,70 +1592,238 @@ function selectItem(itemStrId) {
  * アイテムプレビューを更新
  */
 async function updateItemPreview(item) {
-  const container = elements.itemPreview;
-  if (!container) return;
-  container.innerHTML = '';
+  const container3d = elements.itemPreview3d;
+  const containerTex = elements.itemPreviewTexture;
+  if (!container3d) return;
 
   const sourceType = item.source_type || 'block';
 
-  if (sourceType === 'block' && item.source_block_str_id) {
-    // ブロックの3Dサムネイルを生成
-    const block = state.blocks.find(b => b.block_str_id === item.source_block_str_id);
-    if (block && state.thumbnailGenerator) {
-      try {
-        const dataUrl = await state.thumbnailGenerator.generate(block, state.textures);
-        const img = document.createElement('img');
-        img.src = dataUrl;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'contain';
-        img.style.imageRendering = 'pixelated';
-        container.appendChild(img);
-      } catch (e) {
-        container.innerHTML = '<div style="color:#999;font-size:12px;">プレビュー生成エラー</div>';
-      }
-    }
-  } else if (sourceType === 'texture' && item.source_texture_id) {
-    // テクスチャ画像を表示
+  // テクスチャプレビューの場合
+  if (sourceType === 'texture') {
+    disposeItemPreview3d();
+    container3d.style.display = 'none';
+    containerTex.style.display = '';
+    containerTex.innerHTML = '';
     const tex = state.textures.find(t => t.file_name === item.source_texture_id);
     if (tex && tex.image_base64) {
       const img = document.createElement('img');
       img.src = tex.image_base64;
-      img.style.width = '100%';
-      img.style.height = '100%';
-      img.style.objectFit = 'contain';
-      img.style.imageRendering = 'pixelated';
-      container.appendChild(img);
+      img.style.cssText = 'width:100%;height:100%;object-fit:contain;image-rendering:pixelated;';
+      containerTex.appendChild(img);
     } else {
-      container.innerHTML = '<div style="color:#999;font-size:12px;">テクスチャ未設定</div>';
+      containerTex.innerHTML = '<div style="color:#999;font-size:12px;padding:16px;">テクスチャ未設定</div>';
+    }
+    return;
+  }
+
+  // 3Dプレビュー（ブロック/構造物）
+  container3d.style.display = '';
+  containerTex.style.display = 'none';
+  await setupItemPreview3d(item);
+}
+
+// ========================================
+// インタラクティブ3Dプレビュー
+// ========================================
+
+/** アイテム3Dプレビュー用の状態 */
+const itemPreview3dState = {
+  scene: null,
+  camera: null,
+  renderer: null,
+  group: null,
+  animId: null,
+  hAngle: 210,
+  vAngle: 20,
+  distance: 2.5,
+  lookAtY: 0.5,
+  isDragging: false,
+  lastX: 0,
+  lastY: 0,
+};
+
+/**
+ * アイテム3Dプレビューを破棄
+ */
+function disposeItemPreview3d() {
+  const s = itemPreview3dState;
+  if (s.animId) {
+    cancelAnimationFrame(s.animId);
+    s.animId = null;
+  }
+  if (s.group) {
+    s.group.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+        } else {
+          if (child.material.map) child.material.map.dispose();
+          child.material.dispose();
+        }
+      }
+    });
+    s.group = null;
+  }
+  if (s.renderer) {
+    s.renderer.dispose();
+    s.renderer = null;
+  }
+  s.scene = null;
+  s.camera = null;
+}
+
+/**
+ * アイテム3Dプレビューをセットアップ
+ */
+async function setupItemPreview3d(item) {
+  disposeItemPreview3d();
+  const container = elements.itemPreview3d;
+  if (!container) return;
+  container.innerHTML = '';
+
+  const s = itemPreview3dState;
+  const width = container.clientWidth || 200;
+  const height = container.clientHeight || 200;
+
+  // シーン
+  s.scene = new THREE.Scene();
+  s.scene.background = new THREE.Color('#1a237e');
+
+  // カメラ
+  s.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+
+  // レンダラー
+  s.renderer = new THREE.WebGLRenderer({ antialias: true });
+  s.renderer.setSize(width, height);
+  s.renderer.setPixelRatio(window.devicePixelRatio);
+  container.appendChild(s.renderer.domElement);
+
+  // テクスチャを事前ロード
+  const gen = state.thumbnailGenerator;
+  const textureCache = {};
+  if (gen) {
+    const promises = state.textures.map(async tex => {
+      if (tex.file_name && tex.image_base64) {
+        textureCache[tex.file_name] = await gen._loadTextureAsync(tex.image_base64);
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  // メッシュ構築
+  s.group = new THREE.Group();
+  const sourceType = item.source_type || 'block';
+
+  if (sourceType === 'block' && item.source_block_str_id) {
+    const block = state.blocks.find(b => b.block_str_id === item.source_block_str_id);
+    if (block) {
+      const mesh = createBlockCube(block, textureCache);
+      mesh.position.set(0, 0.5, 0);
+      s.group.add(mesh);
+      s.distance = 2.2;
+      s.lookAtY = 0.5;
     }
   } else if (sourceType === 'structure' && item.source_structure_str_id) {
-    // 構造物の3Dプレビュー
-    const struct = state.structures.find(s => s.structure_str_id === item.source_structure_str_id);
+    const struct = state.structures.find(st => st.structure_str_id === item.source_structure_str_id);
     if (struct && struct.voxel_data && struct.palette) {
-      try {
-        const dataUrl = await generateStructureThumbnail(struct);
-        if (dataUrl) {
-          const img = document.createElement('img');
-          img.src = dataUrl;
-          img.style.width = '100%';
-          img.style.height = '100%';
-          img.style.objectFit = 'contain';
-          img.style.imageRendering = 'pixelated';
-          container.appendChild(img);
-        } else {
-          container.innerHTML = '<div style="color:#999;font-size:12px;">構造物プレビュー生成エラー</div>';
-        }
-      } catch (e) {
-        console.error('構造物プレビュー生成エラー:', e);
-        container.innerHTML = '<div style="color:#999;font-size:12px;">構造物プレビュー生成エラー</div>';
-      }
-    } else if (struct) {
-      container.innerHTML = `<div style="color:#999;font-size:12px;">${struct.name || struct.structure_str_id}（ボクセルデータなし）</div>`;
-    } else {
-      container.innerHTML = '<div style="color:#999;font-size:12px;">構造物が見つかりません</div>';
+      const paletteObj = typeof struct.palette === 'string' ? JSON.parse(struct.palette) : struct.palette;
+      const paletteBlocks = paletteObj.blocks || paletteObj;
+      const sizeX = Number(struct.size_x) || 1;
+      const sizeY = Number(struct.size_y) || 1;
+      const sizeZ = Number(struct.size_z) || 1;
+      const sd = StructureData.decode(struct.voxel_data, struct.orientation_data || '', paletteBlocks, sizeX, sizeY, sizeZ);
+      const centerX = sizeX / 2;
+      const centerZ = sizeZ / 2;
+      sd.forEachBlock((x, y, z, blockStrId) => {
+        const block = state.blocks.find(b => b.block_str_id === blockStrId);
+        if (!block) return;
+        const mesh = createBlockCube(block, textureCache);
+        mesh.position.set(x - centerX + 0.5, y + 0.5, z - centerZ + 0.5);
+        s.group.add(mesh);
+      });
+      s.distance = Math.max(sizeX, sizeY, sizeZ) * 1.6;
+      s.lookAtY = sizeY / 2;
     }
   }
+
+  s.scene.add(s.group);
+  s.hAngle = 210;
+  s.vAngle = 20;
+  updateItemPreviewCamera();
+
+  // レンダリングループ
+  function render() {
+    if (!s.renderer) return;
+    s.renderer.render(s.scene, s.camera);
+    s.animId = requestAnimationFrame(render);
+  }
+  render();
+
+  // マウスドラッグで回転
+  const canvas = s.renderer.domElement;
+  canvas.addEventListener('mousedown', (e) => {
+    s.isDragging = true;
+    s.lastX = e.clientX;
+    s.lastY = e.clientY;
+    canvas.style.cursor = 'grabbing';
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    if (!s.isDragging) return;
+    const dx = e.clientX - s.lastX;
+    const dy = e.clientY - s.lastY;
+    s.hAngle += dx * 0.5;
+    s.vAngle = Math.max(-60, Math.min(60, s.vAngle + dy * 0.3));
+    s.lastX = e.clientX;
+    s.lastY = e.clientY;
+    updateItemPreviewCamera();
+  });
+  canvas.addEventListener('mouseup', () => { s.isDragging = false; canvas.style.cursor = 'grab'; });
+  canvas.addEventListener('mouseleave', () => { s.isDragging = false; canvas.style.cursor = 'grab'; });
+  // ホイールでズーム
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    s.distance = Math.max(1.5, Math.min(20, s.distance + e.deltaY * 0.005));
+    updateItemPreviewCamera();
+  });
+}
+
+/**
+ * アイテム3Dプレビューのカメラ位置を更新
+ */
+function updateItemPreviewCamera() {
+  const s = itemPreview3dState;
+  if (!s.camera) return;
+  const hRad = THREE.MathUtils.degToRad(s.hAngle);
+  const vRad = THREE.MathUtils.degToRad(s.vAngle);
+  s.camera.position.set(
+    s.distance * Math.cos(vRad) * Math.sin(hRad),
+    s.distance * Math.sin(vRad) + s.lookAtY,
+    s.distance * Math.cos(vRad) * Math.cos(hRad)
+  );
+  s.camera.lookAt(0, s.lookAtY, 0);
+}
+
+/**
+ * ブロックデータから面テクスチャ付きキューブメッシュを生成
+ */
+function createBlockCube(blockData, textureCache) {
+  const texNames = {};
+  const slots = ['default', 'front', 'top', 'bottom', 'left', 'right', 'back'];
+  for (const slot of slots) {
+    const key = slot === 'default' ? 'tex_default' : `tex_${slot}`;
+    if (blockData[key]) texNames[slot] = blockData[key];
+  }
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const faceOrder = ['right', 'left', 'top', 'bottom', 'front', 'back'];
+  const materials = faceOrder.map(face => {
+    const texName = texNames[face] || texNames.default;
+    if (texName && textureCache[texName]) {
+      return new THREE.MeshBasicMaterial({ map: textureCache[texName].clone() });
+    }
+    return new THREE.MeshBasicMaterial({ color: 0x808080 });
+  });
+  return new THREE.Mesh(geometry, materials);
 }
 
 /**
