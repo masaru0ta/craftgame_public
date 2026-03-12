@@ -347,7 +347,9 @@ class BlockOrientation {
      */
     static RotationFromYaw(playerYaw, topDir) {
         const camDirX = -Math.sin(playerYaw);
-        const camDirZ = Math.cos(playerYaw);
+        // topDir=1（下面設置）: Rx(π)はZのみ反転しXは不変
+        // カメラZ方向を事前反転することで正しいrotationを得る
+        const camDirZ = topDir === 1 ? -Math.cos(playerYaw) : Math.cos(playerYaw);
         const angle = Math.atan2(camDirX, camDirZ) * 180 / Math.PI;
 
         let rotation;
@@ -355,12 +357,6 @@ class BlockOrientation {
         else if (angle >= 45 && angle < 135) rotation = 1;
         else if (angle >= -135 && angle < -45) rotation = 3;
         else rotation = 2;
-
-        // topDir=0（上面設置）: base rotationがそのまま正しい方向
-        // topDir=1（下面設置）: Rx(π)でZ反転 → front=Z-がZ+になるため、+2で補正
-        if (topDir === 1) {
-            rotation = (rotation + 2) % 4;
-        }
 
         return rotation;
     }

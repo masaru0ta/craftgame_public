@@ -229,11 +229,10 @@ class GameTestApp {
             b => b.block_str_id !== 'air'
         );
 
-        // ハーフ/階段ブロック設置を許可するブロックにフラグを付与（テスト用）
+        // ハーフブロック設置を許可するブロックにフラグを付与（テスト用）
         const stoneBlock = placeableBlocks.find(b => b.block_str_id === 'stone');
         if (stoneBlock) {
             stoneBlock.half_placeable = true;
-            stoneBlock.stair_placeable = true;
         }
 
         const hotbarContainer = document.getElementById('hotbar-container');
