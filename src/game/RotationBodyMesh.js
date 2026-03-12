@@ -60,12 +60,19 @@ class BlockGroupMesh {
                 continue;
             }
 
-            // ハーフブロック: orientation 101-106 → ボクセルパイプライン
-            if (blockDef && blockDef.half_placeable && b.orientation >= 101 && b.orientation <= 106) {
-                // halfOri(1-6) → topDir(0-5) → orient(topDir*4)
-                const topDir = b.orientation - 101;
+            // ハーフブロック
+            if (b.shape === 'half') {
+                const topDir = Math.floor((b.orientation || 0) / 4);
                 vertexOffset = this._buildHalfBlockVoxels(
-                    b.blockId, b.rx, b.ry, b.rz, topDir * 4, blockSet, out, vertexOffset
+                    b.blockId, b.rx, b.ry, b.rz, topDir * 4, blockSet, out, vertexOffset, 'half'
+                );
+                continue;
+            }
+
+            // 階段ブロック
+            if (b.shape === 'stair') {
+                vertexOffset = this._buildHalfBlockVoxels(
+                    b.blockId, b.rx, b.ry, b.rz, b.orientation || 0, blockSet, out, vertexOffset, 'stair'
                 );
                 continue;
             }
@@ -165,10 +172,10 @@ class BlockGroupMesh {
     }
 
     /**
-     * ハーフブロックのボクセルメッシュ生成（カスタムブロックと同じパイプライン）
+     * ハーフ/階段ブロックのボクセルメッシュ生成（カスタムブロックと同じパイプライン）
      */
-    _buildHalfBlockVoxels(blockId, rx, ry, rz, orientation, blockSet, out, vertexOffset) {
-        const voxelData = BlockMeshGeometry.GetHalfVoxelData();
+    _buildHalfBlockVoxels(blockId, rx, ry, rz, orientation, blockSet, out, vertexOffset, shape = 'half') {
+        const voxelData = shape === 'stair' ? BlockMeshGeometry.GetStairVoxelData() : BlockMeshGeometry.GetHalfVoxelData();
         const gs = 8;
         const blockBase = [rx - 0.5, ry - 0.5, rz - 0.5];
         const startVertexCount = out.positions.length / 3;

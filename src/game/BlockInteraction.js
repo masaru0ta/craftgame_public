@@ -8,7 +8,7 @@ class BlockInteraction {
     /** 横4方向 + 真上の隣接オフセット（水フロー・decay スケジュール用） */
     static _ADJACENT_5 = [[1,0,0],[-1,0,0],[0,0,1],[0,0,-1],[0,1,0]];
 
-    /** face 文字列 → topDir 数値マップ（BlockOrientation に委譲） */
+    /** @deprecated BlockOrientation.FaceToTopDir を直接使用 */
     static _FACE_TO_INT = BlockOrientation.FaceToTopDir;
 
     /** topDir → 面名（BlockOrientation に委譲） */
@@ -1053,28 +1053,6 @@ class BlockInteraction {
         return BlockOrientation.Encode(topDir, rotation);
     }
 
-    /** プレイヤーのyawからrotation(0〜3)を算出（BlockOrientation に委譲） */
-    _rotationFromYaw(playerYaw, topDir) {
-        return BlockOrientation.RotationFromYaw(playerYaw, topDir);
-    }
-
-    /**
-     * カスタムブロックの設置方向（orientation）を計算（後方互換用）
-     * _calculateBlockOrientation に統一されたが、外部参照があるため残す
-     */
-    _calculateOrientation(target, playerYaw) {
-        const face = BlockOrientation.FaceToTopDir[target.face] || 0;
-        if (face >= 2) {
-            return BlockOrientation.Encode(face, BlockOrientation.SideRotationFromHit(face, target));
-        }
-        return BlockOrientation.Encode(face, BlockOrientation.RotationFromYaw(playerYaw, face));
-    }
-
-    /** 側面のヒット位置から rotation を決定（BlockOrientation に委譲） */
-    static _sideRotationFromHit(face, target) {
-        return BlockOrientation.SideRotationFromHit(face, target);
-    }
-
     /**
      * 回転軸ブロック / 設置方向可変ブロックの orientation を決定する
      * @param {string} face - クリック面
@@ -1092,7 +1070,7 @@ class BlockInteraction {
      * @returns {number} topDir * 4（0, 4, 8, 12, 16, 20）
      */
     _calculateHalfOrientation(face) {
-        const topDir = BlockInteraction._FACE_TO_INT[face] || 0;
+        const topDir = BlockOrientation.FaceToTopDir[face] || 0;
         return topDir * 4;
     }
 
@@ -1118,7 +1096,7 @@ class BlockInteraction {
      * @returns {number} topDir * 4 + rotation (0〜23)
      */
     _calculateStairOrientation(face, playerYaw) {
-        const topDir = BlockInteraction._FACE_TO_INT[face] || 0;
+        const topDir = BlockOrientation.FaceToTopDir[face] || 0;
         const rotation = BlockOrientation.RotationFromYaw(playerYaw, topDir);
         return BlockOrientation.Encode(topDir, rotation);
     }

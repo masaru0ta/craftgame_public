@@ -477,8 +477,15 @@ class RotationAxisManager {
     _calcRestoredOrientation(blockData, front, steps) {
         const ori = blockData.orientation || 0;
         if (steps === 0 || blockData.orientation === undefined) return ori;
-        // ハーフブロック
-        if (ori >= 101 && ori <= 106) return this._rotateHalfOrientation(ori, front, steps);
+        const shape = blockData.shape || 'normal';
+
+        // ハーフブロック: topDirのみ回転（rotation成分を捨てる）
+        if (shape === 'half') {
+            const rotated = this._rotateOrientation(ori, front, steps);
+            return BlockOrientation.GetTopDir(rotated) * 4;
+        }
+        // 階段ブロック: topDir + rotation をフル回転
+        if (shape === 'stair') return this._rotateOrientation(ori, front, steps);
         // カスタム・rotatable・sidePlaceableブロック
         const blockDef = this._textureLoader ? this._textureLoader.getBlockDef(blockData.blockId) : null;
         if (blockDef && (blockDef.shape_type === 'custom' || blockDef.rotatable || blockDef.sidePlaceable)) {
@@ -504,7 +511,7 @@ class RotationAxisManager {
         for (const b of body._blocks) {
             const restored = this._rotate90(b.rx, b.ry, b.rz, front, steps);
             const bx = wx + restored.x, by = wy + restored.y, bz = wz + restored.z;
-            this._setBlockAt(bx, by, bz, b.blockId, this._calcRestoredOrientation(b, front, steps));
+            this._setBlockAt(bx, by, bz, b.blockId, this._calcRestoredOrientation(b, front, steps), b.shape || 'normal');
             this._updateLight(bx, by, bz, false);
             restoredBlocks.push({ rx: restored.x, ry: restored.y, rz: restored.z });
         }
@@ -763,12 +770,14 @@ class RotationAxisManager {
             if (!blockId || blockId === 'air' || RotationAxisManager._NON_ROTATABLE.has(blockId)) continue;
 
             const orientation = this._getOrientation(cx, cy, cz) || 0;
+            const shape = this._getShape(cx, cy, cz);
             blocks.push({
                 rx: cx - axisX,
                 ry: cy - axisY,
                 rz: cz - axisZ,
                 blockId,
-                orientation
+                orientation,
+                shape
             });
 
             for (const [dx, dy, dz] of RotationAxisManager._DIRS_6) {
@@ -829,7 +838,8 @@ class RotationAxisManager {
                 ry: cy - axisY,
                 rz: cz - axisZ,
                 blockId,
-                orientation: parentBlock.orientation || 0
+                orientation: parentBlock.orientation || 0,
+                shape: parentBlock.shape || 'normal'
             });
 
             for (const [dx, dy, dz] of RotationAxisManager._DIRS_6) {
@@ -946,69 +956,6 @@ class RotationAxisManager {
         return result >= 0 ? result : orientation;
     }
 
-    // ハーフブロック orientation (1-6) の方向ベクトル
-    // 1:下(Y-), 2:上(Y+), 3:南(-Z), 4:北(+Z), 5:西(-X), 6:東(+X)
-    static _HALF_ORI_DIRS = [
-        null,
-        [0, -1, 0],  // 1: 下
-        [0, 1, 0],   // 2: 上
-        [0, 0, -1],  // 3: 南(-Z)
-        [0, 0, 1],   // 4: 北(+Z)
-        [-1, 0, 0],  // 5: 西(-X)
-        [1, 0, 0],   // 6: 東(+X)
-    ];
-
-    /**
-     * ハーフブロックの orientation (101-106) を回転に応じて変換
-     */
-    _rotateHalfOrientation(orientation, front, steps) {
-        const halfOri = orientation - 100; // 1-6
-        const dir = RotationAxisManager._HALF_ORI_DIRS[halfOri];
-        if (!dir) return orientation;
-
-        // 方向ベクトルを90°×stepsで回転
-        const bodyM = this._buildBodyRotationMatrix(front, steps);
-        const rx = Math.round(bodyM[0] * dir[0] + bodyM[1] * dir[1] + bodyM[2] * dir[2]);
-        const ry = Math.round(bodyM[3] * dir[0] + bodyM[4] * dir[1] + bodyM[5] * dir[2]);
-        const rz = Math.round(bodyM[6] * dir[0] + bodyM[7] * dir[1] + bodyM[8] * dir[2]);
-
-        // 回転後の方向ベクトルから orientation を逆引き
-        for (let i = 1; i <= 6; i++) {
-            const d = RotationAxisManager._HALF_ORI_DIRS[i];
-            if (d[0] === rx && d[1] === ry && d[2] === rz) return 100 + i;
-        }
-        return orientation;
-    }
-
-    // orientable標準ブロックの方向ベクトル（orientation 0-5）
-    // 0:+Y, 1:-Y, 2:+Z, 3:-Z, 4:+X, 5:-X
-    static _ORIENTABLE_DIRS = [
-        [0, 1, 0],   // 0: +Y（上）
-        [0, -1, 0],  // 1: -Y（下）
-        [0, 0, 1],   // 2: +Z（北）
-        [0, 0, -1],  // 3: -Z（南）
-        [1, 0, 0],   // 4: +X（東）
-        [-1, 0, 0],  // 5: -X（西）
-    ];
-
-    /**
-     * orientable標準ブロックの orientation (0-5) を回転に応じて変換
-     */
-    _rotateOrientableOrientation(orientation, front, steps) {
-        const dir = RotationAxisManager._ORIENTABLE_DIRS[orientation];
-        if (!dir) return orientation;
-
-        const bodyM = this._buildBodyRotationMatrix(front, steps);
-        const rx = Math.round(bodyM[0] * dir[0] + bodyM[1] * dir[1] + bodyM[2] * dir[2]);
-        const ry = Math.round(bodyM[3] * dir[0] + bodyM[4] * dir[1] + bodyM[5] * dir[2]);
-        const rz = Math.round(bodyM[6] * dir[0] + bodyM[7] * dir[1] + bodyM[8] * dir[2]);
-
-        for (let i = 0; i <= 5; i++) {
-            const d = RotationAxisManager._ORIENTABLE_DIRS[i];
-            if (d[0] === rx && d[1] === ry && d[2] === rz) return i;
-        }
-        return orientation;
-    }
 
     /**
      * 回転体の回転（front方向×steps）を3x3行列として構築
@@ -1046,9 +993,16 @@ class RotationAxisManager {
         return r ? r.cd.getOrientation(r.lx, r.ly, r.lz) : null;
     }
 
-    _setBlockAt(wx, wy, wz, blockId, orientation = 0) {
+    _getShape(wx, wy, wz) {
         const r = this._resolve(wx, wy, wz);
-        if (r) r.cd.setBlock(r.lx, r.ly, r.lz, blockId, orientation);
+        return r ? r.cd.getShape(r.lx, r.ly, r.lz) : 'normal';
+    }
+
+    _setBlockAt(wx, wy, wz, blockId, orientation = 0, shape = 'normal') {
+        const r = this._resolve(wx, wy, wz);
+        if (!r) return;
+        r.cd.setBlock(r.lx, r.ly, r.lz, blockId, orientation);
+        r.cd.setShape(r.lx, r.ly, r.lz, shape);
     }
 
     /**
