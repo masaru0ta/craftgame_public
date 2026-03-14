@@ -855,9 +855,8 @@ class GameTestApp {
             camera: this.camera,
             canvas: document.getElementById('game-canvas'),
             onToggleInventory: () => this._toggleInventory(),
-            onToggleViewpoint: () => {
-                if (this.viewpointManager) this.viewpointManager.toggleMode();
-            },
+            viewpointManager: this.viewpointManager,
+            thirdPersonCamera: this.thirdPersonCamera,
         });
         this.touchController.enable();
 

@@ -5,7 +5,7 @@
  */
 class ThirdPersonCamera {
     // 距離の範囲
-    static MIN_DISTANCE = 1.5;
+    static MIN_DISTANCE = 3.0;
     static MAX_DISTANCE = 30.0;
 
     // 仰角の範囲

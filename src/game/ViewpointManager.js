@@ -36,6 +36,20 @@ class ViewpointManager {
     }
 
     /**
+     * 指定モードに切り替え
+     * @param {string} mode - 'first_person' または 'third_person'
+     */
+    setMode(mode) {
+        if (mode === this._mode) return;
+        this._mode = mode;
+        if (mode === ViewpointManager.MODE_THIRD_PERSON) {
+            this._characterRenderer.setVisible(true);
+        } else {
+            this._characterRenderer.setVisible(false);
+        }
+    }
+
+    /**
      * @returns {string} 現在のモード文字列
      */
     getMode() {

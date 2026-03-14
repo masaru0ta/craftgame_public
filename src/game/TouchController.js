@@ -15,6 +15,8 @@ class TouchController {
     static ACTION_LONG_PRESS_MS = 400;
     static ACTION_DRAG_THRESHOLD = 10;
     static PITCH_LIMIT = Math.PI / 2 * 0.99;
+    static PINCH_SENSITIVITY = 0.05;
+    static VIEWPOINT_SWITCH_THRESHOLD = 3.0;
 
     /**
      * @param {Object} options
@@ -23,7 +25,8 @@ class TouchController {
      * @param {Object} options.blockInteraction - ブロック操作
      * @param {HTMLElement} options.container - タッチUIコンテナ（#touch-controls）
      * @param {Function} options.onToggleInventory - インベントリ開閉コールバック
-     * @param {Function} options.onToggleViewpoint - 視点切替コールバック
+     * @param {Object} options.viewpointManager - 視点マネージャー
+     * @param {Object} options.thirdPersonCamera - 3人称カメラ
      * @param {THREE.Camera} options.camera - Three.jsカメラ
      * @param {HTMLCanvasElement} options.canvas - キャンバス要素
      */
@@ -33,7 +36,8 @@ class TouchController {
         this._blockInteraction = options.blockInteraction;
         this._container = options.container;
         this._onToggleInventory = options.onToggleInventory || (() => {});
-        this._onToggleViewpoint = options.onToggleViewpoint || (() => {});
+        this._viewpointManager = options.viewpointManager;
+        this._thirdPersonCamera = options.thirdPersonCamera;
         this._camera = options.camera;
         this._canvas = options.canvas;
 
@@ -61,6 +65,10 @@ class TouchController {
         this._lastLookTapTime = 0;
         this._actionLongPressTimer = null;
         this._actionTriggered = false;
+
+        // ピンチ状態
+        this._isPinching = false;
+        this._pinchStartDistance = 0;
 
         // ハイライト状態（2段階タッチ用）
         this._highlightTarget = null;
@@ -234,6 +242,16 @@ class TouchController {
     _onLookStart(e) {
         if (!this._enabled) return;
         e.preventDefault();
+
+        // 2本指 → ピンチ開始
+        if (e.touches.length === 2) {
+            this._startPinch(e.touches);
+            return;
+        }
+
+        // ピンチ中は1本指操作を無視
+        if (this._isPinching) return;
+
         const touch = e.changedTouches[0];
         this._lookActive = true;
         this._lookTouchId = touch.identifier;
@@ -243,13 +261,6 @@ class TouchController {
         this._lookStartY = touch.clientY;
         this._lookDragged = false;
         this._actionTriggered = false;
-
-        // ダブルタップ検出
-        const now = performance.now();
-        if (now - this._lastLookTapTime < 300) {
-            this._onToggleViewpoint();
-        }
-        this._lastLookTapTime = now;
 
         // 長押しタイマー開始
         if (this._actionLongPressTimer) clearTimeout(this._actionLongPressTimer);
@@ -265,8 +276,19 @@ class TouchController {
     }
 
     _onLookMove(e) {
-        if (!this._enabled || !this._lookActive) return;
+        if (!this._enabled) return;
         e.preventDefault();
+
+        // ピンチ中の2本指移動
+        if (this._isPinching && e.touches.length === 2) {
+            this._updatePinch(e.touches);
+            return;
+        }
+
+        // ピンチ中は1本指操作を無視
+        if (this._isPinching) return;
+
+        if (!this._lookActive) return;
         const touch = this._findTouch(e.changedTouches, this._lookTouchId);
         if (!touch) return;
 
@@ -293,8 +315,17 @@ class TouchController {
     }
 
     _onLookEnd(e) {
-        if (!this._lookActive) return;
         e.preventDefault();
+
+        // ピンチ終了判定（残り1本以下で終了）
+        if (this._isPinching) {
+            if (e.touches.length <= 1) {
+                this._isPinching = false;
+            }
+            return;
+        }
+
+        if (!this._lookActive) return;
         this._lookActive = false;
         this._lookTouchId = null;
 
@@ -372,6 +403,53 @@ class TouchController {
         if (this._blockInteraction) {
             this._blockInteraction.currentTarget = null;
             this._blockInteraction.highlight.update(null);
+        }
+    }
+
+    // --- ピンチ操作 ---
+
+    /** ピンチ開始 */
+    _startPinch(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        this._pinchStartDistance = Math.hypot(dx, dy);
+        this._isPinching = true;
+
+        // 1本指操作をキャンセル
+        this._lookActive = false;
+        this._lookTouchId = null;
+        if (this._actionLongPressTimer) {
+            clearTimeout(this._actionLongPressTimer);
+            this._actionLongPressTimer = null;
+        }
+    }
+
+    /** ピンチ更新 */
+    _updatePinch(touches) {
+        if (!this._viewpointManager || !this._thirdPersonCamera) return;
+
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        const currentDistance = Math.hypot(dx, dy);
+        const delta = (this._pinchStartDistance - currentDistance) * TouchController.PINCH_SENSITIVITY;
+        this._pinchStartDistance = currentDistance;
+
+        const threshold = TouchController.VIEWPOINT_SWITCH_THRESHOLD;
+
+        if (this._viewpointManager.getMode() === 'first_person') {
+            if (delta > 0) {
+                // ピンチイン: 1人称→3人称に切替
+                this._viewpointManager.setMode('third_person');
+                this._thirdPersonCamera.setDistance(threshold);
+            }
+        } else {
+            const newDistance = this._thirdPersonCamera.getDistance() + delta;
+            if (newDistance <= threshold) {
+                // 距離がしきい値以下: 3人称→1人称に切替
+                this._viewpointManager.setMode('first_person');
+            } else {
+                this._thirdPersonCamera.setDistance(newDistance);
+            }
         }
     }
 
