@@ -434,6 +434,8 @@ class TouchController {
         const blockId = pw.getBlockAt(target.blockX, target.blockY, target.blockZ);
         if (blockId === this._continuousDeleteBlockId) {
             this._blockInteraction.destroyBlockAt(target);
+            // 破壊後すぐに次のターゲットのハイライトを更新
+            this._updateContinuousDeleteHighlight();
         }
     }
 
@@ -555,9 +557,34 @@ class TouchController {
     }
 
     update(deltaTime) {
+        // 連続削除中は毎フレーム指位置のハイライトを更新
+        if (this._continuousDeleteBlockId && this._lookActive) {
+            this._updateContinuousDeleteHighlight();
+        }
         // ハイライト表示中はゴーストブロック（設置予測）を毎フレーム更新
         if (this._highlightTarget && this._blockInteraction) {
             this._blockInteraction._updatePlacementPreview();
+        }
+    }
+
+    /** 連続削除中: 指位置のブロックにハイライトを表示（同種ブロックのみ） */
+    _updateContinuousDeleteHighlight() {
+        if (!this._blockInteraction || !this._camera || !this._canvas) return;
+
+        const target = this._blockInteraction.raycastFromScreen(
+            this._lookLastX, this._lookLastY, this._camera, this._canvas
+        );
+        if (!target || !target.hit) {
+            this._clearHighlight();
+            return;
+        }
+
+        const pw = this._blockInteraction.physicsWorld;
+        const blockId = pw.getBlockAt(target.blockX, target.blockY, target.blockZ);
+        if (blockId === this._continuousDeleteBlockId) {
+            this._showHighlight(target);
+        } else {
+            this._clearHighlight();
         }
     }
 
