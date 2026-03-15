@@ -193,9 +193,10 @@
         var el = document.getElementById('screen-size-debug');
         function update(){
             var w = window.innerWidth, h = window.innerHeight;
-            var shortSide = Math.min(screen.width, screen.height);
-            var mode = shortSide >= 768 ? 'tablet' : (h > w ? 'portrait' : 'landscape');
-            el.textContent = w + ' x ' + h + ' (screen:' + screen.width + 'x' + screen.height + ' short:' + shortSide + ') ' + mode;
+            var ratio = (Math.max(w, h) / Math.min(w, h)).toFixed(2);
+            var isTablet = ratio < 1.5;
+            var mode = isTablet ? 'TABLET' : (h > w ? 'PORTRAIT' : 'LANDSCAPE');
+            el.textContent = w + ' x ' + h + ' ratio:' + ratio + ' ' + mode;
         }
         window.addEventListener('resize', update);
         update();
