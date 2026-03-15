@@ -99,9 +99,9 @@ class TouchController {
     _addButtonListeners(el, onRelease) {
         if (!el) return;
         this._addTouchListeners(el,
-            (e) => { if (!this._enabled) return; e.preventDefault(); el.style.opacity = '0.8'; },
+            (e) => { if (!this._enabled) return; e.preventDefault(); el.style.opacity = '1'; },
             null,
-            (e) => { e.preventDefault(); el.style.opacity = '0.5'; onRelease(); }
+            (e) => { e.preventDefault(); el.style.opacity = '0.8'; onRelease(); }
         );
     }
 
@@ -119,9 +119,9 @@ class TouchController {
         const btnJump = document.getElementById('touch-btn-jump');
         if (btnJump) {
             this._addTouchListeners(btnJump,
-                (e) => { if (!this._enabled) return; e.preventDefault(); btnJump.style.opacity = '0.8'; this._playerController.keys.space = true; },
+                (e) => { if (!this._enabled) return; e.preventDefault(); btnJump.style.opacity = '1'; this._playerController.keys.space = true; },
                 null,
-                (e) => { e.preventDefault(); btnJump.style.opacity = '0.5'; this._playerController.keys.space = false; }
+                (e) => { e.preventDefault(); btnJump.style.opacity = '0.8'; this._playerController.keys.space = false; }
             );
         }
 
@@ -213,7 +213,7 @@ class TouchController {
 
         this._playerController.keys[keyName] = true;
         this._clearHighlight();
-        if (btnEl) btnEl.style.opacity = '0.8';
+        if (btnEl) btnEl.style.opacity = '1';
     }
 
     _onMoveMove(e, stateKey) {
@@ -239,7 +239,7 @@ class TouchController {
         s.touchId = null;
 
         this._playerController.keys[keyName] = false;
-        if (btnEl) btnEl.style.opacity = '0.5';
+        if (btnEl) btnEl.style.opacity = '0.8';
     }
 
     // ========================================
