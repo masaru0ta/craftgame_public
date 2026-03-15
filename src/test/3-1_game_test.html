@@ -210,6 +210,11 @@
                     hotbar.style.transformOrigin = '';
                 }
             }
+            // タブレット判定時、視線感度を1.5倍に
+            if (window.testApp && window.testApp.touchController) {
+                var base = 0.0056;
+                window.testApp.touchController.setLookSensitivity(isTablet ? base * 1.5 : base);
+            }
             // タブレット判定時、進む/戻るボタンを左1/6の位置に移動
             var btnFwd = document.getElementById('touch-btn-forward');
             var btnBwd = document.getElementById('touch-btn-backward');
