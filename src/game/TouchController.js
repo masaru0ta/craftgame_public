@@ -278,7 +278,9 @@ class TouchController {
         if (!this._enabled) return;
         e.preventDefault();
 
-        if (e.touches.length === 2) {
+        // 移動ボタン操作中はピンチ判定しない（別の指で視点操作を許可）
+        const isMoving = this._moveState.forward.active || this._moveState.backward.active;
+        if (e.touches.length === 2 && !isMoving) {
             this._startPinch(e.touches);
             return;
         }
