@@ -140,6 +140,61 @@ class TouchController {
         this._addButtonListeners(document.getElementById('touch-btn-fly'),
             () => this._player.toggleFlying()
         );
+
+        // ホットバースロット長押しで設置形状切替
+        this._bindHotbarLongPress();
+    }
+
+    /** ホットバースロットの長押しイベントをバインド（イベント委譲方式） */
+    _bindHotbarLongPress() {
+        if (!this._blockInteraction) return;
+        const hotbar = this._blockInteraction.hotbar;
+        if (!hotbar || !hotbar.container) return;
+
+        let timer = null;
+        let activeIndex = -1;
+
+        const getSlotIndex = (e) => {
+            const slot = e.target.closest('.hotbar-slot');
+            if (!slot) return -1;
+            const idx = parseInt(slot.dataset.slot, 10);
+            return isNaN(idx) ? -1 : idx;
+        };
+
+        this._addTouchListeners(hotbar.container,
+            (e) => {
+                if (!this._enabled) return;
+                const idx = getSlotIndex(e);
+                if (idx < 0) return;
+                activeIndex = idx;
+                timer = setTimeout(() => {
+                    this._cyclePlacementMode(activeIndex);
+                    timer = null;
+                }, TouchController.ACTION_LONG_PRESS_MS);
+            },
+            null,
+            () => {
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                activeIndex = -1;
+            }
+        );
+    }
+
+    /** 指定スロットの設置形状をサイクル切替 */
+    _cyclePlacementMode(slotIndex) {
+        const bi = this._blockInteraction;
+        const hotbar = bi.hotbar;
+        const block = hotbar.getSlotBlock(slotIndex);
+        if (!block) return;
+        if (!block.half_placeable && !block.stair_placeable && !block.slope_placeable) return;
+
+        const current = bi._placementModes.get(slotIndex) || 'normal';
+        const next = bi._getNextPlacementMode(block, current);
+        bi._placementModes.set(slotIndex, next);
+        hotbar.setPlacementMode(slotIndex, next);
     }
 
     // --- 移動ボタン操作（前進/後退共通） ---
