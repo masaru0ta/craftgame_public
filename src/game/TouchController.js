@@ -378,16 +378,25 @@ class TouchController {
         });
     }
 
-    /** 長押し: ハイライト上→破壊 / 新しい場所→ハイライト移動 */
+    /** 長押し: ハイライト不要で直接破壊 → 連続削除モード開始 */
     _handleLongPress(screenX, screenY) {
-        this._handleBlockAction(screenX, screenY, (target) => {
-            const pw = this._blockInteraction.physicsWorld;
-            const blockId = pw.getBlockAt(target.blockX, target.blockY, target.blockZ);
-            const destroyed = this._blockInteraction.destroyBlockAt(target);
-            if (destroyed && blockId && blockId !== 'air') {
-                this._startContinuousDelete(blockId);
-            }
-        });
+        if (!this._blockInteraction || !this._camera || !this._canvas) return;
+
+        const target = this._blockInteraction.raycastFromScreen(screenX, screenY, this._camera, this._canvas);
+        if (!target || !target.hit) {
+            this._clearHighlight();
+            return;
+        }
+
+        const pw = this._blockInteraction.physicsWorld;
+        const blockId = pw.getBlockAt(target.blockX, target.blockY, target.blockZ);
+        if (!blockId || blockId === 'air') return;
+
+        const destroyed = this._blockInteraction.destroyBlockAt(target);
+        this._clearHighlight();
+        if (destroyed) {
+            this._startContinuousDelete(blockId);
+        }
     }
 
     /** 連続削除モードを開始 */
