@@ -399,41 +399,49 @@ class TouchController {
         }
     }
 
+    static CONTINUOUS_DELETE_MS = 500;
+
     /** 連続削除モードを開始 */
     _startContinuousDelete(blockId) {
         this._stopContinuousDelete();
         this._continuousDeleteBlockId = blockId;
-        this._continuousDeleteTimer = setInterval(() => {
-            this._tryContinuousDelete();
-        }, TouchController.ACTION_LONG_PRESS_MS);
+        this._continuousDeleteTarget = null;
+        this._continuousDeleteStableTime = 0;
     }
 
     /** 連続削除モードを停止 */
     _stopContinuousDelete() {
         this._continuousDeleteBlockId = null;
-        if (this._continuousDeleteTimer) {
-            clearInterval(this._continuousDeleteTimer);
-            this._continuousDeleteTimer = null;
-        }
+        this._continuousDeleteTarget = null;
+        this._continuousDeleteStableTime = 0;
     }
 
-    /** 連続削除: 現在の指位置でレイキャストし、同じブロックなら破壊 */
-    _tryContinuousDelete() {
+    /** 連続削除: 毎フレーム呼び出し、同じハイライトが500ms続いたら破壊 */
+    _updateContinuousDeleteTimer(deltaTime) {
         if (!this._continuousDeleteBlockId || !this._lookActive) {
             this._stopContinuousDelete();
             return;
         }
-        if (!this._blockInteraction || !this._camera || !this._canvas) return;
 
-        const target = this._blockInteraction.raycastFromScreen(
-            this._lookLastX, this._lookLastY, this._camera, this._canvas
-        );
-        if (!target || !target.hit) return;
+        const ht = this._highlightTarget;
+        if (!ht) {
+            this._continuousDeleteTarget = null;
+            this._continuousDeleteStableTime = 0;
+            return;
+        }
 
-        const pw = this._blockInteraction.physicsWorld;
-        const blockId = pw.getBlockAt(target.blockX, target.blockY, target.blockZ);
-        if (blockId === this._continuousDeleteBlockId) {
-            this._blockInteraction.destroyBlockAt(target);
+        // ハイライト対象が変わったらリセット
+        if (!this._continuousDeleteTarget || !this._isSameBlock(ht, this._continuousDeleteTarget)) {
+            this._continuousDeleteTarget = { blockX: ht.blockX, blockY: ht.blockY, blockZ: ht.blockZ };
+            this._continuousDeleteStableTime = 0;
+            return;
+        }
+
+        this._continuousDeleteStableTime += deltaTime;
+        if (this._continuousDeleteStableTime >= TouchController.CONTINUOUS_DELETE_MS / 1000) {
+            this._blockInteraction.destroyBlockAt(ht);
+            this._continuousDeleteStableTime = 0;
+            this._continuousDeleteTarget = null;
             // 破壊後すぐに次のターゲットのハイライトを更新
             this._updateContinuousDeleteHighlight();
         }
@@ -557,9 +565,10 @@ class TouchController {
     }
 
     update(deltaTime) {
-        // 連続削除中は毎フレーム指位置のハイライトを更新
+        // 連続削除中は毎フレーム指位置のハイライトを更新＋安定時間で破壊
         if (this._continuousDeleteBlockId && this._lookActive) {
             this._updateContinuousDeleteHighlight();
+            this._updateContinuousDeleteTimer(deltaTime);
         }
         // ハイライト表示中はゴーストブロック（設置予測）を毎フレーム更新
         if (this._highlightTarget && this._blockInteraction) {
