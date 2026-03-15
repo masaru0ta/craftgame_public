@@ -68,6 +68,10 @@ class TouchController {
         // ハイライト状態（2段階タッチ用）
         this._highlightTarget = null;
 
+        // 連続削除モード
+        this._continuousDeleteBlockId = null;
+        this._continuousDeleteTimer = null;
+
         // UI要素キャッシュ
         this._btnForward = document.getElementById('touch-btn-forward');
         this._btnBackward = document.getElementById('touch-btn-backward');
@@ -338,6 +342,7 @@ class TouchController {
         this._lookTouchId = null;
 
         this._cancelLongPressTimer();
+        this._stopContinuousDelete();
 
         // 短タップ → 2段階ブロック操作
         if (!this._lookDragged && !this._actionTriggered) {
@@ -376,8 +381,51 @@ class TouchController {
     /** 長押し: ハイライト上→破壊 / 新しい場所→ハイライト移動 */
     _handleLongPress(screenX, screenY) {
         this._handleBlockAction(screenX, screenY, (target) => {
-            this._blockInteraction.destroyBlockAt(target);
+            const pw = this._blockInteraction.physicsWorld;
+            const blockId = pw.getBlockAt(target.blockX, target.blockY, target.blockZ);
+            const destroyed = this._blockInteraction.destroyBlockAt(target);
+            if (destroyed && blockId && blockId !== 'air') {
+                this._startContinuousDelete(blockId);
+            }
         });
+    }
+
+    /** 連続削除モードを開始 */
+    _startContinuousDelete(blockId) {
+        this._stopContinuousDelete();
+        this._continuousDeleteBlockId = blockId;
+        this._continuousDeleteTimer = setInterval(() => {
+            this._tryContinuousDelete();
+        }, TouchController.ACTION_LONG_PRESS_MS);
+    }
+
+    /** 連続削除モードを停止 */
+    _stopContinuousDelete() {
+        this._continuousDeleteBlockId = null;
+        if (this._continuousDeleteTimer) {
+            clearInterval(this._continuousDeleteTimer);
+            this._continuousDeleteTimer = null;
+        }
+    }
+
+    /** 連続削除: 現在の指位置でレイキャストし、同じブロックなら破壊 */
+    _tryContinuousDelete() {
+        if (!this._continuousDeleteBlockId || !this._lookActive) {
+            this._stopContinuousDelete();
+            return;
+        }
+        if (!this._blockInteraction || !this._camera || !this._canvas) return;
+
+        const target = this._blockInteraction.raycastFromScreen(
+            this._lookLastX, this._lookLastY, this._camera, this._canvas
+        );
+        if (!target || !target.hit) return;
+
+        const pw = this._blockInteraction.physicsWorld;
+        const blockId = pw.getBlockAt(target.blockX, target.blockY, target.blockZ);
+        if (blockId === this._continuousDeleteBlockId) {
+            this._blockInteraction.destroyBlockAt(target);
+        }
     }
 
     /** 2つのレイキャスト結果が同じブロックかを判定 */
@@ -525,5 +573,6 @@ class TouchController {
     dispose() {
         this._enabled = false;
         this._clearHighlight();
+        this._stopContinuousDelete();
     }
 }
