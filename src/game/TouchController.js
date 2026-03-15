@@ -129,18 +129,42 @@ class TouchController {
             () => this._onToggleInventory()
         );
 
-        const btnSneak = document.getElementById('touch-btn-sneak');
-        this._addButtonListeners(btnSneak, () => {
-            const next = !this._player.isSneaking();
-            this._player.setSneaking(next);
-            this._playerController.keys.shift = next;
-            if (btnSneak) btnSneak.classList.toggle('active', next);
-        });
+        this._btnSneak = document.getElementById('touch-btn-sneak');
+        this._btnJump = document.getElementById('touch-btn-jump');
+        if (this._btnSneak) {
+            this._addTouchListeners(this._btnSneak,
+                (e) => {
+                    if (!this._enabled) return;
+                    e.preventDefault();
+                    this._btnSneak.style.opacity = '1';
+                    if (this._player.isFlying()) {
+                        // 飛行中: 押し続けで下降
+                        this._playerController.keys.shift = true;
+                    } else {
+                        // 地上: トグルでしゃがみ
+                        const next = !this._player.isSneaking();
+                        this._player.setSneaking(next);
+                        this._playerController.keys.shift = next;
+                        this._btnSneak.classList.toggle('active', next);
+                    }
+                },
+                null,
+                (e) => {
+                    e.preventDefault();
+                    this._btnSneak.style.opacity = '0.8';
+                    if (this._player.isFlying()) {
+                        this._playerController.keys.shift = false;
+                    }
+                }
+            );
+        }
 
         const btnFly = document.getElementById('touch-btn-fly');
         this._addButtonListeners(btnFly, () => {
             this._player.toggleFlying();
-            if (btnFly) btnFly.classList.toggle('active', this._player.isFlying());
+            const flying = this._player.isFlying();
+            if (btnFly) btnFly.classList.toggle('active', flying);
+            this._updateFlyingLabels(flying);
         });
 
         this._bindHotbarLongPress();
@@ -515,6 +539,19 @@ class TouchController {
     // ========================================
     // ユーティリティ
     // ========================================
+
+    _updateFlyingLabels(flying) {
+        if (this._btnJump) this._btnJump.textContent = flying ? '上がる' : 'ジャンプ';
+        if (this._btnSneak) {
+            this._btnSneak.textContent = flying ? '下がる' : 'しゃがむ';
+            // 飛行切替時にしゃがみ状態をリセット
+            if (flying && this._player.isSneaking()) {
+                this._player.setSneaking(false);
+                this._playerController.keys.shift = false;
+                this._btnSneak.classList.remove('active');
+            }
+        }
+    }
 
     _applyLookDelta(dx, dy) {
         const limit = TouchController.PITCH_LIMIT;
