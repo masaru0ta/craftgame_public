@@ -4,16 +4,17 @@
  * 前進ボタン、視点操作、各種ボタンのタッチ入力を処理し、
  * PlayerController / BlockInteraction のAPIを呼び出す
  *
- * ブロック操作は2段階方式:
- *   1. タップ → レイキャスト → ハイライト表示
- *   2. ハイライト上タップ → 設置、ハイライト上長押し → 破壊
- *   異なる場所タップ → ハイライト移動
- *   移動/設置/破壊 → ハイライト消去
+ * ブロック操作:
+ *   タップ → レイキャスト → ハイライト表示
+ *   ハイライト上タップ → 設置 → ハイライト消去
+ *   長押し(400ms) → 直接破壊 → 連続削除モード開始
+ *   連続削除中: 同種ブロックのハイライトが500ms維持で自動破壊
  */
 class TouchController {
     static DEFAULT_SENSITIVITY = 0.0056;
     static ACTION_LONG_PRESS_MS = 400;
     static ACTION_DRAG_THRESHOLD = 10;
+    static CONTINUOUS_DELETE_MS = 500;
     static PITCH_LIMIT = Math.PI / 2 * 0.99;
     static PINCH_SENSITIVITY = 0.05;
     static VIEWPOINT_SWITCH_THRESHOLD = 3.0;
@@ -65,12 +66,13 @@ class TouchController {
         this._isPinching = false;
         this._pinchStartDistance = 0;
 
-        // ハイライト状態（2段階タッチ用）
+        // ハイライト状態（タップ設置の2段階用）
         this._highlightTarget = null;
 
-        // 連続削除モード
-        this._continuousDeleteBlockId = null;
-        this._continuousDeleteTimer = null;
+        // 連続削除モード状態
+        this._contDeleteBlockId = null;
+        this._contDeleteTarget = null;
+        this._contDeleteStableTime = 0;
 
         // UI要素キャッシュ
         this._btnForward = document.getElementById('touch-btn-forward');
@@ -79,9 +81,10 @@ class TouchController {
         this._bindEvents();
     }
 
-    // --- イベントバインド ---
+    // ========================================
+    // イベントバインド
+    // ========================================
 
-    /** タッチイベント3種（start/move/end+cancel）を一括登録するヘルパー */
     _addTouchListeners(el, onStart, onMove, onEnd) {
         if (!el) return;
         const opts = { passive: false };
@@ -93,7 +96,6 @@ class TouchController {
         }
     }
 
-    /** ボタンのタッチ/リリースを登録するヘルパー */
     _addButtonListeners(el, onRelease) {
         if (!el) return;
         this._addTouchListeners(el,
@@ -104,13 +106,9 @@ class TouchController {
     }
 
     _bindEvents() {
-        // 前進ボタン（タッチで前進、ドラッグで前進+視点回転）
         this._bindMoveButton(this._btnForward, 'forward', 'w');
-
-        // 後退ボタン（タッチで後退、ドラッグで後退+視点回転）
         this._bindMoveButton(this._btnBackward, 'backward', 's');
 
-        // 視点操作エリア
         const lookArea = document.getElementById('touch-look-area');
         this._addTouchListeners(lookArea,
             (e) => this._onLookStart(e),
@@ -118,7 +116,6 @@ class TouchController {
             (e) => this._onLookEnd(e)
         );
 
-        // ジャンプボタン（押し続け対応）
         const btnJump = document.getElementById('touch-btn-jump');
         if (btnJump) {
             this._addTouchListeners(btnJump,
@@ -128,28 +125,23 @@ class TouchController {
             );
         }
 
-        // インベントリボタン
         this._addButtonListeners(document.getElementById('touch-btn-inventory'),
             () => this._onToggleInventory()
         );
 
-        // スニークボタン（トグル）
         this._addButtonListeners(document.getElementById('touch-btn-sneak'), () => {
             const next = !this._player.isSneaking();
             this._player.setSneaking(next);
             this._playerController.keys.shift = next;
         });
 
-        // 飛行ボタン（トグル）
         this._addButtonListeners(document.getElementById('touch-btn-fly'),
             () => this._player.toggleFlying()
         );
 
-        // ホットバースロット長押しで設置形状切替
         this._bindHotbarLongPress();
     }
 
-    /** ホットバースロットの長押しイベントをバインド（イベント委譲方式） */
     _bindHotbarLongPress() {
         if (!this._blockInteraction) return;
         const hotbar = this._blockInteraction.hotbar;
@@ -178,16 +170,12 @@ class TouchController {
             },
             null,
             () => {
-                if (timer) {
-                    clearTimeout(timer);
-                    timer = null;
-                }
+                if (timer) { clearTimeout(timer); timer = null; }
                 activeIndex = -1;
             }
         );
     }
 
-    /** 指定スロットの設置形状をサイクル切替 */
     _cyclePlacementMode(slotIndex) {
         const bi = this._blockInteraction;
         const hotbar = bi.hotbar;
@@ -201,7 +189,9 @@ class TouchController {
         hotbar.setPlacementMode(slotIndex, next);
     }
 
-    // --- 移動ボタン操作（前進/後退共通） ---
+    // ========================================
+    // 移動ボタン操作（前進/後退共通）
+    // ========================================
 
     _bindMoveButton(btnEl, stateKey, keyName) {
         this._addTouchListeners(btnEl,
@@ -252,19 +242,18 @@ class TouchController {
         if (btnEl) btnEl.style.opacity = '0.5';
     }
 
-    // --- 視点操作 + 2段階ブロック操作 ---
+    // ========================================
+    // 視点操作 + ブロック操作
+    // ========================================
 
     _onLookStart(e) {
         if (!this._enabled) return;
         e.preventDefault();
 
-        // 2本指 → ピンチ開始
         if (e.touches.length === 2) {
             this._startPinch(e.touches);
             return;
         }
-
-        // ピンチ中は1本指操作を無視
         if (this._isPinching) return;
 
         const touch = e.changedTouches[0];
@@ -277,7 +266,6 @@ class TouchController {
         this._lookDragged = false;
         this._actionTriggered = false;
 
-        // 長押しタイマー開始
         this._cancelLongPressTimer();
         const startX = touch.clientX;
         const startY = touch.clientY;
@@ -294,20 +282,16 @@ class TouchController {
         if (!this._enabled) return;
         e.preventDefault();
 
-        // ピンチ中の2本指移動
         if (this._isPinching && e.touches.length === 2) {
             this._updatePinch(e.touches);
             return;
         }
-
-        // ピンチ中は1本指操作を無視
         if (this._isPinching) return;
-
         if (!this._lookActive) return;
+
         const touch = this._findTouch(e.changedTouches, this._lookTouchId);
         if (!touch) return;
 
-        // ドラッグ判定
         if (!this._lookDragged) {
             const totalDx = touch.clientX - this._lookStartX;
             const totalDy = touch.clientY - this._lookStartY;
@@ -329,11 +313,8 @@ class TouchController {
     _onLookEnd(e) {
         e.preventDefault();
 
-        // ピンチ終了判定（残り1本以下で終了）
         if (this._isPinching) {
-            if (e.touches.length <= 1) {
-                this._isPinching = false;
-            }
+            if (e.touches.length <= 1) this._isPinching = false;
             return;
         }
 
@@ -344,17 +325,18 @@ class TouchController {
         this._cancelLongPressTimer();
         this._stopContinuousDelete();
 
-        // 短タップ → 2段階ブロック操作
         if (!this._lookDragged && !this._actionTriggered) {
             this._handleTap(this._lookStartX, this._lookStartY);
         }
         this._actionTriggered = false;
     }
 
-    // --- 2段階ブロック操作 ---
+    // ========================================
+    // ブロック操作（タップ設置 / 長押し破壊）
+    // ========================================
 
-    /** 短タップ/長押し共通: レイキャスト → ハイライト判定 → アクション実行 */
-    _handleBlockAction(screenX, screenY, onMatchAction) {
+    /** タップ設置の2段階判定: ハイライト一致→設置 / 不一致→ハイライト移動 */
+    _handleTap(screenX, screenY) {
         if (!this._blockInteraction || !this._camera || !this._canvas) return;
 
         const target = this._blockInteraction.raycastFromScreen(screenX, screenY, this._camera, this._canvas);
@@ -364,21 +346,14 @@ class TouchController {
         }
 
         if (this._highlightTarget && this._isSameBlock(target, this._highlightTarget)) {
-            onMatchAction(target);
+            this._blockInteraction.placeBlockAt(target);
             this._clearHighlight();
         } else {
             this._showHighlight(target);
         }
     }
 
-    /** 短タップ: ハイライト上→設置 / 新しい場所→ハイライト移動 */
-    _handleTap(screenX, screenY) {
-        this._handleBlockAction(screenX, screenY, (target) => {
-            this._blockInteraction.placeBlockAt(target);
-        });
-    }
-
-    /** 長押し: ハイライト不要で直接破壊 → 連続削除モード開始 */
+    /** 長押し: 直接破壊 → 連続削除モード開始 */
     _handleLongPress(screenX, screenY) {
         if (!this._blockInteraction || !this._camera || !this._canvas) return;
 
@@ -399,60 +374,80 @@ class TouchController {
         }
     }
 
-    static CONTINUOUS_DELETE_MS = 500;
+    // ========================================
+    // 連続削除モード
+    // ========================================
 
-    /** 連続削除モードを開始 */
     _startContinuousDelete(blockId) {
-        this._stopContinuousDelete();
-        this._continuousDeleteBlockId = blockId;
-        this._continuousDeleteTarget = null;
-        this._continuousDeleteStableTime = 0;
+        this._contDeleteBlockId = blockId;
+        this._contDeleteTarget = null;
+        this._contDeleteStableTime = 0;
     }
 
-    /** 連続削除モードを停止 */
     _stopContinuousDelete() {
-        this._continuousDeleteBlockId = null;
-        this._continuousDeleteTarget = null;
-        this._continuousDeleteStableTime = 0;
+        this._contDeleteBlockId = null;
+        this._contDeleteTarget = null;
+        this._contDeleteStableTime = 0;
     }
 
-    /** 連続削除: 毎フレーム呼び出し、同じハイライトが500ms続いたら破壊 */
+    /** 指位置のブロックにハイライトを表示（同種ブロックのみ） */
+    _updateContinuousDeleteHighlight() {
+        if (!this._blockInteraction || !this._camera || !this._canvas) return;
+
+        const target = this._blockInteraction.raycastFromScreen(
+            this._lookLastX, this._lookLastY, this._camera, this._canvas
+        );
+        if (!target || !target.hit) {
+            this._clearHighlight();
+            return;
+        }
+
+        const pw = this._blockInteraction.physicsWorld;
+        const blockId = pw.getBlockAt(target.blockX, target.blockY, target.blockZ);
+        if (blockId === this._contDeleteBlockId) {
+            this._showHighlight(target);
+        } else {
+            this._clearHighlight();
+        }
+    }
+
+    /** 同じハイライトがCONTINUOUS_DELETE_MS維持されたら破壊 */
     _updateContinuousDeleteTimer(deltaTime) {
-        if (!this._continuousDeleteBlockId || !this._lookActive) {
+        if (!this._contDeleteBlockId || !this._lookActive) {
             this._stopContinuousDelete();
             return;
         }
 
         const ht = this._highlightTarget;
         if (!ht) {
-            this._continuousDeleteTarget = null;
-            this._continuousDeleteStableTime = 0;
+            this._contDeleteTarget = null;
+            this._contDeleteStableTime = 0;
             return;
         }
 
-        // ハイライト対象が変わったらリセット
-        if (!this._continuousDeleteTarget || !this._isSameBlock(ht, this._continuousDeleteTarget)) {
-            this._continuousDeleteTarget = { blockX: ht.blockX, blockY: ht.blockY, blockZ: ht.blockZ };
-            this._continuousDeleteStableTime = 0;
+        if (!this._contDeleteTarget || !this._isSameBlock(ht, this._contDeleteTarget)) {
+            this._contDeleteTarget = { blockX: ht.blockX, blockY: ht.blockY, blockZ: ht.blockZ };
+            this._contDeleteStableTime = 0;
             return;
         }
 
-        this._continuousDeleteStableTime += deltaTime;
-        if (this._continuousDeleteStableTime >= TouchController.CONTINUOUS_DELETE_MS / 1000) {
+        this._contDeleteStableTime += deltaTime;
+        if (this._contDeleteStableTime >= TouchController.CONTINUOUS_DELETE_MS / 1000) {
             this._blockInteraction.destroyBlockAt(ht);
-            this._continuousDeleteStableTime = 0;
-            this._continuousDeleteTarget = null;
-            // 破壊後すぐに次のターゲットのハイライトを更新
+            this._contDeleteStableTime = 0;
+            this._contDeleteTarget = null;
             this._updateContinuousDeleteHighlight();
         }
     }
 
-    /** 2つのレイキャスト結果が同じブロックかを判定 */
+    // ========================================
+    // ハイライト管理
+    // ========================================
+
     _isSameBlock(a, b) {
         return a.blockX === b.blockX && a.blockY === b.blockY && a.blockZ === b.blockZ;
     }
 
-    /** ハイライトを表示 */
     _showHighlight(target) {
         this._highlightTarget = target;
         if (this._blockInteraction) {
@@ -462,7 +457,6 @@ class TouchController {
         }
     }
 
-    /** ハイライトを消去 */
     _clearHighlight() {
         this._highlightTarget = null;
         if (this._blockInteraction) {
@@ -472,27 +466,24 @@ class TouchController {
         }
     }
 
-    // --- ピンチ操作 ---
+    // ========================================
+    // ピンチ操作
+    // ========================================
 
-    /** 2点間距離を算出 */
     _getTouchDistance(touches) {
         const dx = touches[0].clientX - touches[1].clientX;
         const dy = touches[0].clientY - touches[1].clientY;
         return Math.hypot(dx, dy);
     }
 
-    /** ピンチ開始 */
     _startPinch(touches) {
         this._pinchStartDistance = this._getTouchDistance(touches);
         this._isPinching = true;
-
-        // 1本指操作をキャンセル
         this._lookActive = false;
         this._lookTouchId = null;
         this._cancelLongPressTimer();
     }
 
-    /** ピンチ更新 */
     _updatePinch(touches) {
         if (!this._viewpointManager || !this._thirdPersonCamera) return;
 
@@ -517,9 +508,10 @@ class TouchController {
         }
     }
 
-    // --- ユーティリティ ---
+    // ========================================
+    // ユーティリティ
+    // ========================================
 
-    /** 視点回転の共通処理 */
     _applyLookDelta(dx, dy) {
         const limit = TouchController.PITCH_LIMIT;
         this._player.setYaw(this._player.getYaw() - dx * this._sensitivity);
@@ -535,7 +527,6 @@ class TouchController {
         return null;
     }
 
-    /** 長押しタイマーをキャンセル */
     _cancelLongPressTimer() {
         if (this._actionLongPressTimer) {
             clearTimeout(this._actionLongPressTimer);
@@ -543,7 +534,9 @@ class TouchController {
         }
     }
 
-    // --- 公開API ---
+    // ========================================
+    // 公開API
+    // ========================================
 
     enable() {
         this._enabled = true;
@@ -565,35 +558,12 @@ class TouchController {
     }
 
     update(deltaTime) {
-        // 連続削除中は毎フレーム指位置のハイライトを更新＋安定時間で破壊
-        if (this._continuousDeleteBlockId && this._lookActive) {
+        if (this._contDeleteBlockId && this._lookActive) {
             this._updateContinuousDeleteHighlight();
             this._updateContinuousDeleteTimer(deltaTime);
         }
-        // ハイライト表示中はゴーストブロック（設置予測）を毎フレーム更新
         if (this._highlightTarget && this._blockInteraction) {
             this._blockInteraction._updatePlacementPreview();
-        }
-    }
-
-    /** 連続削除中: 指位置のブロックにハイライトを表示（同種ブロックのみ） */
-    _updateContinuousDeleteHighlight() {
-        if (!this._blockInteraction || !this._camera || !this._canvas) return;
-
-        const target = this._blockInteraction.raycastFromScreen(
-            this._lookLastX, this._lookLastY, this._camera, this._canvas
-        );
-        if (!target || !target.hit) {
-            this._clearHighlight();
-            return;
-        }
-
-        const pw = this._blockInteraction.physicsWorld;
-        const blockId = pw.getBlockAt(target.blockX, target.blockY, target.blockZ);
-        if (blockId === this._continuousDeleteBlockId) {
-            this._showHighlight(target);
-        } else {
-            this._clearHighlight();
         }
     }
 
