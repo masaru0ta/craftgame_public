@@ -129,15 +129,19 @@ class TouchController {
             () => this._onToggleInventory()
         );
 
-        this._addButtonListeners(document.getElementById('touch-btn-sneak'), () => {
+        const btnSneak = document.getElementById('touch-btn-sneak');
+        this._addButtonListeners(btnSneak, () => {
             const next = !this._player.isSneaking();
             this._player.setSneaking(next);
             this._playerController.keys.shift = next;
+            if (btnSneak) btnSneak.classList.toggle('active', next);
         });
 
-        this._addButtonListeners(document.getElementById('touch-btn-fly'),
-            () => this._player.toggleFlying()
-        );
+        const btnFly = document.getElementById('touch-btn-fly');
+        this._addButtonListeners(btnFly, () => {
+            this._player.toggleFlying();
+            if (btnFly) btnFly.classList.toggle('active', this._player.isFlying());
+        });
 
         this._bindHotbarLongPress();
     }
