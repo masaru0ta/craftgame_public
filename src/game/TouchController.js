@@ -543,9 +543,9 @@ class TouchController {
     // ========================================
 
     _updateFlyingLabels(flying) {
-        if (this._btnJump) this._btnJump.textContent = flying ? '上がる' : 'ジャンプ';
+        if (this._btnJump) this._btnJump.textContent = flying ? '上昇' : 'jump';
         if (this._btnSneak) {
-            this._btnSneak.textContent = flying ? '下がる' : 'しゃがむ';
+            this._btnSneak.textContent = flying ? '下降' : 'sneak';
             // 飛行切替時にしゃがみ状態をリセット
             if (flying && this._player.isSneaking()) {
                 this._player.setSneaking(false);
