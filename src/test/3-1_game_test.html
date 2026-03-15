@@ -197,6 +197,17 @@
             var isTablet = ratio < 1.5;
             var mode = isTablet ? 'TABLET' : (h > w ? 'PORTRAIT' : 'LANDSCAPE');
             el.textContent = w + ' x ' + h + ' ratio:' + ratio + ' ' + mode;
+            // タブレット判定時ホットバーを80%に縮小
+            var hotbar = document.getElementById('hotbar-container');
+            if (hotbar) {
+                if (isTablet) {
+                    hotbar.style.transform = 'translateX(-50%) scale(0.8)';
+                    hotbar.style.transformOrigin = 'center bottom';
+                } else {
+                    hotbar.style.transform = 'translateX(-50%)';
+                    hotbar.style.transformOrigin = '';
+                }
+            }
         }
         window.addEventListener('resize', update);
         update();
