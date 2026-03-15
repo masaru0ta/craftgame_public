@@ -1014,6 +1014,8 @@ class GameTestApp {
     }
 
     _requestPointerLock() {
+        // タッチデバイスではPointerLockを使わない（スクリーンショット禁止回避）
+        if (this.touchController) return;
         this.playerController.requestPointerLock(this.canvas);
         this.firstPersonCamera.requestPointerLock(this.canvas);
     }
