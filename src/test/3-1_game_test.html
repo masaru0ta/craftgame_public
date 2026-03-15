@@ -208,6 +208,18 @@
                     hotbar.style.transformOrigin = '';
                 }
             }
+            // タブレット判定時、進む/戻るボタンを左1/6の位置に移動
+            var btnFwd = document.getElementById('touch-btn-forward');
+            var btnBwd = document.getElementById('touch-btn-backward');
+            if (btnFwd && btnBwd) {
+                if (isTablet) {
+                    btnFwd.style.left = '16.67%';
+                    btnBwd.style.left = '16.67%';
+                } else {
+                    btnFwd.style.left = '50%';
+                    btnBwd.style.left = '50%';
+                }
+            }
         }
         window.addEventListener('resize', update);
         update();
