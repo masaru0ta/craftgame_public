@@ -44,15 +44,11 @@ class TouchController {
         this._enabled = false;
         this._sensitivity = TouchController.DEFAULT_SENSITIVITY;
 
-        // 前進/後退ボタン状態
-        this._forwardActive = false;
-        this._forwardTouchId = null;
-        this._forwardLastX = 0;
-        this._forwardLastY = 0;
-        this._backwardActive = false;
-        this._backwardTouchId = null;
-        this._backwardLastX = 0;
-        this._backwardLastY = 0;
+        // 移動ボタン状態（前進/後退で共用する構造）
+        this._moveState = {
+            forward:  { active: false, touchId: null, lastX: 0, lastY: 0 },
+            backward: { active: false, touchId: null, lastX: 0, lastY: 0 },
+        };
 
         // 視点操作状態（タップ/長押しによるアクション判定を含む）
         this._lookActive = false;
@@ -62,7 +58,6 @@ class TouchController {
         this._lookStartX = 0;
         this._lookStartY = 0;
         this._lookDragged = false;
-        this._lastLookTapTime = 0;
         this._actionLongPressTimer = null;
         this._actionTriggered = false;
 
@@ -106,18 +101,10 @@ class TouchController {
 
     _bindEvents() {
         // 前進ボタン（タッチで前進、ドラッグで前進+視点回転）
-        this._addTouchListeners(this._btnForward,
-            (e) => this._onForwardStart(e),
-            (e) => this._onForwardMove(e),
-            (e) => this._onForwardEnd(e)
-        );
+        this._bindMoveButton(this._btnForward, 'forward', 'w');
 
         // 後退ボタン（タッチで後退、ドラッグで後退+視点回転）
-        this._addTouchListeners(this._btnBackward,
-            (e) => this._onBackwardStart(e),
-            (e) => this._onBackwardMove(e),
-            (e) => this._onBackwardEnd(e)
-        );
+        this._bindMoveButton(this._btnBackward, 'backward', 's');
 
         // 視点操作エリア
         const lookArea = document.getElementById('touch-look-area');
@@ -155,86 +142,55 @@ class TouchController {
         );
     }
 
-    // --- 前進ボタン操作 ---
+    // --- 移動ボタン操作（前進/後退共通） ---
 
-    _onForwardStart(e) {
+    _bindMoveButton(btnEl, stateKey, keyName) {
+        this._addTouchListeners(btnEl,
+            (e) => this._onMoveStart(e, stateKey, keyName, btnEl),
+            (e) => this._onMoveMove(e, stateKey),
+            (e) => this._onMoveEnd(e, stateKey, keyName, btnEl)
+        );
+    }
+
+    _onMoveStart(e, stateKey, keyName, btnEl) {
         if (!this._enabled) return;
         e.preventDefault();
         const touch = e.changedTouches[0];
-        this._forwardActive = true;
-        this._forwardTouchId = touch.identifier;
-        this._forwardLastX = touch.clientX;
-        this._forwardLastY = touch.clientY;
+        const s = this._moveState[stateKey];
+        s.active = true;
+        s.touchId = touch.identifier;
+        s.lastX = touch.clientX;
+        s.lastY = touch.clientY;
 
-        // 前進開始 → ハイライト消去
-        this._playerController.keys.w = true;
+        this._playerController.keys[keyName] = true;
         this._clearHighlight();
-        if (this._btnForward) this._btnForward.style.opacity = '0.8';
+        if (btnEl) btnEl.style.opacity = '0.8';
     }
 
-    _onForwardMove(e) {
-        if (!this._enabled || !this._forwardActive) return;
+    _onMoveMove(e, stateKey) {
+        const s = this._moveState[stateKey];
+        if (!this._enabled || !s.active) return;
         e.preventDefault();
-        const touch = this._findTouch(e.changedTouches, this._forwardTouchId);
+        const touch = this._findTouch(e.changedTouches, s.touchId);
         if (!touch) return;
 
-        const dx = touch.clientX - this._forwardLastX;
-        const dy = touch.clientY - this._forwardLastY;
-        this._forwardLastX = touch.clientX;
-        this._forwardLastY = touch.clientY;
+        const dx = touch.clientX - s.lastX;
+        const dy = touch.clientY - s.lastY;
+        s.lastX = touch.clientX;
+        s.lastY = touch.clientY;
 
         this._applyLookDelta(dx, dy);
     }
 
-    _onForwardEnd(e) {
-        if (!this._forwardActive) return;
+    _onMoveEnd(e, stateKey, keyName, btnEl) {
+        const s = this._moveState[stateKey];
+        if (!s.active) return;
         e.preventDefault();
-        this._forwardActive = false;
-        this._forwardTouchId = null;
+        s.active = false;
+        s.touchId = null;
 
-        this._playerController.keys.w = false;
-        if (this._btnForward) this._btnForward.style.opacity = '0.5';
-    }
-
-    // --- 後退ボタン操作 ---
-
-    _onBackwardStart(e) {
-        if (!this._enabled) return;
-        e.preventDefault();
-        const touch = e.changedTouches[0];
-        this._backwardActive = true;
-        this._backwardTouchId = touch.identifier;
-        this._backwardLastX = touch.clientX;
-        this._backwardLastY = touch.clientY;
-
-        // 後退開始 → ハイライト消去
-        this._playerController.keys.s = true;
-        this._clearHighlight();
-        if (this._btnBackward) this._btnBackward.style.opacity = '0.8';
-    }
-
-    _onBackwardMove(e) {
-        if (!this._enabled || !this._backwardActive) return;
-        e.preventDefault();
-        const touch = this._findTouch(e.changedTouches, this._backwardTouchId);
-        if (!touch) return;
-
-        const dx = touch.clientX - this._backwardLastX;
-        const dy = touch.clientY - this._backwardLastY;
-        this._backwardLastX = touch.clientX;
-        this._backwardLastY = touch.clientY;
-
-        this._applyLookDelta(dx, dy);
-    }
-
-    _onBackwardEnd(e) {
-        if (!this._backwardActive) return;
-        e.preventDefault();
-        this._backwardActive = false;
-        this._backwardTouchId = null;
-
-        this._playerController.keys.s = false;
-        if (this._btnBackward) this._btnBackward.style.opacity = '0.5';
+        this._playerController.keys[keyName] = false;
+        if (btnEl) btnEl.style.opacity = '0.5';
     }
 
     // --- 視点操作 + 2段階ブロック操作 ---
@@ -263,7 +219,7 @@ class TouchController {
         this._actionTriggered = false;
 
         // 長押しタイマー開始
-        if (this._actionLongPressTimer) clearTimeout(this._actionLongPressTimer);
+        this._cancelLongPressTimer();
         const startX = touch.clientX;
         const startY = touch.clientY;
         this._actionLongPressTimer = setTimeout(() => {
@@ -299,10 +255,7 @@ class TouchController {
             if (Math.abs(totalDx) > TouchController.ACTION_DRAG_THRESHOLD ||
                 Math.abs(totalDy) > TouchController.ACTION_DRAG_THRESHOLD) {
                 this._lookDragged = true;
-                if (this._actionLongPressTimer) {
-                    clearTimeout(this._actionLongPressTimer);
-                    this._actionLongPressTimer = null;
-                }
+                this._cancelLongPressTimer();
             }
         }
 
@@ -329,10 +282,7 @@ class TouchController {
         this._lookActive = false;
         this._lookTouchId = null;
 
-        if (this._actionLongPressTimer) {
-            clearTimeout(this._actionLongPressTimer);
-            this._actionLongPressTimer = null;
-        }
+        this._cancelLongPressTimer();
 
         // 短タップ → 2段階ブロック操作
         if (!this._lookDragged && !this._actionTriggered) {
@@ -343,8 +293,8 @@ class TouchController {
 
     // --- 2段階ブロック操作 ---
 
-    /** 短タップ: ハイライト無し→ハイライト表示 / ハイライト上→設置 / 異なる場所→ハイライト移動 */
-    _handleTap(screenX, screenY) {
+    /** 短タップ/長押し共通: レイキャスト → ハイライト判定 → アクション実行 */
+    _handleBlockAction(screenX, screenY, onMatchAction) {
         if (!this._blockInteraction || !this._camera || !this._canvas) return;
 
         const target = this._blockInteraction.raycastFromScreen(screenX, screenY, this._camera, this._canvas);
@@ -354,33 +304,25 @@ class TouchController {
         }
 
         if (this._highlightTarget && this._isSameBlock(target, this._highlightTarget)) {
-            // ハイライト上タップ → 設置
-            this._blockInteraction.placeBlockAt(target);
+            onMatchAction(target);
             this._clearHighlight();
         } else {
-            // 新しい場所 → ハイライト移動
             this._showHighlight(target);
         }
     }
 
-    /** 長押し: ハイライト上→破壊 / 異なる場所→ハイライト移動 */
+    /** 短タップ: ハイライト上→設置 / 新しい場所→ハイライト移動 */
+    _handleTap(screenX, screenY) {
+        this._handleBlockAction(screenX, screenY, (target) => {
+            this._blockInteraction.placeBlockAt(target);
+        });
+    }
+
+    /** 長押し: ハイライト上→破壊 / 新しい場所→ハイライト移動 */
     _handleLongPress(screenX, screenY) {
-        if (!this._blockInteraction || !this._camera || !this._canvas) return;
-
-        const target = this._blockInteraction.raycastFromScreen(screenX, screenY, this._camera, this._canvas);
-        if (!target || !target.hit) {
-            this._clearHighlight();
-            return;
-        }
-
-        if (this._highlightTarget && this._isSameBlock(target, this._highlightTarget)) {
-            // ハイライト上長押し → 破壊
+        this._handleBlockAction(screenX, screenY, (target) => {
             this._blockInteraction.destroyBlockAt(target);
-            this._clearHighlight();
-        } else {
-            // 新しい場所 → ハイライト移動
-            this._showHighlight(target);
-        }
+        });
     }
 
     /** 2つのレイキャスト結果が同じブロックかを判定 */
@@ -394,6 +336,7 @@ class TouchController {
         if (this._blockInteraction) {
             this._blockInteraction.currentTarget = target;
             this._blockInteraction.highlight.update(target);
+            this._blockInteraction._updatePlacementPreview();
         }
     }
 
@@ -403,34 +346,35 @@ class TouchController {
         if (this._blockInteraction) {
             this._blockInteraction.currentTarget = null;
             this._blockInteraction.highlight.update(null);
+            this._blockInteraction._updatePlacementPreview();
         }
     }
 
     // --- ピンチ操作 ---
 
-    /** ピンチ開始 */
-    _startPinch(touches) {
+    /** 2点間距離を算出 */
+    _getTouchDistance(touches) {
         const dx = touches[0].clientX - touches[1].clientX;
         const dy = touches[0].clientY - touches[1].clientY;
-        this._pinchStartDistance = Math.hypot(dx, dy);
+        return Math.hypot(dx, dy);
+    }
+
+    /** ピンチ開始 */
+    _startPinch(touches) {
+        this._pinchStartDistance = this._getTouchDistance(touches);
         this._isPinching = true;
 
         // 1本指操作をキャンセル
         this._lookActive = false;
         this._lookTouchId = null;
-        if (this._actionLongPressTimer) {
-            clearTimeout(this._actionLongPressTimer);
-            this._actionLongPressTimer = null;
-        }
+        this._cancelLongPressTimer();
     }
 
     /** ピンチ更新 */
     _updatePinch(touches) {
         if (!this._viewpointManager || !this._thirdPersonCamera) return;
 
-        const dx = touches[0].clientX - touches[1].clientX;
-        const dy = touches[0].clientY - touches[1].clientY;
-        const currentDistance = Math.hypot(dx, dy);
+        const currentDistance = this._getTouchDistance(touches);
         const delta = (this._pinchStartDistance - currentDistance) * TouchController.PINCH_SENSITIVITY;
         this._pinchStartDistance = currentDistance;
 
@@ -438,20 +382,20 @@ class TouchController {
 
         if (this._viewpointManager.getMode() === 'first_person') {
             if (delta > 0) {
-                // ピンチイン: 1人称→3人称に切替
                 this._viewpointManager.setMode('third_person');
                 this._thirdPersonCamera.setDistance(threshold);
             }
         } else {
             const newDistance = this._thirdPersonCamera.getDistance() + delta;
             if (newDistance <= threshold) {
-                // 距離がしきい値以下: 3人称→1人称に切替
                 this._viewpointManager.setMode('first_person');
             } else {
                 this._thirdPersonCamera.setDistance(newDistance);
             }
         }
     }
+
+    // --- ユーティリティ ---
 
     /** 視点回転の共通処理 */
     _applyLookDelta(dx, dy) {
@@ -462,13 +406,19 @@ class TouchController {
         );
     }
 
-    // --- ユーティリティ ---
-
     _findTouch(touchList, id) {
         for (let i = 0; i < touchList.length; i++) {
             if (touchList[i].identifier === id) return touchList[i];
         }
         return null;
+    }
+
+    /** 長押しタイマーをキャンセル */
+    _cancelLongPressTimer() {
+        if (this._actionLongPressTimer) {
+            clearTimeout(this._actionLongPressTimer);
+            this._actionLongPressTimer = null;
+        }
     }
 
     // --- 公開API ---
@@ -493,7 +443,10 @@ class TouchController {
     }
 
     update(deltaTime) {
-        // 入力は touchmove で随時更新されるため追加処理不要
+        // ハイライト表示中はゴーストブロック（設置予測）を毎フレーム更新
+        if (this._highlightTarget && this._blockInteraction) {
+            this._blockInteraction._updatePlacementPreview();
+        }
     }
 
     show() {
