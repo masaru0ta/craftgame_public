@@ -608,8 +608,15 @@ class WorldGenerator {
      * @param {Object} structureRecord - GAS構造物レコード
      */
     setTreeStructure(structureRecord) {
-        const parsed = typeof structureRecord.palette === 'string'
-            ? JSON.parse(structureRecord.palette) : structureRecord.palette;
+        if (!structureRecord.palette) return;
+        let parsed;
+        try {
+            parsed = typeof structureRecord.palette === 'string'
+                ? JSON.parse(structureRecord.palette) : structureRecord.palette;
+        } catch (e) {
+            console.warn('[WorldGenerator] setTreeStructure: paletteのJSONパース失敗', e.message);
+            return;
+        }
 
         let palette, offset;
         if (Array.isArray(parsed)) {
