@@ -159,9 +159,9 @@ class InventoryTestApp {
                 allItems: allItems
             });
 
-            // 全アイテムをインベントリに追加
+            // 全アイテムを初期インベントリに設定（各アイテムをmax_stack個）
             for (const item of allItems) {
-                this.inventory.addItem(item.item_str_id, 99);
+                this.inventory.addItem(item.item_str_id, item.max_stack || 99);
             }
 
             // ブロック破壊時にインベントリに自動収集
