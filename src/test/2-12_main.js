@@ -159,9 +159,14 @@ class InventoryTestApp {
                 allItems: allItems
             });
 
-            // 全アイテムを初期インベントリに設定（各アイテムをmax_stack個）
-            for (const item of allItems) {
-                this.inventory.addItem(item.item_str_id, item.max_stack || 99);
+            // 先頭9件をホットバーに、残りをインベントリに設定
+            const hotbar = this.blockInteraction.hotbar;
+            for (let i = 0; i < Math.min(allItems.length, Hotbar.SLOT_COUNT); i++) {
+                hotbar.setSlotBlock(i, allItems[i]);
+                hotbar.setSlotCount(i, allItems[i].max_stack || 99);
+            }
+            for (let i = Hotbar.SLOT_COUNT; i < allItems.length; i++) {
+                this.inventory.addItem(allItems[i].item_str_id, allItems[i].max_stack || 99);
             }
 
             // ブロック破壊時にインベントリに自動収集
