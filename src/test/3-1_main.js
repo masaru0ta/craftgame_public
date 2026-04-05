@@ -291,20 +291,23 @@ class GameTestApp {
             this.blockInteraction.pistonManager = this.pistonManager;
         }
 
-        // ホットバーに最初の9ブロックを自動設定
-        placeableBlocks.slice(0, Hotbar.SLOT_COUNT).forEach((block, i) => {
-            this.hotbar.setSlotBlock(i, block);
-            this.hotbar.setSlotCount(i, 999);
+        // 統一アイテムリストを構築（ブロック・構造物・道具）
+        const allItems = this._buildUnifiedItems(placeableBlocks);
+
+        // ホットバーに先頭9アイテムを設定
+        allItems.slice(0, Hotbar.SLOT_COUNT).forEach((item, i) => {
+            this.hotbar.setSlotBlock(i, item);
+            this.hotbar.setSlotCount(i, item.max_stack || 99);
         });
 
-        // 17. Inventory初期化（全ブロック999個ずつ）
+        // 17. Inventory初期化（全アイテム）
         this.inventory = new Inventory({
             container: document.getElementById('inventory-container'),
             hotbar: this.hotbar,
-            allBlocks: placeableBlocks
+            allItems: allItems
         });
-        for (const block of placeableBlocks) {
-            this.inventory.addItem(block.block_str_id, 999);
+        for (let i = Hotbar.SLOT_COUNT; i < allItems.length; i++) {
+            this.inventory.addItem(allItems[i].item_str_id, allItems[i].max_stack || 99);
         }
 
         // 18. VoxelParticleSystem初期化（衝突判定付き）
@@ -342,6 +345,7 @@ class GameTestApp {
             inventory: this.inventory,
             hotbar: this.hotbar,
             allBlocks: placeableBlocks,
+            allItems: allItems,
             recipes: recipes
         });
 
@@ -1120,6 +1124,67 @@ class GameTestApp {
         }
     }
 
+    /**
+     * 3ソースから統一アイテムリストを構築
+     * @param {Array} placeableBlocks - air除外のブロック一覧
+     * @returns {Array} 統一アイテム定義配列
+     */
+    _buildUnifiedItems(placeableBlocks) {
+        const items = [];
+        const textures = this.textureLoader.textures || [];
+
+        // 1. ブロックアイテム（is_item=true）
+        for (const block of placeableBlocks) {
+            if (!block.is_item) continue;
+            items.push({
+                item_str_id: block.block_str_id,
+                block_str_id: block.block_str_id,
+                item_type: 'block',
+                name: block.name || block.block_str_id,
+                max_stack: block.max_stack || 99,
+                thumbnail: block.thumbnail || null,
+                _blockData: block
+            });
+        }
+
+        // 2. 構造物アイテム（is_item=true）
+        const structures = this.textureLoader.structures || [];
+        for (const struct of structures) {
+            if (!struct.is_item) continue;
+            items.push({
+                item_str_id: struct.structure_str_id,
+                block_str_id: struct.structure_str_id,
+                item_type: 'structure',
+                name: struct.name || struct.structure_str_id,
+                max_stack: struct.max_stack || 1,
+                thumbnail: null,
+                _structureData: struct
+            });
+        }
+
+        // 3. 道具アイテム（アイテムシート）
+        const toolItems = this.textureLoader.items || [];
+        for (const item of toolItems) {
+            if (items.some(i => i.item_str_id === item.item_str_id)) continue;
+            let thumbnail = null;
+            if (item.texture) {
+                const tex = textures.find(t => t.file_name === item.texture);
+                if (tex && tex.image_base64) thumbnail = tex.image_base64;
+            }
+            items.push({
+                item_str_id: item.item_str_id,
+                block_str_id: item.item_str_id,
+                item_type: 'tool',
+                name: item.name || item.item_str_id,
+                max_stack: item.max_stack || 99,
+                thumbnail: thumbnail,
+                _toolData: item
+            });
+        }
+
+        return items;
+    }
+
     async _generateBlockThumbnails() {
         if (typeof BlockThumbnail === 'undefined') return;
         const generator = new BlockThumbnail({ THREE: THREE, size: 64, backgroundColor: null });
@@ -1130,6 +1195,14 @@ class GameTestApp {
             } catch (e) { /* サムネイル生成失敗は無視 */ }
         }
         generator.dispose();
+        // 統一アイテムマップのサムネイルも更新
+        if (this.inventory && this.inventory._itemMap) {
+            for (const block of blocks) {
+                const item = this.inventory._itemMap.get(block.block_str_id);
+                if (item && block.thumbnail) item.thumbnail = block.thumbnail;
+            }
+            this.inventory._renderAllSlots();
+        }
         if (this.blockInteraction && this.hotbar) {
             this.hotbar._createSlots();
             this.hotbar.updateDisplay();
