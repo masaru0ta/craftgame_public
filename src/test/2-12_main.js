@@ -149,16 +149,19 @@ class InventoryTestApp {
             // ホットバーは空で初期化
             this.blockInteraction.init([], hotbarContainer);
 
+            // 統一アイテムリストを構築
+            const allItems = this._buildUnifiedItems(placeableBlocks);
+
             // 2-12: インベントリ初期化
             this.inventory = new Inventory({
                 container: document.getElementById('inventory-container'),
                 hotbar: this.blockInteraction.hotbar,
-                allBlocks: placeableBlocks
+                allItems: allItems
             });
 
-            // 全ブロックをインベントリに追加
-            for (const block of placeableBlocks) {
-                this.inventory.addItem(block.block_str_id, 99);
+            // 全アイテムをインベントリに追加
+            for (const item of allItems) {
+                this.inventory.addItem(item.item_str_id, 99);
             }
 
             // ブロック破壊時にインベントリに自動収集
@@ -297,6 +300,69 @@ class InventoryTestApp {
         }
     }
 
+    /**
+     * 3ソースから統一アイテムリストを構築
+     * @param {Array} placeableBlocks - air除外のブロック一覧
+     * @returns {Array} 統一アイテム定義配列
+     */
+    _buildUnifiedItems(placeableBlocks) {
+        const items = [];
+        const textures = this.textureLoader.textures || [];
+
+        // 1. ブロックアイテム（is_item=true）
+        for (const block of placeableBlocks) {
+            if (!block.is_item) continue;
+            items.push({
+                item_str_id: block.block_str_id,
+                block_str_id: block.block_str_id,
+                item_type: 'block',
+                name: block.name || block.block_str_id,
+                max_stack: block.max_stack || 99,
+                thumbnail: block.thumbnail || null,
+                _blockData: block
+            });
+        }
+
+        // 2. 構造物アイテム（is_item=true）
+        const structures = this.textureLoader.structures || [];
+        for (const struct of structures) {
+            if (!struct.is_item) continue;
+            items.push({
+                item_str_id: struct.structure_str_id,
+                block_str_id: struct.structure_str_id,
+                item_type: 'structure',
+                name: struct.name || struct.structure_str_id,
+                max_stack: struct.max_stack || 1,
+                thumbnail: null,
+                _structureData: struct
+            });
+        }
+
+        // 3. 道具アイテム（アイテムシート）
+        const toolItems = this.textureLoader.items || [];
+        for (const item of toolItems) {
+            // ブロック・構造物と重複するIDはスキップ
+            if (items.some(i => i.item_str_id === item.item_str_id)) continue;
+            // テクスチャからサムネイル取得
+            let thumbnail = null;
+            if (item.texture) {
+                const tex = textures.find(t => t.file_name === item.texture);
+                if (tex && tex.image_base64) thumbnail = tex.image_base64;
+            }
+            items.push({
+                item_str_id: item.item_str_id,
+                block_str_id: item.item_str_id,
+                item_type: 'tool',
+                name: item.name || item.item_str_id,
+                max_stack: item.max_stack || 99,
+                thumbnail: thumbnail,
+                _toolData: item
+            });
+        }
+
+        return items;
+    }
+
     async _generateBlockThumbnails() {
         if (typeof BlockThumbnail === 'undefined') return;
         const generator = new BlockThumbnail({
@@ -313,6 +379,19 @@ class InventoryTestApp {
             }
         }
         generator.dispose();
+
+        // 統一アイテムマップのサムネイルも更新
+        if (this.inventory && this.inventory._itemMap) {
+            for (const block of blocks) {
+                const item = this.inventory._itemMap.get(block.block_str_id);
+                if (item && block.thumbnail) {
+                    item.thumbnail = block.thumbnail;
+                }
+            }
+            // インベントリUIを再描画
+            this.inventory._renderAllSlots();
+        }
+
         // ホットバーを再描画してサムネイルを反映
         if (this.blockInteraction && this.blockInteraction.hotbar) {
             this.blockInteraction.hotbar._createSlots();

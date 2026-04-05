@@ -59,6 +59,7 @@ class TextureLoader {
             this.textures = result.data.textures || [];
             this.structures = result.data.structures || [];
             this.recipes = result.data.recipes || [];
+            this.items = result.data.items || [];
 
             // テクスチャをキャッシュに読み込み
             await this._loadTextures();

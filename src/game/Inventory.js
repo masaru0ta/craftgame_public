@@ -11,17 +11,19 @@ class Inventory {
      * @param {Object} options
      * @param {HTMLElement} options.container - インベントリUIの親要素
      * @param {Hotbar} options.hotbar - ホットバーインスタンス
-     * @param {Array} options.allBlocks - 全ブロック定義配列
+     * @param {Array} options.allItems - 統一アイテム定義配列
+     * @param {Array} [options.allBlocks] - 後方互換用（allItemsが未指定時に使用）
      */
     constructor(options) {
         this._container = options.container;
         this._hotbar = options.hotbar;
-        this._allBlocks = options.allBlocks || [];
 
-        // block_str_id → ブロック定義オブジェクトのマップ
-        this._blockMap = new Map();
-        for (const block of this._allBlocks) {
-            this._blockMap.set(block.block_str_id, block);
+        // 統一アイテムマップ: item_str_id → アイテム定義
+        this._itemMap = new Map();
+        const items = options.allItems || options.allBlocks || [];
+        for (const item of items) {
+            const key = item.item_str_id || item.block_str_id;
+            if (key) this._itemMap.set(key, item);
         }
 
         // 27スロット
@@ -56,22 +58,23 @@ class Inventory {
 
     /**
      * アイテムを追加
-     * @param {string} blockStrId - ブロック文字列ID
+     * @param {string} itemStrId - アイテム文字列ID（block_str_idも可）
      * @param {number} count - 追加数
      * @returns {boolean} 成功したか
      */
-    addItem(blockStrId, count = 1) {
+    addItem(itemStrId, count = 1) {
         // ホットバーの既存スタックを優先検索
         for (let i = 0; i < Hotbar.SLOT_COUNT; i++) {
             const block = this._hotbar.getSlotBlock(i);
-            if (block && block.block_str_id === blockStrId) {
+            const slotId = block && (block.item_str_id || block.block_str_id);
+            if (slotId === itemStrId) {
                 this._hotbar.setSlotCount(i, this._hotbar.getSlotCount(i) + count);
                 return true;
             }
         }
         // インベントリの既存スタックを探す
         for (let i = 0; i < Inventory.SLOT_COUNT; i++) {
-            if (this._slots[i] && this._slots[i].block_str_id === blockStrId) {
+            if (this._slots[i] && this._slots[i].item_str_id === itemStrId) {
                 this._slots[i].count += count;
                 this._updateSlotUI(i);
                 return true;
@@ -80,7 +83,7 @@ class Inventory {
         // 空スロットに配置（インベントリ）
         for (let i = 0; i < Inventory.SLOT_COUNT; i++) {
             if (!this._slots[i]) {
-                this._slots[i] = { block_str_id: blockStrId, count: count };
+                this._slots[i] = { item_str_id: itemStrId, count: count };
                 this._updateSlotUI(i);
                 return true;
             }
@@ -107,7 +110,7 @@ class Inventory {
     /**
      * スロット内容を取得
      * @param {number} index
-     * @returns {{ block_str_id: string, count: number }|null}
+     * @returns {{ item_str_id: string, count: number }|null}
      */
     getSlot(index) {
         if (index < 0 || index >= Inventory.SLOT_COUNT) return null;
@@ -117,7 +120,7 @@ class Inventory {
     /**
      * スロット内容を設定
      * @param {number} index
-     * @param {{ block_str_id: string, count: number }|null} item
+     * @param {{ item_str_id: string, count: number }|null} item
      */
     setSlot(index, item) {
         if (index < 0 || index >= Inventory.SLOT_COUNT) return;
@@ -310,16 +313,16 @@ class Inventory {
      * コンテナにアイテムの画像/テキスト+カウントを描画
      */
     _renderItemContent(el, item) {
-        const block = this._blockMap.get(item.block_str_id);
-        if (block && block.thumbnail) {
+        const itemDef = this._itemMap.get(item.item_str_id);
+        if (itemDef && itemDef.thumbnail) {
             const img = document.createElement('img');
-            img.src = block.thumbnail;
-            img.alt = block.name || item.block_str_id;
+            img.src = itemDef.thumbnail;
+            img.alt = itemDef.name || item.item_str_id;
             img.style.cssText = 'width: 54px; height: 54px; image-rendering: pixelated;';
             el.appendChild(img);
         } else {
             const label = document.createElement('span');
-            label.textContent = (block && block.name) || item.block_str_id;
+            label.textContent = (itemDef && itemDef.name) || item.item_str_id;
             label.style.cssText = 'font-size: 10px; color: #fff;';
             el.appendChild(label);
         }
@@ -385,7 +388,7 @@ class Inventory {
         this._dragState = {
             sourceType: type,
             sourceIndex: index,
-            item: { block_str_id: item.block_str_id, count: item.count },
+            item: { item_str_id: item.item_str_id, count: item.count },
             ghost: ghost,
             startX: e.clientX,
             startY: e.clientY,
@@ -425,8 +428,8 @@ class Inventory {
             const index = parseInt(slot.dataset.index);
             const item = this._getSlotData(type, index);
             if (item) {
-                const block = this._blockMap.get(item.block_str_id);
-                const name = (block && block.name) || item.block_str_id;
+                const itemDef = this._itemMap.get(item.item_str_id);
+                const name = (itemDef && itemDef.name) || item.item_str_id;
                 this._tooltip.textContent = name;
                 this._tooltip.style.display = 'block';
                 this._tooltip.style.left = (e.clientX + 12) + 'px';
@@ -471,8 +474,8 @@ class Inventory {
 
             const destItem = this._getSlotData(destType, destIndex);
 
-            if (destItem && destItem.block_str_id === this._dragState.item.block_str_id) {
-                // 同じブロック → スタック
+            if (destItem && destItem.item_str_id === this._dragState.item.item_str_id) {
+                // 同じアイテム → スタック
                 destItem.count += this._dragState.item.count;
                 this._setSlotData(destType, destIndex, destItem);
             } else {
@@ -538,10 +541,11 @@ class Inventory {
         if (type === 'inv') {
             return this._slots[index];
         } else {
-            // ホットバー → { block_str_id, count } 形式に変換
+            // ホットバー → { item_str_id, count } 形式に変換
             const block = this._hotbar.getSlotBlock(index);
             if (!block) return null;
-            return { block_str_id: block.block_str_id, count: this._hotbar.getSlotCount(index) || 1 };
+            const id = block.item_str_id || block.block_str_id;
+            return { item_str_id: id, count: this._hotbar.getSlotCount(index) || 1 };
         }
     }
 
@@ -553,11 +557,11 @@ class Inventory {
             this._slots[index] = item;
             this._updateSlotUI(index);
         } else {
-            // ホットバー → ブロック定義オブジェクトに変換して設定
+            // ホットバー → アイテム定義オブジェクトに変換して設定
             if (item) {
-                const block = this._blockMap.get(item.block_str_id)
-                    || { block_str_id: item.block_str_id, name: item.block_str_id };
-                this._hotbar.setSlotBlock(index, block);
+                const itemDef = this._itemMap.get(item.item_str_id)
+                    || { item_str_id: item.item_str_id, block_str_id: item.item_str_id, name: item.item_str_id };
+                this._hotbar.setSlotBlock(index, itemDef);
                 this._hotbar.setSlotCount(index, item.count);
             } else {
                 this._hotbar.setSlotBlock(index, null);
