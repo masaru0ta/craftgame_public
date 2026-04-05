@@ -40,6 +40,21 @@
         </select>
       </div>
 
+      <div class="form-group">
+        <label class="checkbox-item"><input type="checkbox" id="is-item">アイテム化</label>
+      </div>
+
+      <div class="form-group" id="item-fields" style="display:none">
+        <label for="max-stack">最大スタック数 (1-99)</label>
+        <input type="number" id="max-stack" min="1" max="99" value="1">
+
+        <label for="thumbnail-mode" style="margin-top:6px">サムネイルモード</label>
+        <select id="thumbnail-mode">
+          <option value="auto">auto（3Dレンダリング）</option>
+          <option value="texture">texture（テクスチャ画像）</option>
+        </select>
+      </div>
+
       <div style="flex: 1;"></div>
 
       <div id="status-message" class="status-message"></div>

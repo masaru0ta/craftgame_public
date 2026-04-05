@@ -47,6 +47,12 @@ async function init() {
   document.getElementById('create-btn').addEventListener('click', handleCreate);
   document.getElementById('save-btn').addEventListener('click', handleSave);
   document.getElementById('delete-btn').addEventListener('click', handleDelete);
+
+  // アイテム化チェックボックスでフィールド表示切替
+  document.getElementById('is-item').addEventListener('change', () => {
+    document.getElementById('item-fields').style.display =
+      document.getElementById('is-item').checked ? '' : 'none';
+  });
 }
 
 /**
@@ -200,6 +206,10 @@ function handleStructureSelect(e) {
     currentStructureId = null;
     document.getElementById('structure-str-id').value = '';
     document.getElementById('structure-name').value = '';
+    document.getElementById('is-item').checked = false;
+    document.getElementById('max-stack').value = 1;
+    document.getElementById('thumbnail-mode').value = 'auto';
+    document.getElementById('item-fields').style.display = 'none';
     if (editor) editor.newStructure();
     return;
   }
@@ -216,6 +226,13 @@ function handleStructureSelect(e) {
   if (structure.category) {
     catSelect.value = structure.category;
   }
+
+  // アイテム関連フィールド
+  const isItem = Boolean(structure.is_item);
+  document.getElementById('is-item').checked = isItem;
+  document.getElementById('max-stack').value = structure.max_stack || 1;
+  document.getElementById('thumbnail-mode').value = structure.thumbnail_mode || 'auto';
+  document.getElementById('item-fields').style.display = isItem ? '' : 'none';
 
   // エディタにロード
   if (editor) {
@@ -286,6 +303,7 @@ async function handleSave() {
 
   try {
     showStatus('loading', '保存中...');
+    const isItem = document.getElementById('is-item').checked;
     await api.saveStructure({
       structure_id: currentStructureId,
       structure_str_id: document.getElementById('structure-str-id').value.trim(),
@@ -296,7 +314,10 @@ async function handleSave() {
       size_z: exportData.size_z,
       palette: exportData.palette,
       voxel_data: exportData.voxel_data,
-      orientation_data: exportData.orientation_data
+      orientation_data: exportData.orientation_data,
+      is_item: isItem,
+      ...(isItem && { max_stack: parseInt(document.getElementById('max-stack').value) || 1 }),
+      ...(isItem && { thumbnail_mode: document.getElementById('thumbnail-mode').value })
     });
 
     showStatus('success', '保存しました');
