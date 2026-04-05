@@ -305,67 +305,8 @@ class InventoryTestApp {
         }
     }
 
-    /**
-     * 3ソースから統一アイテムリストを構築
-     * @param {Array} placeableBlocks - air除外のブロック一覧
-     * @returns {Array} 統一アイテム定義配列
-     */
     _buildUnifiedItems(placeableBlocks) {
-        const items = [];
-        const textures = this.textureLoader.textures || [];
-
-        // 1. ブロックアイテム（is_item=true）
-        for (const block of placeableBlocks) {
-            if (!block.is_item) continue;
-            items.push({
-                item_str_id: block.block_str_id,
-                block_str_id: block.block_str_id,
-                item_type: 'block',
-                name: block.name || block.block_str_id,
-                max_stack: block.max_stack || 99,
-                thumbnail: block.thumbnail || null,
-                _blockData: block
-            });
-        }
-
-        // 2. 構造物アイテム（is_item=true）
-        const structures = this.textureLoader.structures || [];
-        for (const struct of structures) {
-            if (!struct.is_item) continue;
-            items.push({
-                item_str_id: struct.structure_str_id,
-                block_str_id: struct.structure_str_id,
-                item_type: 'structure',
-                name: struct.name || struct.structure_str_id,
-                max_stack: struct.max_stack || 1,
-                thumbnail: null,
-                _structureData: struct
-            });
-        }
-
-        // 3. 道具アイテム（アイテムシート）
-        const toolItems = this.textureLoader.items || [];
-        for (const item of toolItems) {
-            // ブロック・構造物と重複するIDはスキップ
-            if (items.some(i => i.item_str_id === item.item_str_id)) continue;
-            // テクスチャからサムネイル取得
-            let thumbnail = null;
-            if (item.texture) {
-                const tex = textures.find(t => t.file_name === item.texture);
-                if (tex && tex.image_base64) thumbnail = tex.image_base64;
-            }
-            items.push({
-                item_str_id: item.item_str_id,
-                block_str_id: item.item_str_id,
-                item_type: 'tool',
-                name: item.name || item.item_str_id,
-                max_stack: item.max_stack || 99,
-                thumbnail: thumbnail,
-                _toolData: item
-            });
-        }
-
-        return items;
+        return BuildUnifiedItems(this.textureLoader, placeableBlocks);
     }
 
     async _generateBlockThumbnails() {
