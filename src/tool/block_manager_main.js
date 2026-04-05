@@ -113,6 +113,10 @@ function cacheElements() {
   elements.rotatableGroup = document.getElementById('rotatableGroup');
   elements.sidePlaceable = document.getElementById('sidePlaceable');
   elements.sidePlaceableGroup = document.getElementById('sidePlaceableGroup');
+  elements.isItem = document.getElementById('isItem');
+  elements.isItemGroup = document.getElementById('isItemGroup');
+  elements.maxStack = document.getElementById('maxStack');
+  elements.maxStackGroup = document.getElementById('maxStackGroup');
   elements.saveBlockBtn = document.getElementById('saveBlockBtn');
   elements.deleteBlockBtn = document.getElementById('deleteBlockBtn');
   elements.createBlockModal = document.getElementById('createBlockModal');
@@ -202,6 +206,11 @@ function setupEventListeners() {
   elements.stairPlaceable.addEventListener('change', () => { state.isModified = true; });
   elements.rotatable.addEventListener('change', () => { state.isModified = true; });
   elements.sidePlaceable.addEventListener('change', () => { state.isModified = true; });
+  elements.isItem.addEventListener('change', () => {
+    state.isModified = true;
+    elements.maxStackGroup.style.display = elements.isItem.checked ? '' : 'none';
+  });
+  elements.maxStack.addEventListener('input', () => { state.isModified = true; });
 
   // 新規作成モーダル
   elements.createBlockModal.querySelector('.modal-close').addEventListener('click', closeCreateModal);
@@ -532,6 +541,11 @@ function selectBlock(blockId) {
     elements.rotatableGroup.style.display = isCustom ? 'none' : '';
     elements.sidePlaceableGroup.style.display = isCustom ? 'none' : '';
 
+    // アイテム化
+    elements.isItem.checked = block.is_item || false;
+    elements.maxStack.value = block.max_stack || 99;
+    elements.maxStackGroup.style.display = elements.isItem.checked ? '' : 'none';
+
     // BlockEditorUI にブロックをロード
     if (state.editorUI) {
       state.editorUI.loadBlock(block, state.textures);
@@ -591,6 +605,8 @@ async function saveBlock() {
     ...(elements.blockTypeSelect.value === 'normal' && { slope_placeable: elements.slopePlaceable.checked }),
     ...(elements.blockTypeSelect.value !== 'custom' && { rotatable: elements.rotatable.checked }),
     ...(elements.blockTypeSelect.value !== 'custom' && { sidePlaceable: elements.sidePlaceable.checked }),
+    is_item: elements.isItem.checked,
+    ...(elements.isItem.checked && { max_stack: parseInt(elements.maxStack.value) || 99 }),
   };
 
   // BlockEditorUIから形状データを取得してマージ

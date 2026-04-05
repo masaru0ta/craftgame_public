@@ -125,11 +125,11 @@
             position: fixed; left: 50%; transform: translateX(-50%);
             width: 70px; height: 70px;
             display: flex; align-items: center; justify-content: center;
-            background: rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.5);
-            border-radius: 50%; touch-action: none; opacity: 0.8;
+            background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%; touch-action: none; opacity: 0.5;
             color: #fff; font-size: 28px;
         }
-        #touch-btn-forward { bottom: 280px; }
+        #touch-btn-forward { bottom: 320px; }
         #touch-btn-backward { bottom: 160px; }
 
         #touch-look-area {
@@ -140,17 +140,15 @@
 
         .touch-btn {
             position: fixed; display: flex; align-items: center; justify-content: center;
-            background: rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.5);
+            background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3);
             border-radius: 50%; color: #fff; font-size: 20px;
-            touch-action: none; opacity: 0.8;
+            touch-action: none; opacity: 0.5;
         }
-        #touch-btn-jump { bottom: 280px; right: 20px; width: 82px; height: 82px; font-size: 14px; border-radius: 50%; padding: 0; line-height: 1.2; }
+        #touch-btn-jump { bottom: 120px; right: 30px; width: 60px; height: 60px; }
 
-        #touch-btn-inventory { top: 65px; right: 15px; bottom: auto; width: auto; height: auto; font-size: 20px; border-radius: 10px; padding: 12px 21px; }
-        #touch-btn-sneak { bottom: 160px; right: 20px; left: auto; width: 82px; height: 82px; font-size: 14px; border-radius: 50%; padding: 0; line-height: 1.2; }
-        #touch-btn-sneak.active { background: rgba(25,118,210,0.9) !important; border-color: #4fc3f7 !important; }
-        #touch-btn-fly { top: 65px; left: 15px; bottom: auto; width: auto; height: auto; font-size: 20px; border-radius: 10px; padding: 12px 21px; }
-        #touch-btn-fly.active { background: rgba(25,118,210,0.9) !important; border-color: #4fc3f7 !important; }
+        #touch-btn-inventory { bottom: 270px; right: 45px; width: 40px; height: 40px; font-size: 16px; }
+        #touch-btn-sneak { bottom: 120px; left: 170px; width: 40px; height: 40px; font-size: 16px; }
+        #touch-btn-fly { bottom: 175px; left: 170px; width: 40px; height: 40px; font-size: 16px; }
 
         /* マッチングUI */
         #matchmaking-container {
@@ -208,23 +206,6 @@
                 } else {
                     hotbar.style.transform = 'translateX(-50%)';
                     hotbar.style.transformOrigin = '';
-                }
-            }
-            // タブレット判定時、視線感度を1.5倍に
-            if (window.testApp && window.testApp.touchController) {
-                var base = 0.0056;
-                window.testApp.touchController.setLookSensitivity(isTablet ? base * 1.5 : base);
-            }
-            // タブレット判定時、進む/戻るボタンを左1/6の位置に移動
-            var btnFwd = document.getElementById('touch-btn-forward');
-            var btnBwd = document.getElementById('touch-btn-backward');
-            if (btnFwd && btnBwd) {
-                if (isTablet) {
-                    btnFwd.style.left = '16.67%';
-                    btnBwd.style.left = '16.67%';
-                } else {
-                    btnFwd.style.left = '50%';
-                    btnBwd.style.left = '50%';
                 }
             }
         }
@@ -413,11 +394,11 @@
         <div id="touch-btn-forward">&#x25B2;</div>
         <div id="touch-btn-backward">&#x25BC;</div>
         <div id="touch-look-area"></div>
-        <div id="touch-btn-jump" class="touch-btn">ジャンプ</div>
+        <div id="touch-btn-jump" class="touch-btn">&#x2B06;</div>
 
-        <div id="touch-btn-inventory" class="touch-btn">インベントリ</div>
-        <div id="touch-btn-sneak" class="touch-btn">しゃがむ</div>
-        <div id="touch-btn-fly" class="touch-btn">飛行</div>
+        <div id="touch-btn-inventory" class="touch-btn">&#x1F4E6;</div>
+        <div id="touch-btn-sneak" class="touch-btn">&#x1F53D;</div>
+        <div id="touch-btn-fly" class="touch-btn">&#x1F54A;</div>
     </div>
 
     <!-- マッチングUI -->

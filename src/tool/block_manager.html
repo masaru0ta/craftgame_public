@@ -134,7 +134,12 @@
           <label class="checkbox-item" id="slopePlaceableGroup"><input type="checkbox" id="slopePlaceable">スロープ設置可能</label>
           <label class="checkbox-item" id="rotatableGroup"><input type="checkbox" id="rotatable">方角可変</label>
           <label class="checkbox-item" id="sidePlaceableGroup"><input type="checkbox" id="sidePlaceable">側面設置可能</label>
+          <label class="checkbox-item" id="isItemGroup"><input type="checkbox" id="isItem">アイテム化</label>
         </div>
+      </div>
+      <div class="form-group" id="maxStackGroup" style="display:none">
+        <label>最大スタック数 (1-99)</label>
+        <input type="number" id="maxStack" min="1" max="99" value="99">
       </div>
       <div class="btn-row">
         <button class="btn-danger" id="deleteBlockBtn">削除</button>
