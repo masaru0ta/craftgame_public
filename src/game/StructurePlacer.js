@@ -235,7 +235,8 @@ class StructurePlacer {
                     const dz = offsetZ + iz;
 
                     const rotated = this.ApplyRotation(dx, dy, dz, rotY);
-                    const rotatedOrientation = this.ApplyOrientationRotation(origOrientation, rotY);
+                    // orientation 回転は位置回転と逆方向（RotateBlockPos は CCW、orientation は CW 相当）
+                    const rotatedOrientation = this.ApplyOrientationRotation(origOrientation, (4 - rotY) % 4);
 
                     yield {
                         wx: adjacentPos.x + rotated.dx,
