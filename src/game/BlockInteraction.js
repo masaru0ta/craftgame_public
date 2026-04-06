@@ -58,6 +58,19 @@ class BlockInteraction {
             }
         });
         this._longPressTimer = null;          // 長押し検出タイマー
+        this._itemUseHandlers = new Map();    // Map<itemStrId, handler>
+    }
+
+    /**
+     * アイテム使用ハンドラを登録する
+     * ハンドラが true を返した場合 placeBlockAt() はその値をそのまま返す。
+     * false を返した場合は後続の通常ブロック設置ロジックへ進む。
+     * 同一 itemStrId で複数回登録した場合は後から登録したハンドラで上書きする。
+     * @param {string} itemStrId - アイテムの block_str_id
+     * @param {function(Object, Object): boolean} handler - (target, selectedBlock) => boolean
+     */
+    RegisterItemUseHandler(itemStrId, handler) {
+        this._itemUseHandlers.set(itemStrId, handler);
     }
 
     /**
@@ -292,6 +305,13 @@ class BlockInteraction {
         const selectedBlock = this.hotbar.getSelectedBlock();
         if (!selectedBlock) return false;
 
+        // アイテム使用ハンドラ呼び出し
+        const handler = this._itemUseHandlers.get(selectedBlock.block_str_id);
+        if (handler) {
+            const result = handler(target, selectedBlock);
+            if (result) return result;
+        }
+
         // ロープ選択時 → ポールクリックでロープ接続
         if (selectedBlock.block_str_id === 'rope' && this.ropeManager) {
             if (targetBlockId === 'pole') {
@@ -475,6 +495,20 @@ class BlockInteraction {
         // ローカルY範囲外チェック
         if (localY < 0) {
             return false;
+        }
+
+        // linked_destruction チェック（構造物全体の連鎖破壊）
+        if (this.structurePlacer && typeof chunk.chunkData.getStructureInstance === 'function') {
+            const instanceInfo = chunk.chunkData.getStructureInstance(localX, localY, localZ);
+            if (instanceInfo) {
+                const result = this.structurePlacer.DestroyLinked(instanceInfo);
+                if (result.destroyed) {
+                    if (this._onBlockDestroyed) {
+                        this._onBlockDestroyed(result.dropItemId, x, y, z);
+                    }
+                }
+                return result.destroyed;
+            }
         }
 
         // 回転軸ブロック破壊時は回転体を解除

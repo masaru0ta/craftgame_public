@@ -498,6 +498,7 @@ class GameTestApp {
                 physicsWorld:  this.physicsWorld,
                 player:        this.player,
                 chunkStorage:  this.chunkManager.storage,
+                structures:    this.textureLoader.structures,
             });
             this.blockInteraction.structurePlacer = this.structurePlacer;
             this.blockInteraction._structureRotY = 0;

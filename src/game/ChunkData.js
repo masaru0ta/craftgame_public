@@ -44,6 +44,10 @@ class ChunkData {
         // shape格納（スパース管理: ハーフブロック等の形状情報）
         // key: ボクセルインデックス, value: 'half' など（'normal' はデフォルトのため格納しない）
         this._shapeMap = new Map();
+
+        // structureInstance格納（スパース管理: linked_destructionブロックのみ）
+        // key: ボクセルインデックス, value: { structure_str_id, origin: {x,y,z}, rotation }
+        this._structureInstanceMap = new Map();
     }
 
     /**
@@ -210,9 +214,10 @@ class ChunkData {
             this._orientationMap.set(index, orientation);
         }
 
-        // air設置時はshapeもクリア
+        // air設置時はshapeとstructureInstanceもクリア
         if (blockStrId === 'air') {
             this._shapeMap.delete(index);
+            this._structureInstanceMap.delete(index);
         }
     }
 
@@ -227,6 +232,36 @@ class ChunkData {
         if (!this._isInBounds(x, y, z)) return 0;
         const index = this._getIndex(x, y, z);
         return this._orientationMap.get(index) || 0;
+    }
+
+    /**
+     * ブロックの structureInstance メタデータを取得
+     * @param {number} x - ローカルX座標 (0-15)
+     * @param {number} y - Y座標 (0-127)
+     * @param {number} z - ローカルZ座標 (0-15)
+     * @returns {{ structure_str_id: string, origin: {x,y,z}, rotation: number } | null}
+     */
+    getStructureInstance(x, y, z) {
+        if (!this._isInBounds(x, y, z)) return null;
+        const index = this._getIndex(x, y, z);
+        return this._structureInstanceMap.get(index) || null;
+    }
+
+    /**
+     * ブロックの structureInstance メタデータを設定
+     * @param {number} x - ローカルX座標 (0-15)
+     * @param {number} y - Y座標 (0-127)
+     * @param {number} z - ローカルZ座標 (0-15)
+     * @param {{ structure_str_id: string, origin: {x,y,z}, rotation: number } | null} info
+     */
+    setStructureInstance(x, y, z, info) {
+        if (!this._isInBounds(x, y, z)) return;
+        const index = this._getIndex(x, y, z);
+        if (info === null) {
+            this._structureInstanceMap.delete(index);
+        } else {
+            this._structureInstanceMap.set(index, info);
+        }
     }
 
     /**
@@ -422,6 +457,11 @@ class ChunkData {
             result.shapeData = Array.from(this._shapeMap.entries());
         }
 
+        // structureInstanceMapが空でなければシリアライズ
+        if (this._structureInstanceMap.size > 0) {
+            result.structureInstanceData = Array.from(this._structureInstanceMap.entries());
+        }
+
         return result;
     }
 
@@ -449,6 +489,11 @@ class ChunkData {
         // shapeData復元（後方互換: フィールドがなければ空Map）
         if (serialized.shapeData) {
             chunk._shapeMap = new Map(serialized.shapeData);
+        }
+
+        // structureInstanceData復元（後方互換: フィールドがなければ空Map）
+        if (serialized.structureInstanceData) {
+            chunk._structureInstanceMap = new Map(serialized.structureInstanceData);
         }
 
         return chunk;

@@ -15,6 +15,8 @@ class StructurePlacer {
         this._physicsWorld  = options.physicsWorld  || null;
         this._player        = options.player        || null;
         this._chunkStorage  = options.chunkStorage  || null;
+        /** @type {Array|null} 全構造物データ（DestroyLinked で structure_str_id から検索するために使用） */
+        this._structures    = options.structures    || null;
     }
 
     // ============================================================
@@ -177,6 +179,112 @@ class StructurePlacer {
         }
 
         return true;
+    }
+
+    // ============================================================
+    // 連鎖破壊（linked_destruction）用メソッド
+    // ============================================================
+
+    /**
+     * linked_destruction: true の構造物を設置する（メタデータ付き）
+     * 各非airブロックの chunkData に structureInstance 情報を記録する
+     * @param {{ x: number, y: number, z: number }} adjacentPos
+     * @param {Object} structureData
+     * @param {number} rotY - 0|1|2|3
+     * @returns {boolean} 設置成功なら true
+     */
+    PlaceLinked(adjacentPos, structureData, rotY) {
+        if (!this.CanPlace(adjacentPos, structureData, rotY)) return false;
+
+        const instanceInfo = {
+            structure_str_id: structureData.structure_str_id,
+            origin: { x: adjacentPos.x, y: adjacentPos.y, z: adjacentPos.z },
+            rotation: rotY,
+        };
+
+        const positions = [];
+        const chunksToSave = new Map();
+
+        const blocks = this._iterateBlocks(adjacentPos, structureData, rotY);
+        for (const { wx, wy, wz, blockStrId, orientation } of blocks) {
+            const chunkX = Math.floor(wx / 16);
+            const chunkZ = Math.floor(wz / 16);
+            const localX = ((wx % 16) + 16) % 16;
+            const localZ = ((wz % 16) + 16) % 16;
+
+            const chunkKey = `${chunkX},${chunkZ}`;
+            const chunk = this._chunkManager.chunks.get(chunkKey);
+            if (!chunk || !chunk.chunkData) continue;
+
+            const localY = wy - chunk.chunkData.baseY;
+            if (localY < 0 || localY >= 128) continue;
+
+            chunk.chunkData.setBlock(localX, localY, localZ, blockStrId, orientation);
+            chunk.chunkData.setStructureInstance(localX, localY, localZ, instanceInfo);
+            positions.push([wx, wy, wz]);
+            chunksToSave.set(chunkKey, { chunkX, chunkZ, chunkData: chunk.chunkData });
+        }
+
+        if (positions.length === 0) return false;
+
+        this._chunkManager.rebuildChunksAtPositions(positions, new Set());
+        for (const { chunkX, chunkZ, chunkData } of chunksToSave.values()) {
+            this._saveChunk(chunkX, chunkZ, chunkData);
+        }
+        return true;
+    }
+
+    /**
+     * 連鎖破壊を実行する（BlockInteraction の左クリック破壊から呼び出す）
+     * instanceInfo が示す構造物の全非airブロックを消去し、設置アイテムを1個ドロップする
+     * @param {{ structure_str_id: string, origin: {x,y,z}, rotation: number }} instanceInfo
+     * @returns {{ destroyed: boolean, dropItemId: string | null }}
+     */
+    DestroyLinked(instanceInfo) {
+        if (!this._structures) return { destroyed: false, dropItemId: null };
+
+        const structureData = this._structures.find(
+            s => s.structure_str_id === instanceInfo.structure_str_id
+        );
+        if (!structureData) return { destroyed: false, dropItemId: null };
+
+        const adjacentPos = instanceInfo.origin;
+        const rotY = instanceInfo.rotation;
+
+        const positions = [];
+        const chunksToSave = new Map();
+
+        const blocks = this._iterateBlocks(adjacentPos, structureData, rotY);
+        for (const { wx, wy, wz } of blocks) {
+            // すでに air のブロックはスキップ
+            const existing = this._physicsWorld ? this._physicsWorld.getBlockAt(wx, wy, wz) : null;
+            if (!existing || existing === 'air') continue;
+
+            const chunkX = Math.floor(wx / 16);
+            const chunkZ = Math.floor(wz / 16);
+            const localX = ((wx % 16) + 16) % 16;
+            const localZ = ((wz % 16) + 16) % 16;
+
+            const chunkKey = `${chunkX},${chunkZ}`;
+            const chunk = this._chunkManager.chunks.get(chunkKey);
+            if (!chunk || !chunk.chunkData) continue;
+
+            const localY = wy - chunk.chunkData.baseY;
+            if (localY < 0 || localY >= 128) continue;
+
+            chunk.chunkData.setBlock(localX, localY, localZ, 'air');
+            positions.push([wx, wy, wz]);
+            chunksToSave.set(chunkKey, { chunkX, chunkZ, chunkData: chunk.chunkData });
+        }
+
+        if (positions.length === 0) return { destroyed: false, dropItemId: null };
+
+        this._chunkManager.rebuildChunksAtPositions(positions, new Set());
+        for (const { chunkX, chunkZ, chunkData } of chunksToSave.values()) {
+            this._saveChunk(chunkX, chunkZ, chunkData);
+        }
+
+        return { destroyed: true, dropItemId: instanceInfo.structure_str_id };
     }
 
     // ============================================================
