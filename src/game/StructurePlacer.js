@@ -194,9 +194,31 @@ class StructurePlacer {
         if (!sd) return;
 
         // bb_min（エディタ上の原点相対オフセット）
-        const offsetX = (structureData.bb_min_x !== undefined ? structureData.bb_min_x : 0) - 16;
-        const offsetY = (structureData.bb_min_y !== undefined ? structureData.bb_min_y : 0);
-        const offsetZ = (structureData.bb_min_z !== undefined ? structureData.bb_min_z : 0) - 16;
+        // bb_min が個別フィールドにある場合はそれを使用、
+        // なければ palette JSON 内の offset フィールドから取得
+        let offsetX = 0, offsetY = 0, offsetZ = 0;
+        if (structureData.bb_min_x !== undefined) {
+            offsetX = structureData.bb_min_x - 16;
+            offsetY = structureData.bb_min_y || 0;
+            offsetZ = structureData.bb_min_z - 16;
+        } else {
+            // palette.offset = [bb_min_x - ORIGIN_X, bb_min_y, bb_min_z - ORIGIN_Z]
+            const rawPalette = structureData.palette;
+            let paletteOffset = null;
+            if (typeof rawPalette === 'string') {
+                try {
+                    const parsed = JSON.parse(rawPalette);
+                    if (parsed && Array.isArray(parsed.offset)) paletteOffset = parsed.offset;
+                } catch (_) {}
+            } else if (rawPalette && Array.isArray(rawPalette.offset)) {
+                paletteOffset = rawPalette.offset;
+            }
+            if (paletteOffset) {
+                offsetX = paletteOffset[0] || 0;
+                offsetY = paletteOffset[1] || 0;
+                offsetZ = paletteOffset[2] || 0;
+            }
+        }
 
         const sizeX = structureData.size_x || 0;
         const sizeY = structureData.size_y || 0;
@@ -253,8 +275,17 @@ class StructurePlacer {
     _parsePalette(palette) {
         if (Array.isArray(palette)) return palette;
         if (typeof palette === 'string') {
-            try { return JSON.parse(palette); } catch (_) { return ['air']; }
+            if (palette === '') return ['air'];
+            try {
+                const parsed = JSON.parse(palette);
+                if (Array.isArray(parsed)) return parsed;
+                // {"blocks": [...], "offset": [...]} 形式
+                if (parsed && Array.isArray(parsed.blocks)) return parsed.blocks;
+            } catch (_) {}
+            return ['air'];
         }
+        // オブジェクト形式（文字列化前）
+        if (palette && Array.isArray(palette.blocks)) return palette.blocks;
         return ['air'];
     }
 
