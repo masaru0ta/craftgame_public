@@ -541,8 +541,8 @@ class PlacementPreview {
                 );
                 if (!blockDef) continue;
 
-                // 1ブロック分のゴーストメッシュを生成
-                const mesh = this._buildStructureBlockMesh(blockDef);
+                // 1ブロック分のゴーストメッシュを生成（実際の orientation を適用）
+                const mesh = this._buildStructureBlockMesh(blockDef, blk.orientation);
                 // 各ブロックの相対オフセット位置（Three.js座標系: Z反転）
                 mesh.position.set(blk.wx, blk.wy, -blk.wz);
                 group.add(mesh);
@@ -572,8 +572,8 @@ class PlacementPreview {
      * 構造物内の1ブロック用ゴーストメッシュを生成（シンプルなボックス）
      * @private
      */
-    _buildStructureBlockMesh(blockDef) {
-        return this._buildMesh(blockDef, 0, false, false, false);
+    _buildStructureBlockMesh(blockDef, orientation = 0) {
+        return this._buildMesh(blockDef, orientation, false, false, false);
     }
 }
 
