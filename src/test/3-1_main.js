@@ -297,7 +297,7 @@ class GameTestApp {
         // ホットバーに先頭9アイテムを設定
         allItems.slice(0, Hotbar.SLOT_COUNT).forEach((item, i) => {
             this.hotbar.setSlotBlock(i, item);
-            this.hotbar.setSlotCount(i, item.max_stack || 99);
+            this.hotbar.setSlotCount(i, 99);
         });
 
         // 17. Inventory初期化（全アイテム）
@@ -307,7 +307,7 @@ class GameTestApp {
             allItems: allItems
         });
         for (let i = Hotbar.SLOT_COUNT; i < allItems.length; i++) {
-            this.inventory.addItem(allItems[i].item_str_id, allItems[i].max_stack || 99);
+            this.inventory.addItem(allItems[i].item_str_id, 99);
         }
 
         // 18. VoxelParticleSystem初期化（衝突判定付き）
