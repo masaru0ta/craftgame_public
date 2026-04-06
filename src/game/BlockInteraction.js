@@ -121,7 +121,8 @@ class BlockInteraction {
 
         // 構造物アイテムの場合は構造物プレビューモードへ
         if (selectedBlock.structure_str_id && this.structurePlacer) {
-            const rotY = this._structureRotY || 0;
+            const baseRotY = this.player ? BlockOrientation.RotationFromYaw(this.player.getYaw(), 0) : 0;
+            const rotY = (baseRotY + (this._structureRotY || 0)) % 4;
             const canPlace = this.structurePlacer.CanPlace(
                 { x: this.currentTarget.adjacentX, y: this.currentTarget.adjacentY, z: this.currentTarget.adjacentZ },
                 selectedBlock, rotY
@@ -325,7 +326,8 @@ class BlockInteraction {
 
         // 構造物アイテムの設置
         if (selectedBlock.structure_str_id && this.structurePlacer) {
-            const rotY = this._structureRotY || 0;
+            const baseRotY = this.player ? BlockOrientation.RotationFromYaw(this.player.getYaw(), 0) : 0;
+            const rotY = (baseRotY + (this._structureRotY || 0)) % 4;
             const placed = this.structurePlacer.Place(
                 { x: target.adjacentX, y: target.adjacentY, z: target.adjacentZ },
                 selectedBlock, rotY
