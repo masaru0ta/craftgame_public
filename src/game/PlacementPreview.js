@@ -34,6 +34,11 @@ class PlacementPreview {
             depthTest: true,
             depthWrite: false,
         });
+
+        // 構造物モード用
+        this._structureGroup = null;   // 構造物ゴーストメッシュ群 (THREE.Group)
+        this._structureMaterial = null; // 構造物用 ShaderMaterial
+        this._structureCacheKey = '';  // 構造物キャッシュキー
     }
 
     /**
@@ -151,13 +156,18 @@ class PlacementPreview {
         if (this._currentMesh) {
             this._currentMesh.visible = false;
         }
+        if (this._structureGroup) {
+            this._structureGroup.visible = false;
+        }
     }
 
     /** リソースを解放 */
     dispose() {
         this._removeMesh();
+        this._removeStructureGroup();
         if (this._material) this._material.dispose();
         if (this._wireMaterial) this._wireMaterial.dispose();
+        if (this._structureMaterial) this._structureMaterial.dispose();
     }
 
     /**
@@ -430,6 +440,140 @@ class PlacementPreview {
             this._currentMesh = null;
             this._cacheKey = '';
         }
+    }
+
+    /** 構造物グループをシーンから除去して破棄 */
+    _removeStructureGroup() {
+        if (this._structureGroup) {
+            this._scene.remove(this._structureGroup);
+            this._structureGroup.traverse(child => {
+                if (child.geometry) child.geometry.dispose();
+            });
+            this._structureGroup = null;
+            this._structureCacheKey = '';
+        }
+    }
+
+    /**
+     * 構造物ゴーストメッシュ用マテリアルを生成
+     * @private
+     */
+    _createStructureMaterial() {
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                atlasTexture: { value: this._textureLoader._atlasTexture },
+                opacity:      { value: PlacementPreview.OpacityCanPlace },
+                tintColor:    { value: PlacementPreview.TintNormal.clone() },
+            },
+            vertexShader: `
+                attribute vec4 atlasInfo;
+                varying vec2 vUv;
+                varying vec4 vAtlasInfo;
+                void main() {
+                    vUv = uv;
+                    vAtlasInfo = atlasInfo;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D atlasTexture;
+                uniform float opacity;
+                uniform vec3 tintColor;
+                varying vec2 vUv;
+                varying vec4 vAtlasInfo;
+                void main() {
+                    vec2 tiledUv = fract(vUv);
+                    vec2 atlasUv = tiledUv * vAtlasInfo.zw + vAtlasInfo.xy;
+                    vec4 texColor = texture2D(atlasTexture, atlasUv);
+                    if (texColor.a < 0.5) discard;
+                    vec3 boosted = texColor.rgb + ${PlacementPreview.BrightnessBoost.toFixed(2)};
+                    gl_FragColor = vec4(boosted * tintColor, opacity);
+                }
+            `,
+            transparent: true,
+            depthWrite: false,
+            depthTest: true,
+            side: THREE.BackSide,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+        });
+    }
+
+    /**
+     * 構造物プレビューを更新する
+     * @param {Object} raycastResult - レイキャスト結果
+     * @param {Object} structureData - 構造物データ（GAS から取得したオブジェクト）
+     * @param {number} rotY - Y軸回転量（0|1|2|3）
+     * @param {boolean} canPlace - 設置可能か
+     * @param {StructurePlacer} structurePlacer - 座標変換・イテレート用
+     */
+    updateStructure(raycastResult, structureData, rotY, canPlace, structurePlacer) {
+        if (!raycastResult || !raycastResult.hit || !structureData || !structurePlacer) {
+            this.hide();
+            return;
+        }
+
+        // 通常ブロックプレビューは非表示にする
+        if (this._currentMesh) this._currentMesh.visible = false;
+
+        const ax = raycastResult.adjacentX;
+        const ay = raycastResult.adjacentY;
+        const az = raycastResult.adjacentZ;
+
+        // キャッシュキー（位置・回転・構造物IDが変わったら再生成）
+        const newKey = `${structureData.structure_str_id}:${rotY}:${ax},${ay},${az}`;
+        if (newKey !== this._structureCacheKey) {
+            this._removeStructureGroup();
+
+            // 構造物マテリアルを初期化（初回のみ）
+            if (!this._structureMaterial) {
+                this._structureMaterial = this._createStructureMaterial();
+            }
+
+            const group = new THREE.Group();
+
+            // adjacentPos を原点として全非airブロックをイテレート
+            const origin = { x: 0, y: 0, z: 0 };
+            for (const blk of structurePlacer._iterateBlocks(origin, structureData, rotY)) {
+                const blockDef = this._textureLoader.blocks.find(
+                    b => b.block_str_id === blk.blockStrId
+                );
+                if (!blockDef) continue;
+
+                // 1ブロック分のゴーストメッシュを生成
+                const mesh = this._buildStructureBlockMesh(blockDef);
+                // 各ブロックの相対オフセット位置（Three.js座標系: Z反転）
+                mesh.position.set(blk.wx, blk.wy, -blk.wz);
+                group.add(mesh);
+            }
+
+            this._structureGroup = group;
+            this._scene.add(group);
+            this._structureCacheKey = newKey;
+        }
+
+        // opacity・色更新
+        const u = this._structureMaterial.uniforms;
+        if (canPlace) {
+            u.tintColor.value.copy(PlacementPreview.TintNormal);
+            u.opacity.value = PlacementPreview.OpacityCanPlace;
+        } else {
+            u.tintColor.value.copy(PlacementPreview.TintInvalid);
+            u.opacity.value = PlacementPreview.OpacityCannotPlace;
+        }
+
+        // グループ全体の位置を adjacentPos に設定（Three.js座標系: Z反転）
+        this._structureGroup.position.set(ax, ay, -az);
+        this._structureGroup.visible = true;
+    }
+
+    /**
+     * 構造物内の1ブロック用ゴーストメッシュを生成（シンプルなボックス）
+     * @private
+     */
+    _buildStructureBlockMesh(blockDef) {
+        return this._buildMesh(blockDef, 0, false, false, false);
     }
 }
 

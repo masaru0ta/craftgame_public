@@ -119,6 +119,19 @@ class BlockInteraction {
             return;
         }
 
+        // 構造物アイテムの場合は構造物プレビューモードへ
+        if (selectedBlock.structure_str_id && this.structurePlacer) {
+            const rotY = this._structureRotY || 0;
+            const canPlace = this.structurePlacer.CanPlace(
+                { x: this.currentTarget.adjacentX, y: this.currentTarget.adjacentY, z: this.currentTarget.adjacentZ },
+                selectedBlock, rotY
+            );
+            this.placementPreview.updateStructure(
+                this.currentTarget, selectedBlock, rotY, canPlace, this.structurePlacer
+            );
+            return;
+        }
+
         // 右クリックで設置ではなく特殊操作になるブロックはゴースト非表示
         const targetBlockId = this.physicsWorld.getBlockAt(
             this.currentTarget.blockX, this.currentTarget.blockY, this.currentTarget.blockZ);
@@ -308,6 +321,19 @@ class BlockInteraction {
         // 水入りバケツ選択時 → 水設置
         if (selectedBlock.block_str_id === 'bucket_of_water') {
             return this._pourWater(target);
+        }
+
+        // 構造物アイテムの設置
+        if (selectedBlock.structure_str_id && this.structurePlacer) {
+            const rotY = this._structureRotY || 0;
+            const placed = this.structurePlacer.Place(
+                { x: target.adjacentX, y: target.adjacentY, z: target.adjacentZ },
+                selectedBlock, rotY
+            );
+            if (placed && this._onBlockPlaced) {
+                this._onBlockPlaced(selectedBlock.structure_str_id);
+            }
+            return placed;
         }
 
         // orientation 計算

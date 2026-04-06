@@ -34,11 +34,22 @@ function BuildUnifiedItems(textureLoader, placeableBlocks) {
         items.push({
             item_str_id: struct.structure_str_id,
             block_str_id: struct.structure_str_id,
+            structure_str_id: struct.structure_str_id,
             item_type: 'structure',
             name: struct.name || struct.structure_str_id,
             max_stack: struct.max_stack || 1,
             thumbnail: null,
-            _structureData: struct
+            _structureData: struct,
+            // 構造物データのフィールドを展開（CanPlace/Place で使用）
+            palette: struct.palette,
+            voxel_data: struct.voxel_data,
+            orientation_data: struct.orientation_data,
+            size_x: struct.size_x,
+            size_y: struct.size_y,
+            size_z: struct.size_z,
+            bb_min_x: struct.bb_min_x,
+            bb_min_y: struct.bb_min_y,
+            bb_min_z: struct.bb_min_z,
         });
     }
 

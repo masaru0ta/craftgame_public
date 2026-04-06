@@ -54,6 +54,12 @@ class PlayerController {
         this._isPointerLocked = false;
         this._pointerLockElement = null;
 
+        // 構造物 Y軸回転
+        this._structureRotY = 0;
+        this._onRotateStructureCallback = null;
+        // UI ブロッキング判定コールバック（インベントリ・クラフト画面が開いているか）
+        this._isUIOpenChecker = null;
+
         // ダブルタップ検出用
         this._lastSpaceTime = 0;
         this._lastWTapTime = 0;
@@ -144,6 +150,15 @@ class PlayerController {
             case 'KeyV':
                 if (this._onViewpointToggle) {
                     this._onViewpointToggle();
+                }
+                break;
+            case 'KeyR':
+                if (this._isPointerLocked &&
+                    !(this._isUIOpenChecker && this._isUIOpenChecker())) {
+                    this._structureRotY = (this._structureRotY + 1) % 4;
+                    if (this._onRotateStructureCallback) {
+                        this._onRotateStructureCallback(this._structureRotY);
+                    }
                 }
                 break;
         }
@@ -710,6 +725,32 @@ class PlayerController {
      */
     onViewpointToggle(callback) {
         this._onViewpointToggle = callback;
+    }
+
+    /**
+     * 構造物 Y軸回転コールバックを設定
+     * R キーが押されるたびに rotY（0〜3）を引数として呼ばれる
+     * @param {Function} callback - (rotY: number) => void
+     */
+    onRotateStructure(callback) {
+        this._onRotateStructureCallback = callback;
+    }
+
+    /**
+     * UI ブロッキング判定コールバックを設定
+     * インベントリ・クラフト画面が開いているときに true を返す関数を渡す
+     * @param {Function} checker - () => boolean
+     */
+    setUIOpenChecker(checker) {
+        this._isUIOpenChecker = checker;
+    }
+
+    /**
+     * 現在の構造物 Y軸回転量を取得
+     * @returns {number} 0|1|2|3
+     */
+    get structureRotY() {
+        return this._structureRotY;
     }
 
     /**

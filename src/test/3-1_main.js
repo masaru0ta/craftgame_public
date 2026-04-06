@@ -320,7 +320,10 @@ class GameTestApp {
 
         // 19. 破壊コールバック登録（インベントリ収集 + パーティクル）
         this.blockInteraction.onBlockDestroyed((blockStrId, x, y, z) => {
-            this.inventory.addItem(blockStrId, 1);
+            // drop_item フィールドがあればそれをドロップ、なければブロック自身
+            const blockDef = this.blockInteraction._blocks?.find(b => b.block_str_id === blockStrId);
+            const dropId = (blockDef && blockDef.drop_item) ? blockDef.drop_item : blockStrId;
+            this.inventory.addItem(dropId, 1);
             if (x !== undefined && this.particleSystem) {
                 const colors = this._blockColorMap[blockStrId] || [0x808080];
                 this.particleSystem.emit(x + 0.5, y + 0.5, -(z + 0.5), colors);
@@ -487,6 +490,33 @@ class GameTestApp {
         }
 
         // 33. （旧回転軸初期化コードは削除済み。初期化は上部 247行付近で実施）
+
+        // 34. StructurePlacer 初期化・接続
+        if (typeof StructurePlacer !== 'undefined') {
+            this.structurePlacer = new StructurePlacer({
+                chunkManager:  this.chunkManager,
+                physicsWorld:  this.physicsWorld,
+                player:        this.player,
+                chunkStorage:  this.chunkManager.storage,
+            });
+            this.blockInteraction.structurePlacer = this.structurePlacer;
+            this.blockInteraction._structureRotY = 0;
+
+            // R キー → PlacementPreview 回転更新
+            this.playerController.onRotateStructure((rotY) => {
+                this.blockInteraction._structureRotY = rotY;
+                // プレビューをキャッシュ無効化して再描画
+                if (this.blockInteraction.placementPreview) {
+                    this.blockInteraction.placementPreview._structureCacheKey = '';
+                }
+            });
+
+            // UI ブロッキング設定（インベントリ・クラフト画面が開いているときはRキー無効）
+            this.playerController.setUIOpenChecker(() => {
+                return (this.inventory && this.inventory.isOpen()) ||
+                       (this.craftingScreen && this.craftingScreen.isOpen());
+            });
+        }
 
         // 初期化完了
         this.isReady = true;
