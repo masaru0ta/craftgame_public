@@ -50,6 +50,7 @@ function BuildUnifiedItems(textureLoader, placeableBlocks) {
             bb_min_x: struct.bb_min_x,
             bb_min_y: struct.bb_min_y,
             bb_min_z: struct.bb_min_z,
+            linked_destruction: struct.linked_destruction || false,
         });
     }
 

@@ -92,6 +92,21 @@ class BlockInteraction {
         if (typeof PlacementPreview !== 'undefined' && textureLoader) {
             this.placementPreview = new PlacementPreview(this.scene, textureLoader);
         }
+
+        // バケツハンドラ登録
+        this.RegisterItemUseHandler('bucket', (target) => {
+            const origin = this.player.getEyePosition();
+            const direction = this.player.getLookDirection();
+            const waterHit = this._raycastWater(origin, direction, BlockInteraction.MAX_REACH);
+            if (waterHit) {
+                return this._scoopWater(waterHit);
+            }
+            // 水が無ければ通常設置にフォールバック
+            return false;
+        });
+        this.RegisterItemUseHandler('bucket_of_water', (target) => {
+            return this._pourWater(target);
+        });
     }
 
     /**
@@ -329,31 +344,16 @@ class BlockInteraction {
             return false;
         }
 
-        // バケツ選択時 → 水汲み取りチェック
-        if (selectedBlock.block_str_id === 'bucket') {
-            const origin = this.player.getEyePosition();
-            const direction = this.player.getLookDirection();
-            const waterHit = this._raycastWater(origin, direction, BlockInteraction.MAX_REACH);
-            if (waterHit) {
-                return this._scoopWater(waterHit);
-            }
-            // 水が無ければ通常設置にフォールバック
-        }
-
-        // 水入りバケツ選択時 → 水設置
-        if (selectedBlock.block_str_id === 'bucket_of_water') {
-            return this._pourWater(target);
-        }
-
         // 構造物アイテムの設置
         if (selectedBlock.structure_str_id && this.structurePlacer) {
             const rawRotY = this.player ? BlockOrientation.RotationFromYaw(this.player.getYaw(), 0) : 0;
             const baseRotY = (4 - rawRotY) % 4;
             const rotY = (baseRotY + (this._structureRotY || 0)) % 4;
-            const placed = this.structurePlacer.Place(
-                { x: target.adjacentX, y: target.adjacentY, z: target.adjacentZ },
-                selectedBlock, rotY
-            );
+            const pos = { x: target.adjacentX, y: target.adjacentY, z: target.adjacentZ };
+            // linked_destruction: true の構造物は PlaceLinked でメタデータ付き設置
+            const placed = selectedBlock.linked_destruction
+                ? this.structurePlacer.PlaceLinked(pos, selectedBlock, rotY)
+                : this.structurePlacer.Place(pos, selectedBlock, rotY);
             if (placed && this._onBlockPlaced) {
                 this._onBlockPlaced(selectedBlock.structure_str_id);
             }
