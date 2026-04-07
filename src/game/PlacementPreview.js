@@ -373,16 +373,16 @@ class PlacementPreview {
 
         const tv = v.map(transform);
 
-        // 底面: v0,v3,v2,v1
-        addQuad(tv[0], tv[3], tv[2], tv[1], rotNormal([0,-1,0]), atlas('bottom'));
+        // 底面: v0,v1,v2,v3
+        addQuad(tv[0], tv[1], tv[2], tv[3], rotNormal([0,-1,0]), atlas('bottom'));
         // 背面: v4,v5,v1,v0
         addQuad(tv[4], tv[5], tv[1], tv[0], rotNormal([0,0,-1]), atlas('front'));
-        // 左三角: v0,v4,v3
-        addTri(tv[0], tv[4], tv[3], rotNormal([-1,0,0]), atlas('left'));
-        // 右三角: v1,v2,v5
-        addTri(tv[1], tv[2], tv[5], rotNormal([1,0,0]), atlas('right'));
-        // 斜面: v3,v4,v5,v2
-        addQuad(tv[3], tv[4], tv[5], tv[2], rotNormal([0, 1/Math.SQRT2, 1/Math.SQRT2]), atlas('top'));
+        // 左三角: v0,v3,v4
+        addTri(tv[0], tv[3], tv[4], rotNormal([-1,0,0]), atlas('left'));
+        // 右三角: v1,v5,v2
+        addTri(tv[1], tv[5], tv[2], rotNormal([1,0,0]), atlas('right'));
+        // 斜面: v2,v5,v4,v3
+        addQuad(tv[2], tv[5], tv[4], tv[3], rotNormal([0, 1/Math.SQRT2, 1/Math.SQRT2]), atlas('top'));
 
         return vertexOffset;
     }

@@ -873,34 +873,34 @@ class ChunkMeshBuilder {
 
         const tv = v.map(transform);
 
-        // 底面（Y-）: v0,v3,v2,v1
+        // 底面（Y-）: v0,v1,v2,v3
         if (!culled('bottom')) {
             const n = rotNormal([0,-1,0]);
-            addQuad(tv[0], tv[3], tv[2], tv[1], n, lf('bottom'), atlas('bottom'));
+            addQuad(tv[0], tv[1], tv[2], tv[3], n, lf('bottom'), atlas('bottom'));
         }
 
-        // 背面（Z+、高い方の壁）: v4,v5,v1,v0
+        // 背面（Z-、高い方の壁）: v4,v5,v1,v0
         if (!culled('back')) {
             const n = rotNormal([0,0,-1]);
             addQuad(tv[4], tv[5], tv[1], tv[0], n, lf('front'), atlas('front'));
         }
 
-        // 左三角面（X-）: v0,v4,v3
+        // 左三角面（X-）: v0,v3,v4
         if (!culled('left')) {
             const n = rotNormal([-1,0,0]);
-            addTri(tv[0], tv[4], tv[3], n, lf('left'), atlas('left'));
+            addTri(tv[0], tv[3], tv[4], n, lf('left'), atlas('left'));
         }
 
-        // 右三角面（X+）: v1,v2,v5
+        // 右三角面（X+）: v1,v5,v2
         if (!culled('right')) {
             const n = rotNormal([1,0,0]);
-            addTri(tv[1], tv[2], tv[5], n, lf('right'), atlas('right'));
+            addTri(tv[1], tv[5], tv[2], n, lf('right'), atlas('right'));
         }
 
-        // 斜面（常に描画）: v3,v4,v5,v2 — 法線は斜め上向き（Z+Y+ の対角方向）
+        // 斜面（常に描画）: v2,v5,v4,v3 — 法線は斜め上向き（Z+Y+ の対角方向）
         {
             const sn = rotNormal([0, 1/Math.SQRT2, 1/Math.SQRT2]);
-            addQuad(tv[3], tv[4], tv[5], tv[2], sn, lf('top'), atlas('top'));
+            addQuad(tv[2], tv[5], tv[4], tv[3], sn, lf('top'), atlas('top'));
         }
 
         return vertexOffset;
