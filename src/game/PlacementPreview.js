@@ -314,7 +314,12 @@ class PlacementPreview {
      * @param {number} orientation - orient値（topDir * 4 + rotation）
      */
     _buildSlopeMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
-        // 基本形頂点（ブロックローカル座標、原点中心で orientation 回転）
+        // ゲーム座標系（Z=0〜1）で頂点を定義し、最後に ApplyOrientationWithZFlip で
+        // Z反転 + orientation 回転を一括適用する（_buildStairMesh と同じパターン）。
+        // worldContainer.scale.z=-1 の外にあるため、Z反転を自前で行う必要がある。
+        // Z反転によりwinding orderが逆になるため、各面はCW（時計回り）で定義する。
+        const startVertexCount = positions.length / 3;
+
         const v = [
             [0, 0, 0], // v0 前左下
             [1, 0, 0], // v1 前右下
@@ -324,65 +329,48 @@ class PlacementPreview {
             [1, 1, 0], // v5 前右上
         ];
 
-        const m = (orientation !== 0 && typeof BlockOrientation !== 'undefined' && BlockOrientation.Matrices[orientation])
-            ? BlockOrientation.Matrices[orientation]
-            : null;
-
-        const transform = ([lx, ly, lz]) => {
-            const cx = lx - 0.5, cy = ly - 0.5, cz = lz - 0.5;
-            const rx = m ? m[0]*cx + m[1]*cy + m[2]*cz : cx;
-            const ry = m ? m[3]*cx + m[4]*cy + m[5]*cz : cy;
-            const rz = m ? m[6]*cx + m[7]*cy + m[8]*cz : cz;
-            return [rx + 0.5, ry + 0.5, rz + 0.5];
-        };
-
-        const rotNormal = ([nx, ny, nz]) => {
-            if (!m) return [nx, ny, nz];
-            return [
-                m[0]*nx + m[1]*ny + m[2]*nz,
-                m[3]*nx + m[4]*ny + m[5]*nz,
-                m[6]*nx + m[7]*ny + m[8]*nz,
-            ];
-        };
-
         const atlas = (faceName) => this._textureLoader.getAtlasUV(blockDef.block_str_id, faceName);
 
         const addQuad = (p0, p1, p2, p3, normal, atlasUV) => {
-            const [n0, n1, n2] = normal;
             for (const p of [p0, p1, p2, p3]) {
                 positions.push(...p);
-                normals.push(n0, n1, n2);
+                normals.push(...normal);
                 atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
             }
             uvs.push(0,0, 1,0, 1,1, 0,1);
-            indices.push(vertexOffset, vertexOffset+1, vertexOffset+2, vertexOffset, vertexOffset+2, vertexOffset+3);
+            // CW（Z反転後にCCW=フロントフェース）
+            indices.push(vertexOffset, vertexOffset+2, vertexOffset+1, vertexOffset+2, vertexOffset+3, vertexOffset+1);
             vertexOffset += 4;
         };
 
         const addTri = (p0, p1, p2, normal, atlasUV) => {
-            const [n0, n1, n2] = normal;
             for (const p of [p0, p1, p2]) {
                 positions.push(...p);
-                normals.push(n0, n1, n2);
+                normals.push(...normal);
                 atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
             }
             uvs.push(0,0, 1,0, 0.5,1);
-            indices.push(vertexOffset, vertexOffset+1, vertexOffset+2);
+            // CW
+            indices.push(vertexOffset, vertexOffset+2, vertexOffset+1);
             vertexOffset += 3;
         };
 
-        const tv = v.map(transform);
+        // 底面（Y-）
+        addQuad(v[0], v[1], v[2], v[3], [0,-1,0], atlas('bottom'));
+        // 背面（Z-、高い側の壁）
+        addQuad(v[4], v[5], v[1], v[0], [0,0,-1], atlas('front'));
+        // 左三角（X-）
+        addTri(v[0], v[3], v[4], [-1,0,0], atlas('left'));
+        // 右三角（X+）
+        addTri(v[1], v[5], v[2], [1,0,0], atlas('right'));
+        // 斜面
+        addQuad(v[2], v[5], v[4], v[3], [0, 1/Math.SQRT2, 1/Math.SQRT2], atlas('top'));
 
-        // 底面: v0,v1,v2,v3
-        addQuad(tv[0], tv[1], tv[2], tv[3], rotNormal([0,-1,0]), atlas('bottom'));
-        // 背面: v4,v5,v1,v0
-        addQuad(tv[4], tv[5], tv[1], tv[0], rotNormal([0,0,-1]), atlas('front'));
-        // 左三角: v0,v3,v4
-        addTri(tv[0], tv[3], tv[4], rotNormal([-1,0,0]), atlas('left'));
-        // 右三角: v1,v5,v2
-        addTri(tv[1], tv[5], tv[2], rotNormal([1,0,0]), atlas('right'));
-        // 斜面: v2,v5,v4,v3
-        addQuad(tv[2], tv[5], tv[4], tv[3], rotNormal([0, 1/Math.SQRT2, 1/Math.SQRT2]), atlas('top'));
+        const endVertexCount = positions.length / 3;
+        BlockMeshGeometry.ApplyOrientationWithZFlip(
+            positions, normals, startVertexCount, endVertexCount,
+            0.5, 0.5, 0.5, orientation
+        );
 
         return vertexOffset;
     }
