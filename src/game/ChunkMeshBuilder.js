@@ -399,13 +399,21 @@ class ChunkMeshBuilder {
             );
         }
 
-        // ハーフ/階段ブロックのボクセルメッシュ生成
+        // ハーフ/階段/スロープブロックのメッシュ生成
         for (const hb of halfBlocks) {
-            vertexOffset = this._buildHalfBlockVoxels(
-                hb.blockStrId, hb.x, hb.y, hb.z, hb.orientation, chunkData,
-                positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices,
-                vertexOffset, neighborChunks, hb.shape
-            );
+            if (hb.shape === 'slope') {
+                vertexOffset = this._buildSlopeMesh(
+                    hb.blockStrId, hb.x, hb.y, hb.z, hb.orientation, chunkData,
+                    positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices,
+                    vertexOffset, neighborChunks
+                );
+            } else {
+                vertexOffset = this._buildHalfBlockVoxels(
+                    hb.blockStrId, hb.x, hb.y, hb.z, hb.orientation, chunkData,
+                    positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices,
+                    vertexOffset, neighborChunks, hb.shape
+                );
+            }
         }
 
         // ジオメトリ作成
@@ -747,6 +755,152 @@ class ChunkMeshBuilder {
                 positions, normals, startVertexCount, endVertexCount,
                 bx + 0.5, by + 0.5, bz + 0.5, orientation
             );
+        }
+
+        return vertexOffset;
+    }
+
+    /**
+     * スロープブロック専用三角ポリゴンメッシュ生成
+     * 底面スロープ（topDir=0）を基本形とし、orientation 回転で全方向に対応する。
+     *
+     * 基本形の頂点（ブロックローカル座標）:
+     *   v0=(0,0,0), v1=(1,0,0), v2=(1,0,1), v3=(0,0,1)  ← 底面4頂点
+     *   v4=(0,1,0), v5=(1,1,0)                            ← 背面上端2頂点
+     *
+     * 面構成:
+     *   底面  : v0,v1,v2,v3 （quad）
+     *   背面  : v0,v1,v5,v4 （quad）
+     *   斜面  : v3,v2,v5,v4 （quad、斜め上向き法線）
+     *   左三角: v0,v3,v4    （triangle）
+     *   右三角: v1,v5,v2    （triangle）
+     */
+    _buildSlopeMesh(blockStrId, bx, by, bz, orientation, chunkData,
+                    positions, normals, uvs, atlasInfos, lightLevels, aoLevels,
+                    indices, vertexOffset, neighborChunks) {
+
+        // 基本形頂点（ブロックローカル、後でorientation回転）
+        const v = [
+            [0, 0, 0], // v0 前左下
+            [1, 0, 0], // v1 前右下
+            [1, 0, 1], // v2 後右下
+            [0, 0, 1], // v3 後左下
+            [0, 1, 0], // v4 前左上
+            [1, 1, 0], // v5 前右上
+        ];
+
+        // orientation 回転行列
+        const m = (orientation !== 0 && typeof BlockOrientation !== 'undefined' && BlockOrientation.Matrices[orientation])
+            ? BlockOrientation.Matrices[orientation]
+            : null;
+
+        // ブロック中心を軸に回転してワールド座標へ変換
+        const transform = ([lx, ly, lz]) => {
+            const cx = lx - 0.5, cy = ly - 0.5, cz = lz - 0.5;
+            const rx = m ? m[0]*cx + m[1]*cy + m[2]*cz : cx;
+            const ry = m ? m[3]*cx + m[4]*cy + m[5]*cz : cy;
+            const rz = m ? m[6]*cx + m[7]*cy + m[8]*cz : cz;
+            return [bx + rx + 0.5, by + ry + 0.5, bz + rz + 0.5];
+        };
+
+        // 法線ベクトルを回転（正規化不要、整数で十分）
+        const rotNormal = ([nx, ny, nz]) => {
+            if (!m) return [nx, ny, nz];
+            return [
+                m[0]*nx + m[1]*ny + m[2]*nz,
+                m[3]*nx + m[4]*ny + m[5]*nz,
+                m[6]*nx + m[7]*ny + m[8]*nz,
+            ];
+        };
+
+        // ライトレベル取得ヘルパー
+        const lf = (faceName) => {
+            const light = this._getFaceLightLevel(chunkData, bx, by, bz, faceName, neighborChunks);
+            return ChunkMeshBuilder._lightFactor(light);
+        };
+
+        // カリング判定ヘルパー（対応ワールド面を orientation 逆変換で求める）
+        const culled = (localFace) => {
+            // localFace に対応するワールド方向を orientation で回転して判定
+            const faceNormals = {
+                bottom: [0,-1,0], back: [0,0,1], left: [-1,0,0], right: [1,0,0]
+            };
+            const n = faceNormals[localFace];
+            if (!n) return false;
+            const [wnx, wny, wnz] = rotNormal(n);
+            const wFace = wnx > 0.5 ? 'right' : wnx < -0.5 ? 'left'
+                        : wny > 0.5 ? 'top'   : wny < -0.5 ? 'bottom'
+                        : wnz > 0.5 ? 'back'  : 'front';
+            return this._shouldCullFace(chunkData, bx, by, bz, wFace, neighborChunks);
+        };
+
+        // アトラスUV取得ヘルパー
+        const atlas = (faceName) => this.textureLoader.getAtlasUV(blockStrId, faceName);
+
+        // ---- 四角形1枚を追加するヘルパー（4頂点 → 2三角形）----
+        const addQuad = (p0, p1, p2, p3, normal, lfVal, atlasUV) => {
+            const [n0, n1, n2] = normal;
+            for (const p of [p0, p1, p2, p3]) {
+                positions.push(...p);
+                normals.push(n0, n1, n2);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                if (lightLevels) lightLevels.push(lfVal);
+                if (aoLevels) aoLevels.push(1.0);
+            }
+            // UV: 矩形マッピング
+            uvs.push(0,0, 1,0, 1,1, 0,1);
+            indices.push(
+                vertexOffset, vertexOffset+1, vertexOffset+2,
+                vertexOffset, vertexOffset+2, vertexOffset+3
+            );
+            vertexOffset += 4;
+        };
+
+        // ---- 三角形1枚を追加するヘルパー（3頂点）----
+        const addTri = (p0, p1, p2, normal, lfVal, atlasUV) => {
+            const [n0, n1, n2] = normal;
+            for (const p of [p0, p1, p2]) {
+                positions.push(...p);
+                normals.push(n0, n1, n2);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                if (lightLevels) lightLevels.push(lfVal);
+                if (aoLevels) aoLevels.push(1.0);
+            }
+            uvs.push(0,0, 1,0, 0.5,1);
+            indices.push(vertexOffset, vertexOffset+1, vertexOffset+2);
+            vertexOffset += 3;
+        };
+
+        const tv = v.map(transform);
+
+        // 底面（Y-）: v0,v3,v2,v1
+        if (!culled('bottom')) {
+            const n = rotNormal([0,-1,0]);
+            addQuad(tv[0], tv[3], tv[2], tv[1], n, lf('bottom'), atlas('bottom'));
+        }
+
+        // 背面（Z+、高い方の壁）: v4,v5,v1,v0
+        if (!culled('back')) {
+            const n = rotNormal([0,0,-1]);
+            addQuad(tv[4], tv[5], tv[1], tv[0], n, lf('front'), atlas('front'));
+        }
+
+        // 左三角面（X-）: v0,v4,v3
+        if (!culled('left')) {
+            const n = rotNormal([-1,0,0]);
+            addTri(tv[0], tv[4], tv[3], n, lf('left'), atlas('left'));
+        }
+
+        // 右三角面（X+）: v1,v2,v5
+        if (!culled('right')) {
+            const n = rotNormal([1,0,0]);
+            addTri(tv[1], tv[2], tv[5], n, lf('right'), atlas('right'));
+        }
+
+        // 斜面（常に描画）: v3,v4,v5,v2 — 法線は斜め上向き（Z+Y+ の対角方向）
+        {
+            const sn = rotNormal([0, 1/Math.SQRT2, 1/Math.SQRT2]);
+            addQuad(tv[3], tv[4], tv[5], tv[2], sn, lf('top'), atlas('top'));
         }
 
         return vertexOffset;
