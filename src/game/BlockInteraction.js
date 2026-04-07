@@ -93,6 +93,25 @@ class BlockInteraction {
             this.placementPreview = new PlacementPreview(this.scene, textureLoader);
         }
 
+        // ロープハンドラ登録
+        this.RegisterItemUseHandler('rope', (target) => {
+            if (!this.ropeManager) return false;
+            const targetBlockId = this.physicsWorld.getBlockAt(target.blockX, target.blockY, target.blockZ);
+            if (targetBlockId === 'pole') {
+                if (this.ropeManager.IsPending()) {
+                    this.ropeManager.CompleteConnection(target.blockX, target.blockY, target.blockZ);
+                } else {
+                    this.ropeManager.StartConnection(target.blockX, target.blockY, target.blockZ);
+                }
+                return true;
+            }
+            // ポール以外をクリック → 接続待ちキャンセル
+            if (this.ropeManager.IsPending()) {
+                this.ropeManager.CancelConnection();
+            }
+            return false;
+        });
+
         // バケツハンドラ登録
         this.RegisterItemUseHandler('bucket', (target) => {
             const origin = this.player.getEyePosition();
@@ -325,23 +344,6 @@ class BlockInteraction {
         if (handler) {
             const result = handler(target, selectedBlock);
             if (result) return result;
-        }
-
-        // ロープ選択時 → ポールクリックでロープ接続
-        if (selectedBlock.block_str_id === 'rope' && this.ropeManager) {
-            if (targetBlockId === 'pole') {
-                if (this.ropeManager.IsPending()) {
-                    this.ropeManager.CompleteConnection(target.blockX, target.blockY, target.blockZ);
-                } else {
-                    this.ropeManager.StartConnection(target.blockX, target.blockY, target.blockZ);
-                }
-                return true;
-            }
-            // ポール以外をクリック → 接続待ちキャンセル
-            if (this.ropeManager.IsPending()) {
-                this.ropeManager.CancelConnection();
-            }
-            return false;
         }
 
         // 構造物アイテムの設置

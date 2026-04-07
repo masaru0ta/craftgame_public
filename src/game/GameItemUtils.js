@@ -23,6 +23,9 @@ function BuildUnifiedItems(textureLoader, placeableBlocks) {
             name: block.name || block.block_str_id,
             max_stack: block.max_stack || 99,
             thumbnail: block.thumbnail || null,
+            half_placeable: block.half_placeable || false,
+            stair_placeable: block.stair_placeable || false,
+            slope_placeable: block.slope_placeable || false,
             _blockData: block
         });
     }
