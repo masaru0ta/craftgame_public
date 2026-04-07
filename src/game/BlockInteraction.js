@@ -1151,7 +1151,12 @@ class BlockInteraction {
     _calculateOrientationForMode(mode, blockDef, target, playerYaw) {
         if (mode === 'half') return this._calculateHalfOrientation(target.face);
         if (mode === 'stair') return this._calculateStairOrientation(target.face, playerYaw);
-        if (mode === 'slope') return this._calculateStairOrientation(target.face, playerYaw);
+        if (mode === 'slope') {
+            const orient = this._calculateStairOrientation(target.face, playerYaw);
+            const topDir = Math.floor(orient / 4);
+            const rotation = orient % 4;
+            return topDir * 4 + (rotation + 2) % 4;
+        }
         return this._calculateBlockOrientation(blockDef, target, playerYaw);
     }
 
