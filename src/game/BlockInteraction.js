@@ -1204,17 +1204,16 @@ class BlockInteraction {
         // topDir=0（水平面）のみコーナー検出を行う
         if (topDir !== 0) return { shape: 'slope', orientation: baseOrientation };
 
-        // 4方向: dx,dz,外向きrotation,内向きrotation
-        // 外向き: 隣接スロープがそのブロックの方向を向く（P から離れる）
-        // 内向き: 隣接スロープがP方向を向く
+        // 4方向定義: i=0→+Z, i=1→+X, i=2→-Z, i=3→-X
+        // rotation i のスロープは方向 dirs[i] に斜面が向く
         const dirs = [
-            { dx: 0, dz: 1, away: 0, toward: 2 },  // +Z
-            { dx: 1, dz: 0, away: 1, toward: 3 },  // +X
-            { dx: 0, dz:-1, away: 2, toward: 0 },  // -Z
-            { dx:-1, dz: 0, away: 3, toward: 1 },  // -X
+            { dx: 0, dz: 1 },  // i=0: +Z
+            { dx: 1, dz: 0 },  // i=1: +X
+            { dx: 0, dz:-1 },  // i=2: -Z
+            { dx:-1, dz: 0 },  // i=3: -X
         ];
 
-        // 隣接位置のスロープrotationを取得（topDir=0の通常スロープのみ）
+        // 隣接位置のスロープrotationを取得（topDir=0のスロープのみ）
         const getNeighborRot = (x, y, z) => {
             const cx = Math.floor(x / 16);
             const cz = Math.floor(z / 16);
@@ -1224,32 +1223,34 @@ class BlockInteraction {
             const lz = ((z % 16) + 16) % 16;
             const ly = y - chunk.chunkData.baseY;
             const shape = chunk.chunkData.getShape(lx, ly, lz);
-            if (shape !== 'slope') return -1;
+            if (shape !== 'slope' && shape !== 'slope_corner_outer' && shape !== 'slope_corner_inner') return -1;
             const orient = chunk.chunkData.getOrientation(lx, ly, lz);
             if (Math.floor(orient / 4) !== 0) return -1;
             return orient % 4;
         };
 
         // 隣接する直交2方向のペアを順に検査
+        // 外角（寄棟の角）: d1隣が -d2 方向を向き、d2隣が -d1 方向を向く
+        //   → d1隣のrot = (i+3)%4, d2隣のrot = (i+2)%4
         for (let i = 0; i < 4; i++) {
             const d1 = dirs[i];
             const d2 = dirs[(i + 1) % 4];
             const r1 = getNeighborRot(wx + d1.dx, wy, wz + d1.dz);
             const r2 = getNeighborRot(wx + d2.dx, wy, wz + d2.dz);
 
-            // 外角（寄棟の角）: 両隣が外向きスロープ → 優先
-            if (r1 === d1.away && r2 === d2.away) {
-                return { shape: 'slope_corner_outer', orientation: (i + 1) % 4 };
+            if (r1 === (i + 3) % 4 && r2 === (i + 2) % 4) {
+                return { shape: 'slope_corner_outer', orientation: (i + 3) % 4 };
             }
         }
+        // 内角（寄棟の谷）: d1隣が d2 方向を向き、d2隣が d1 方向を向く
+        //   → d1隣のrot = (i+1)%4, d2隣のrot = i
         for (let i = 0; i < 4; i++) {
             const d1 = dirs[i];
             const d2 = dirs[(i + 1) % 4];
             const r1 = getNeighborRot(wx + d1.dx, wy, wz + d1.dz);
             const r2 = getNeighborRot(wx + d2.dx, wy, wz + d2.dz);
 
-            // 内角（寄棟の谷）: 両隣が内向きスロープ
-            if (r1 === d1.toward && r2 === d2.toward) {
+            if (r1 === (i + 1) % 4 && r2 === i) {
                 return { shape: 'slope_corner_inner', orientation: i };
             }
         }
