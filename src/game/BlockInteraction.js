@@ -218,7 +218,7 @@ class BlockInteraction {
         // orientation 事前計算
         const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
         const currentMode = this._getPlacementMode(slotIndex, selectedBlock);
-        const orientation = this._calculateOrientationForMode(currentMode, selectedBlock, this.currentTarget, this.player.getYaw());
+        let orientation = this._calculateOrientationForMode(currentMode, selectedBlock, this.currentTarget, this.player.getYaw());
 
         // 設置可否判定
         const ax = this.currentTarget.adjacentX;
@@ -229,7 +229,15 @@ class BlockInteraction {
             && !this._intersectsPlayer(ax, ay, az)
             && ay >= 0 && ay < 128;
 
-        this.placementPreview.update(this.currentTarget, selectedBlock, orientation, canPlace, currentMode === 'half', currentMode === 'stair', currentMode === 'slope');
+        // スロープコーナー検出（プレビュー用）
+        let previewShape = currentMode;
+        if (currentMode === 'slope') {
+            const cornerResult = this._detectSlopeCorner(ax, ay, az, orientation);
+            previewShape = cornerResult.shape;
+            orientation = cornerResult.orientation;
+        }
+
+        this.placementPreview.update(this.currentTarget, selectedBlock, orientation, canPlace, previewShape);
     }
 
     /**
@@ -365,7 +373,15 @@ class BlockInteraction {
         // orientation 計算
         const slotIndex = this.hotbar ? this.hotbar.selectedSlot : 0;
         const currentMode = this._getPlacementMode(slotIndex, selectedBlock);
-        const orientation = this._calculateOrientationForMode(currentMode, selectedBlock, target, this.player.getYaw());
+        let orientation = this._calculateOrientationForMode(currentMode, selectedBlock, target, this.player.getYaw());
+
+        // スロープコーナー検出（設置時）
+        let placementShape = currentMode;
+        if (currentMode === 'slope') {
+            const cornerResult = this._detectSlopeCorner(target.adjacentX, target.adjacentY, target.adjacentZ, orientation);
+            placementShape = cornerResult.shape;
+            orientation = cornerResult.orientation;
+        }
 
         // ハーフ/階段/スロープモード時は placeBlock（メッシュ再構築含む）の前に shape を設定
         if (currentMode === 'half' || currentMode === 'stair' || currentMode === 'slope') {
@@ -376,7 +392,7 @@ class BlockInteraction {
                 const lx = ((target.adjacentX % 16) + 16) % 16;
                 const lz = ((target.adjacentZ % 16) + 16) % 16;
                 const ly = target.adjacentY - chunk.chunkData.baseY;
-                chunk.chunkData.setShape(lx, ly, lz, currentMode);
+                chunk.chunkData.setShape(lx, ly, lz, placementShape);
             }
         }
         const placed = this.placeBlock(target.adjacentX, target.adjacentY, target.adjacentZ, selectedBlock.block_str_id, orientation);
@@ -1171,6 +1187,74 @@ class BlockInteraction {
         const topDir = BlockOrientation.FaceToTopDir[face] || 0;
         const rotation = BlockOrientation.RotationFromYaw(playerYaw, topDir);
         return BlockOrientation.Encode(topDir, rotation);
+    }
+
+    /**
+     * スロープコーナー自動検出
+     * 隣接スロープの向きからコーナー形状（外角・内角）を判定する。
+     * topDir=0（水平面設置）のスロープのみ対応。
+     * @param {number} wx - ワールドX座標
+     * @param {number} wy - ワールドY座標
+     * @param {number} wz - ワールドZ座標
+     * @param {number} baseOrientation - スロープ基本orientation
+     * @returns {{ shape: string, orientation: number }}
+     */
+    _detectSlopeCorner(wx, wy, wz, baseOrientation) {
+        const topDir = Math.floor(baseOrientation / 4);
+        // topDir=0（水平面）のみコーナー検出を行う
+        if (topDir !== 0) return { shape: 'slope', orientation: baseOrientation };
+
+        // 4方向: dx,dz,外向きrotation,内向きrotation
+        // 外向き: 隣接スロープがそのブロックの方向を向く（P から離れる）
+        // 内向き: 隣接スロープがP方向を向く
+        const dirs = [
+            { dx: 0, dz: 1, away: 0, toward: 2 },  // +Z
+            { dx: 1, dz: 0, away: 1, toward: 3 },  // +X
+            { dx: 0, dz:-1, away: 2, toward: 0 },  // -Z
+            { dx:-1, dz: 0, away: 3, toward: 1 },  // -X
+        ];
+
+        // 隣接位置のスロープrotationを取得（topDir=0の通常スロープのみ）
+        const getNeighborRot = (x, y, z) => {
+            const cx = Math.floor(x / 16);
+            const cz = Math.floor(z / 16);
+            const chunk = this.chunkManager.chunks.get(`${cx},${cz}`);
+            if (!chunk || !chunk.chunkData) return -1;
+            const lx = ((x % 16) + 16) % 16;
+            const lz = ((z % 16) + 16) % 16;
+            const ly = y - chunk.chunkData.baseY;
+            const shape = chunk.chunkData.getShape(lx, ly, lz);
+            if (shape !== 'slope') return -1;
+            const orient = chunk.chunkData.getOrientation(lx, ly, lz);
+            if (Math.floor(orient / 4) !== 0) return -1;
+            return orient % 4;
+        };
+
+        // 隣接する直交2方向のペアを順に検査
+        for (let i = 0; i < 4; i++) {
+            const d1 = dirs[i];
+            const d2 = dirs[(i + 1) % 4];
+            const r1 = getNeighborRot(wx + d1.dx, wy, wz + d1.dz);
+            const r2 = getNeighborRot(wx + d2.dx, wy, wz + d2.dz);
+
+            // 外角（寄棟の角）: 両隣が外向きスロープ → 優先
+            if (r1 === d1.away && r2 === d2.away) {
+                return { shape: 'slope_corner_outer', orientation: (i + 1) % 4 };
+            }
+        }
+        for (let i = 0; i < 4; i++) {
+            const d1 = dirs[i];
+            const d2 = dirs[(i + 1) % 4];
+            const r1 = getNeighborRot(wx + d1.dx, wy, wz + d1.dz);
+            const r2 = getNeighborRot(wx + d2.dx, wy, wz + d2.dz);
+
+            // 内角（寄棟の谷）: 両隣が内向きスロープ
+            if (r1 === d1.toward && r2 === d2.toward) {
+                return { shape: 'slope_corner_inner', orientation: i };
+            }
+        }
+
+        return { shape: 'slope', orientation: baseOrientation };
     }
 
     /**

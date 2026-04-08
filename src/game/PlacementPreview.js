@@ -92,11 +92,12 @@ class PlacementPreview {
      * @param {Object|null} selectedBlock - 選択中のブロック定義
      * @param {number} orientation - orientation値
      * @param {boolean} canPlace - 設置可能か
-     * @param {boolean} [isHalfMode=false] - ハーフブロックモードか
-     * @param {boolean} [isStairMode=false] - 階段ブロックモードか
-     * @param {boolean} [isSlopeMode=false] - スロープブロックモードか
+     * @param {string} [shape='normal'] - 設置形状('normal','half','stair','slope','slope_corner_outer','slope_corner_inner')
      */
-    update(raycastResult, selectedBlock, orientation, canPlace, isHalfMode = false, isStairMode = false, isSlopeMode = false) {
+    update(raycastResult, selectedBlock, orientation, canPlace, shape = 'normal') {
+        const isHalfMode = shape === 'half';
+        const isStairMode = shape === 'stair';
+        const isSlopeMode = shape === 'slope' || shape === 'slope_corner_outer' || shape === 'slope_corner_inner';
         if (!raycastResult || !raycastResult.hit || !selectedBlock) {
             this.hide();
             this._lastAdjacentKey = '';
@@ -118,13 +119,12 @@ class PlacementPreview {
             return;
         }
 
-        const modeStr = isSlopeMode ? 'slope' : isStairMode ? 'stair' : isHalfMode ? 'half' : 'full';
-        const newKey = `${selectedBlock.block_str_id}:${orientation}:${modeStr}`;
+        const newKey = `${selectedBlock.block_str_id}:${orientation}:${shape}`;
 
         // キャッシュキーが異なる場合のみメッシュ再生成
         if (newKey !== this._cacheKey) {
             this._removeMesh();
-            this._currentMesh = this._buildMesh(selectedBlock, orientation, isHalfMode, isStairMode, isSlopeMode);
+            this._currentMesh = this._buildMesh(selectedBlock, orientation, isHalfMode, isStairMode, shape);
             this._scene.add(this._currentMesh);
             this._cacheKey = newKey;
         }
@@ -176,9 +176,11 @@ class PlacementPreview {
      * @param {number} orientation - orientation値
      * @param {boolean} [isHalfMode=false] - ハーフブロックモードか
      * @param {boolean} [isStairMode=false] - 階段ブロックモードか
+     * @param {string} [shape='normal'] - 設置形状
      * @returns {THREE.Group}
      */
-    _buildMesh(blockDef, orientation, isHalfMode = false, isStairMode = false, isSlopeMode = false) {
+    _buildMesh(blockDef, orientation, isHalfMode = false, isStairMode = false, shape = 'normal') {
+        const isSlopeMode = shape === 'slope' || shape === 'slope_corner_outer' || shape === 'slope_corner_inner';
         const positions = [];
         const normals = [];
         const uvs = [];
@@ -189,7 +191,13 @@ class PlacementPreview {
         if (blockDef.shape_type === 'custom' && blockDef.voxel_look) {
             vertexOffset = this._buildCustomMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         } else if (blockDef.slope_placeable && isSlopeMode) {
-            vertexOffset = this._buildSlopeMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+            if (shape === 'slope_corner_outer') {
+                vertexOffset = this._buildSlopeCornerOuterMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+            } else if (shape === 'slope_corner_inner') {
+                vertexOffset = this._buildSlopeCornerInnerMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+            } else {
+                vertexOffset = this._buildSlopeMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
+            }
         } else if (blockDef.stair_placeable && isStairMode) {
             vertexOffset = this._buildStairMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset);
         } else if (blockDef.half_placeable && isHalfMode) {
@@ -372,6 +380,128 @@ class PlacementPreview {
             0.5, 0.5, 0.5, orientation
         );
 
+        return vertexOffset;
+    }
+
+    /**
+     * スロープ外角コーナーゴーストメッシュ生成（寄棟の角）
+     */
+    _buildSlopeCornerOuterMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+        const startVertexCount = positions.length / 3;
+
+        const v = [
+            [0, 0, 0], // v0 前左下
+            [1, 0, 0], // v1 前右下
+            [1, 0, 1], // v2 後右下
+            [0, 0, 1], // v3 後左下
+            [0, 1, 1], // v4 後左上（錐の頂点）
+        ];
+
+        const atlas = (faceName) => this._textureLoader.getAtlasUV(blockDef.block_str_id, faceName);
+        const S = 1 / Math.SQRT2;
+
+        const addQuad = (p0, p1, p2, p3, normal, atlasUV) => {
+            for (const p of [p0, p1, p2, p3]) {
+                positions.push(...p);
+                normals.push(...normal);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+            }
+            uvs.push(0,0, 1,0, 1,1, 0,1);
+            indices.push(vertexOffset, vertexOffset+2, vertexOffset+1, vertexOffset+2, vertexOffset+3, vertexOffset+1);
+            vertexOffset += 4;
+        };
+        const addTri = (p0, p1, p2, normal, atlasUV) => {
+            for (const p of [p0, p1, p2]) {
+                positions.push(...p);
+                normals.push(...normal);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+            }
+            uvs.push(0,0, 1,0, 0.5,1);
+            indices.push(vertexOffset, vertexOffset+2, vertexOffset+1);
+            vertexOffset += 3;
+        };
+
+        // 底面
+        addQuad(v[0], v[1], v[2], v[3], [0,-1,0], atlas('bottom'));
+        // 後壁三角
+        addTri(v[3], v[2], v[4], [0,0,1], atlas('front'));
+        // 左壁三角
+        addTri(v[0], v[3], v[4], [-1,0,0], atlas('left'));
+        // 斜面A
+        addTri(v[0], v[4], v[1], [0,S,-S], atlas('top'));
+        // 斜面B
+        addTri(v[1], v[4], v[2], [S,S,0], atlas('top'));
+
+        const endVertexCount = positions.length / 3;
+        BlockMeshGeometry.ApplyOrientationWithZFlip(
+            positions, normals, startVertexCount, endVertexCount,
+            0.5, 0.5, 0.5, orientation
+        );
+        return vertexOffset;
+    }
+
+    /**
+     * スロープ内角コーナーゴーストメッシュ生成（寄棟の谷）
+     */
+    _buildSlopeCornerInnerMesh(blockDef, orientation, positions, normals, uvs, atlasInfos, indices, vertexOffset) {
+        const startVertexCount = positions.length / 3;
+
+        const v = [
+            [0, 0, 0], // v0 前左下
+            [1, 0, 0], // v1 前右下
+            [1, 0, 1], // v2 後右下
+            [0, 0, 1], // v3 後左下
+            [1, 1, 0], // v4 前右上
+            [0, 1, 1], // v5 後左上
+            [1, 1, 1], // v6 後右上
+        ];
+
+        const atlas = (faceName) => this._textureLoader.getAtlasUV(blockDef.block_str_id, faceName);
+        const S = 1 / Math.SQRT2;
+
+        const addQuad = (p0, p1, p2, p3, normal, atlasUV) => {
+            for (const p of [p0, p1, p2, p3]) {
+                positions.push(...p);
+                normals.push(...normal);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+            }
+            uvs.push(0,0, 1,0, 1,1, 0,1);
+            indices.push(vertexOffset, vertexOffset+2, vertexOffset+1, vertexOffset+2, vertexOffset+3, vertexOffset+1);
+            vertexOffset += 4;
+        };
+        const addTri = (p0, p1, p2, normal, atlasUV) => {
+            for (const p of [p0, p1, p2]) {
+                positions.push(...p);
+                normals.push(...normal);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+            }
+            uvs.push(0,0, 1,0, 0.5,1);
+            indices.push(vertexOffset, vertexOffset+2, vertexOffset+1);
+            vertexOffset += 3;
+        };
+
+        // 底面
+        addQuad(v[0], v[1], v[2], v[3], [0,-1,0], atlas('bottom'));
+        // 前壁三角
+        addTri(v[0], v[4], v[1], [0,0,-1], atlas('front'));
+        // 左壁三角
+        addTri(v[0], v[3], v[5], [-1,0,0], atlas('left'));
+        // 右壁2三角
+        addTri(v[1], v[4], v[6], [1,0,0], atlas('right'));
+        addTri(v[1], v[6], v[2], [1,0,0], atlas('right'));
+        // 後壁2三角
+        addTri(v[3], v[2], v[6], [0,0,1], atlas('back'));
+        addTri(v[3], v[6], v[5], [0,0,1], atlas('back'));
+        // 斜面A
+        addTri(v[0], v[6], v[4], [-S,S,0], atlas('top'));
+        // 斜面B
+        addTri(v[0], v[5], v[6], [0,S,-S], atlas('top'));
+
+        const endVertexCount = positions.length / 3;
+        BlockMeshGeometry.ApplyOrientationWithZFlip(
+            positions, normals, startVertexCount, endVertexCount,
+            0.5, 0.5, 0.5, orientation
+        );
         return vertexOffset;
     }
 

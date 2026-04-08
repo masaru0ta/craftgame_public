@@ -322,7 +322,7 @@ class ChunkMeshBuilder {
                 const shape = typeof chunkData.getShape === 'function'
                     ? chunkData.getShape(x, y, z)
                     : 'normal';
-                if (shape === 'half' || shape === 'stair' || shape === 'slope') {
+                if (shape === 'half' || shape === 'stair' || shape === 'slope' || shape === 'slope_corner_outer' || shape === 'slope_corner_inner') {
                     const orient = chunkData.getOrientation(x, y, z);
                     halfBlocks.push({ blockStrId, x, y, z, orientation: orient, shape });
                     return;
@@ -403,6 +403,18 @@ class ChunkMeshBuilder {
         for (const hb of halfBlocks) {
             if (hb.shape === 'slope') {
                 vertexOffset = this._buildSlopeMesh(
+                    hb.blockStrId, hb.x, hb.y, hb.z, hb.orientation, chunkData,
+                    positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices,
+                    vertexOffset, neighborChunks
+                );
+            } else if (hb.shape === 'slope_corner_outer') {
+                vertexOffset = this._buildSlopeCornerOuterMesh(
+                    hb.blockStrId, hb.x, hb.y, hb.z, hb.orientation, chunkData,
+                    positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices,
+                    vertexOffset, neighborChunks
+                );
+            } else if (hb.shape === 'slope_corner_inner') {
+                vertexOffset = this._buildSlopeCornerInnerMesh(
                     hb.blockStrId, hb.x, hb.y, hb.z, hb.orientation, chunkData,
                     positions, normals, uvs, atlasInfos, lightLevels, aoLevels, indices,
                     vertexOffset, neighborChunks
@@ -902,6 +914,188 @@ class ChunkMeshBuilder {
             const sn = rotNormal([0, 1/Math.SQRT2, 1/Math.SQRT2]);
             addQuad(tv[2], tv[5], tv[4], tv[3], sn, lf('top'), atlas('top'));
         }
+
+        return vertexOffset;
+    }
+
+    /**
+     * スロープ外角コーナーメッシュ生成（寄棟の角）
+     * 底面フル + 2壁三角形 + 2斜面三角形が1頂点(v4)で交わる錐形
+     */
+    _buildSlopeCornerOuterMesh(blockStrId, bx, by, bz, orientation, chunkData,
+                               positions, normals, uvs, atlasInfos, lightLevels, aoLevels,
+                               indices, vertexOffset, neighborChunks) {
+        // v0〜v3: 底面4頂点  v4: 錐の頂点（後左上）
+        const v = [
+            [0, 0, 0], // v0 前左下
+            [1, 0, 0], // v1 前右下
+            [1, 0, 1], // v2 後右下
+            [0, 0, 1], // v3 後左下
+            [0, 1, 1], // v4 後左上（錐の頂点）
+        ];
+
+        const m = (orientation !== 0 && typeof BlockOrientation !== 'undefined' && BlockOrientation.Matrices[orientation])
+            ? BlockOrientation.Matrices[orientation] : null;
+
+        const transform = ([lx, ly, lz]) => {
+            const cx = lx - 0.5, cy = ly - 0.5, cz = lz - 0.5;
+            const rx = m ? m[0]*cx + m[1]*cy + m[2]*cz : cx;
+            const ry = m ? m[3]*cx + m[4]*cy + m[5]*cz : cy;
+            const rz = m ? m[6]*cx + m[7]*cy + m[8]*cz : cz;
+            return [bx + rx + 0.5, by + ry + 0.5, bz + rz + 0.5];
+        };
+        const rotNormal = ([nx, ny, nz]) => {
+            if (!m) return [nx, ny, nz];
+            return [m[0]*nx+m[1]*ny+m[2]*nz, m[3]*nx+m[4]*ny+m[5]*nz, m[6]*nx+m[7]*ny+m[8]*nz];
+        };
+        const lf = (faceName) => {
+            const light = this._getFaceLightLevel(chunkData, bx, by, bz, faceName, neighborChunks);
+            return ChunkMeshBuilder._lightFactor(light);
+        };
+        const culled = (localNormal) => {
+            const [wnx, wny, wnz] = rotNormal(localNormal);
+            const wFace = wnx > 0.5 ? 'right' : wnx < -0.5 ? 'left'
+                        : wny > 0.5 ? 'top'   : wny < -0.5 ? 'bottom'
+                        : wnz > 0.5 ? 'back'  : 'front';
+            return this._shouldCullFace(chunkData, bx, by, bz, wFace, neighborChunks);
+        };
+        const atlas = (faceName) => this.textureLoader.getAtlasUV(blockStrId, faceName);
+
+        const addQuad = (p0, p1, p2, p3, normal, lfVal, atlasUV) => {
+            const [n0, n1, n2] = normal;
+            for (const p of [p0, p1, p2, p3]) {
+                positions.push(...p); normals.push(n0, n1, n2);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                if (lightLevels) lightLevels.push(lfVal);
+                if (aoLevels) aoLevels.push(1.0);
+            }
+            uvs.push(0,0, 1,0, 1,1, 0,1);
+            indices.push(vertexOffset, vertexOffset+1, vertexOffset+2, vertexOffset, vertexOffset+2, vertexOffset+3);
+            vertexOffset += 4;
+        };
+        const addTri = (p0, p1, p2, normal, lfVal, atlasUV) => {
+            const [n0, n1, n2] = normal;
+            for (const p of [p0, p1, p2]) {
+                positions.push(...p); normals.push(n0, n1, n2);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                if (lightLevels) lightLevels.push(lfVal);
+                if (aoLevels) aoLevels.push(1.0);
+            }
+            uvs.push(0,0, 1,0, 0.5,1);
+            indices.push(vertexOffset, vertexOffset+1, vertexOffset+2);
+            vertexOffset += 3;
+        };
+
+        const tv = v.map(transform);
+        const S = 1 / Math.SQRT2;
+
+        // 底面（Y-）
+        if (!culled([0,-1,0])) addQuad(tv[0], tv[1], tv[2], tv[3], rotNormal([0,-1,0]), lf('bottom'), atlas('bottom'));
+        // 後壁三角（局所Z+）: v3,v2,v4 → normal +Z
+        if (!culled([0,0,1])) addTri(tv[3], tv[2], tv[4], rotNormal([0,0,1]), lf('back'), atlas('front'));
+        // 左壁三角（局所X-）: v0,v3,v4 → normal -X
+        if (!culled([-1,0,0])) addTri(tv[0], tv[3], tv[4], rotNormal([-1,0,0]), lf('left'), atlas('left'));
+        // 斜面A（前向き）: v0,v4,v1 → normal (0,S,-S)
+        addTri(tv[0], tv[4], tv[1], rotNormal([0,S,-S]), lf('top'), atlas('top'));
+        // 斜面B（右向き）: v1,v4,v2 → normal (S,S,0)
+        addTri(tv[1], tv[4], tv[2], rotNormal([S,S,0]), lf('top'), atlas('top'));
+
+        return vertexOffset;
+    }
+
+    /**
+     * スロープ内角コーナーメッシュ生成（寄棟の谷）
+     * 対角稜線（v4-v5）から2つの斜面が展開する形状
+     */
+    _buildSlopeCornerInnerMesh(blockStrId, bx, by, bz, orientation, chunkData,
+                               positions, normals, uvs, atlasInfos, lightLevels, aoLevels,
+                               indices, vertexOffset, neighborChunks) {
+        // v4=(1,1,0) 前右上  v5=(0,1,1) 後左上  v6=(1,1,1) 後右上（全高コーナー）
+        const v = [
+            [0, 0, 0], // v0 前左下
+            [1, 0, 0], // v1 前右下
+            [1, 0, 1], // v2 後右下
+            [0, 0, 1], // v3 後左下
+            [1, 1, 0], // v4 前右上
+            [0, 1, 1], // v5 後左上
+            [1, 1, 1], // v6 後右上
+        ];
+
+        const m = (orientation !== 0 && typeof BlockOrientation !== 'undefined' && BlockOrientation.Matrices[orientation])
+            ? BlockOrientation.Matrices[orientation] : null;
+
+        const transform = ([lx, ly, lz]) => {
+            const cx = lx - 0.5, cy = ly - 0.5, cz = lz - 0.5;
+            const rx = m ? m[0]*cx + m[1]*cy + m[2]*cz : cx;
+            const ry = m ? m[3]*cx + m[4]*cy + m[5]*cz : cy;
+            const rz = m ? m[6]*cx + m[7]*cy + m[8]*cz : cz;
+            return [bx + rx + 0.5, by + ry + 0.5, bz + rz + 0.5];
+        };
+        const rotNormal = ([nx, ny, nz]) => {
+            if (!m) return [nx, ny, nz];
+            return [m[0]*nx+m[1]*ny+m[2]*nz, m[3]*nx+m[4]*ny+m[5]*nz, m[6]*nx+m[7]*ny+m[8]*nz];
+        };
+        const lf = (faceName) => {
+            const light = this._getFaceLightLevel(chunkData, bx, by, bz, faceName, neighborChunks);
+            return ChunkMeshBuilder._lightFactor(light);
+        };
+        const culled = (localNormal) => {
+            const [wnx, wny, wnz] = rotNormal(localNormal);
+            const wFace = wnx > 0.5 ? 'right' : wnx < -0.5 ? 'left'
+                        : wny > 0.5 ? 'top'   : wny < -0.5 ? 'bottom'
+                        : wnz > 0.5 ? 'back'  : 'front';
+            return this._shouldCullFace(chunkData, bx, by, bz, wFace, neighborChunks);
+        };
+        const atlas = (faceName) => this.textureLoader.getAtlasUV(blockStrId, faceName);
+
+        const addQuad = (p0, p1, p2, p3, normal, lfVal, atlasUV) => {
+            const [n0, n1, n2] = normal;
+            for (const p of [p0, p1, p2, p3]) {
+                positions.push(...p); normals.push(n0, n1, n2);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                if (lightLevels) lightLevels.push(lfVal);
+                if (aoLevels) aoLevels.push(1.0);
+            }
+            uvs.push(0,0, 1,0, 1,1, 0,1);
+            indices.push(vertexOffset, vertexOffset+1, vertexOffset+2, vertexOffset, vertexOffset+2, vertexOffset+3);
+            vertexOffset += 4;
+        };
+        const addTri = (p0, p1, p2, normal, lfVal, atlasUV) => {
+            const [n0, n1, n2] = normal;
+            for (const p of [p0, p1, p2]) {
+                positions.push(...p); normals.push(n0, n1, n2);
+                atlasInfos.push(atlasUV.offsetX, atlasUV.offsetY, atlasUV.scaleX, atlasUV.scaleY);
+                if (lightLevels) lightLevels.push(lfVal);
+                if (aoLevels) aoLevels.push(1.0);
+            }
+            uvs.push(0,0, 1,0, 0.5,1);
+            indices.push(vertexOffset, vertexOffset+1, vertexOffset+2);
+            vertexOffset += 3;
+        };
+
+        const tv = v.map(transform);
+        const S = 1 / Math.SQRT2;
+
+        // 底面（Y-）
+        if (!culled([0,-1,0])) addQuad(tv[0], tv[1], tv[2], tv[3], rotNormal([0,-1,0]), lf('bottom'), atlas('bottom'));
+        // 前壁三角（局所Z-）: v0,v4,v1 → normal -Z
+        if (!culled([0,0,-1])) addTri(tv[0], tv[4], tv[1], rotNormal([0,0,-1]), lf('front'), atlas('front'));
+        // 左壁三角（局所X-）: v0,v3,v5 → normal -X
+        if (!culled([-1,0,0])) addTri(tv[0], tv[3], tv[5], rotNormal([-1,0,0]), lf('left'), atlas('left'));
+        // 右壁（局所X+）: v1,v4,v6 + v1,v6,v2 → normal +X
+        if (!culled([1,0,0])) {
+            addTri(tv[1], tv[4], tv[6], rotNormal([1,0,0]), lf('right'), atlas('right'));
+            addTri(tv[1], tv[6], tv[2], rotNormal([1,0,0]), lf('right'), atlas('right'));
+        }
+        // 後壁（局所Z+）: v3,v2,v6 + v3,v6,v5 → normal +Z
+        if (!culled([0,0,1])) {
+            addTri(tv[3], tv[2], tv[6], rotNormal([0,0,1]), lf('back'), atlas('back'));
+            addTri(tv[3], tv[6], tv[5], rotNormal([0,0,1]), lf('back'), atlas('back'));
+        }
+        // 斜面A（X+,Y+ 方向へ立ち上がる）: v0,v6,v4 → normal (-S,S,0)
+        addTri(tv[0], tv[6], tv[4], rotNormal([-S,S,0]), lf('top'), atlas('top'));
+        // 斜面B（Z+,Y+ 方向へ立ち上がる）: v0,v5,v6 → normal (0,S,-S)
+        addTri(tv[0], tv[5], tv[6], rotNormal([0,S,-S]), lf('top'), atlas('top'));
 
         return vertexOffset;
     }
