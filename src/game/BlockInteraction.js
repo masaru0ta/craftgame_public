@@ -1230,7 +1230,7 @@ class BlockInteraction {
         };
 
         // 隣接する直交2方向のペアを順に検査
-        // 外角（寄棟の角）: d1隣が -d2 方向を向き、d2隣が -d1 方向を向く
+        // 外角（寄棟の角）: d1隣が -d2 方向、d2隣が -d1 方向を向く
         //   → d1隣のrot = (i+3)%4, d2隣のrot = (i+2)%4
         for (let i = 0; i < 4; i++) {
             const d1 = dirs[i];
@@ -1239,10 +1239,10 @@ class BlockInteraction {
             const r2 = getNeighborRot(wx + d2.dx, wy, wz + d2.dz);
 
             if (r1 === (i + 3) % 4 && r2 === (i + 2) % 4) {
-                return { shape: 'slope_corner_outer', orientation: (i + 3) % 4 };
+                return { shape: 'slope_corner_outer', orientation: (i + 1) % 4 };
             }
         }
-        // 内角（寄棟の谷）: d1隣が d2 方向を向き、d2隣が d1 方向を向く
+        // 内角（寄棟の谷）: d1隣が d2 方向、d2隣が d1 方向を向く
         //   → d1隣のrot = (i+1)%4, d2隣のrot = i
         for (let i = 0; i < 4; i++) {
             const d1 = dirs[i];
@@ -1251,7 +1251,7 @@ class BlockInteraction {
             const r2 = getNeighborRot(wx + d2.dx, wy, wz + d2.dz);
 
             if (r1 === (i + 1) % 4 && r2 === i) {
-                return { shape: 'slope_corner_inner', orientation: i };
+                return { shape: 'slope_corner_inner', orientation: (i + 2) % 4 };
             }
         }
 
